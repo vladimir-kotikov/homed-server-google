@@ -1,6 +1,7 @@
-import { PrismaClient } from '@prisma/client';
-import * as bcrypt from 'bcrypt';
-import { User } from '../types';
+import { PrismaClient } from "@prisma/client";
+import * as bcrypt from "bcrypt";
+import * as crypto from "crypto";
+import { User } from "../types";
 
 const prisma = new PrismaClient();
 
@@ -14,12 +15,12 @@ export class AuthService {
   async validateClientToken(token: string): Promise<User | null> {
     try {
       const user = await prisma.user.findUnique({
-        where: { clientToken: token }
+        where: { clientToken: token },
       });
 
       return user;
     } catch (error) {
-      console.error('Error validating client token:', error);
+      console.error("Error validating client token:", error);
       return null;
     }
   }
@@ -40,24 +41,27 @@ export class AuthService {
         data: {
           username,
           passwordHash,
-          clientToken
-        }
+          clientToken,
+        },
       });
 
       return user;
     } catch (error) {
-      console.error('Error creating user:', error);
-      throw new Error('Failed to create user');
+      console.error("Error creating user:", error);
+      throw new Error("Failed to create user");
     }
   }
 
   /**
    * Validate user credentials (username/password)
    */
-  async validateUserCredentials(username: string, password: string): Promise<User | null> {
+  async validateUserCredentials(
+    username: string,
+    password: string
+  ): Promise<User | null> {
     try {
       const user = await prisma.user.findUnique({
-        where: { username }
+        where: { username },
       });
 
       if (!user) {
@@ -72,7 +76,7 @@ export class AuthService {
 
       return user;
     } catch (error) {
-      console.error('Error validating user credentials:', error);
+      console.error("Error validating user credentials:", error);
       return null;
     }
   }
@@ -83,12 +87,12 @@ export class AuthService {
   async getUserById(userId: string): Promise<User | null> {
     try {
       const user = await prisma.user.findUnique({
-        where: { id: userId }
+        where: { id: userId },
       });
 
       return user;
     } catch (error) {
-      console.error('Error getting user by ID:', error);
+      console.error("Error getting user by ID:", error);
       return null;
     }
   }
@@ -99,12 +103,12 @@ export class AuthService {
   async getUserByUsername(username: string): Promise<User | null> {
     try {
       const user = await prisma.user.findUnique({
-        where: { username }
+        where: { username },
       });
 
       return user;
     } catch (error) {
-      console.error('Error getting user by username:', error);
+      console.error("Error getting user by username:", error);
       return null;
     }
   }
@@ -113,8 +117,7 @@ export class AuthService {
    * Generate a random client token (32-character hex string)
    */
   private generateClientToken(): string {
-    const crypto = require('crypto');
-    return crypto.randomBytes(16).toString('hex');
+    return crypto.randomBytes(16).toString("hex");
   }
 
   /**

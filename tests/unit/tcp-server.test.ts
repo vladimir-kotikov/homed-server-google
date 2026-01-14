@@ -15,7 +15,7 @@ describe('TCPServer', () => {
     if (server) {
       try {
         await server.stop();
-      } catch (error) {
+      } catch {
         // Ignore errors on cleanup
       }
     }
@@ -109,7 +109,7 @@ describe('TCPServer', () => {
 
       // Send handshake
       const handshake = Buffer.allocUnsafe(12);
-      handshake.writeUInt32BE(0xFFFFFFFB, 0);
+      handshake.writeUInt32BE(0xfffffffb, 0);
       handshake.writeUInt32BE(2, 4);
       handshake.writeUInt32BE(12345, 8);
 
@@ -122,7 +122,9 @@ describe('TCPServer', () => {
     }, 10000);
 
     it('should emit client-authorization event', async () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const authPromise = new Promise<any>((resolve) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         server.on('client-authorization', (client: ClientConnection, auth: any) => {
           resolve(auth);
         });
@@ -143,7 +145,7 @@ describe('TCPServer', () => {
       const message: ProtocolMessage = {
         action: 'publish',
         topic: 'test/topic',
-        message: { test: true }
+        message: { test: true },
       };
 
       expect(() => server.broadcastToUser('user-1', message)).not.toThrow();

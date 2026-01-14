@@ -17,8 +17,9 @@ const ESCAPE_MARKER = 0x44;
  * Protocol message interface
  */
 export interface ProtocolMessage {
-  action: 'subscribe' | 'publish';
+  action: "subscribe" | "publish";
   topic: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   message?: any;
 }
 

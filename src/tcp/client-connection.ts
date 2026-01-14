@@ -1,7 +1,13 @@
-import { EventEmitter } from 'events';
-import { Socket } from 'net';
-import { AES128CBC, deriveMD5Key, DHKeyExchange, padBuffer, unpadBuffer } from './crypto';
-import { MessageFramer, ProtocolMessage } from './protocol';
+import { EventEmitter } from "events";
+import { Socket } from "net";
+import {
+  AES128CBC,
+  deriveMD5Key,
+  DHKeyExchange,
+  padBuffer,
+  unpadBuffer,
+} from "./crypto";
+import { MessageFramer, ProtocolMessage } from "./protocol";
 
 /**
  * Represents a single TCP client connection
@@ -28,16 +34,16 @@ export class ClientConnection extends EventEmitter {
    * Set up socket event handlers
    */
   private setupSocketHandlers(): void {
-    this.socket.on('data', (data: Buffer) => {
+    this.socket.on("data", (data: Buffer) => {
       this.handleData(data);
     });
 
-    this.socket.on('error', (error: Error) => {
-      this.emit('error', error);
+    this.socket.on("error", (error: Error) => {
+      this.emit("error", error);
     });
 
-    this.socket.on('close', () => {
-      this.emit('close');
+    this.socket.on("close", () => {
+      this.emit("close");
     });
   }
 
@@ -57,14 +63,14 @@ export class ClientConnection extends EventEmitter {
    */
   private handleHandshakeData(data: Buffer): void {
     if (data.length < 12) {
-      this.emit('error', new Error('Invalid handshake data length'));
+      this.emit("error", new Error("Invalid handshake data length"));
       return;
     }
 
     try {
       // Read client's DH parameters (big-endian)
-      const clientPrime = data.readUInt32BE(0);
-      const clientGenerator = data.readUInt32BE(4);
+      const _clientPrime = data.readUInt32BE(0);
+      const _clientGenerator = data.readUInt32BE(4);
       const clientSharedKey = data.readUInt32BE(8);
 
       // Generate server DH parameters
@@ -86,9 +92,9 @@ export class ClientConnection extends EventEmitter {
       this.socket.write(response);
 
       this.handshakeComplete = true;
-      this.emit('handshake-complete');
+      this.emit("handshake-complete");
     } catch (error) {
-      this.emit('error', new Error(`Handshake failed: ${error}`));
+      this.emit("error", new Error(`Handshake failed: ${error}`));
     }
   }
 
@@ -97,7 +103,7 @@ export class ClientConnection extends EventEmitter {
    */
   private handleEncryptedData(data: Buffer): void {
     if (!this.aes) {
-      this.emit('error', new Error('AES not initialized'));
+      this.emit("error", new Error("AES not initialized"));
       return;
     }
 
@@ -111,13 +117,16 @@ export class ClientConnection extends EventEmitter {
         const unpaddedData = unpadBuffer(decryptedData);
 
         // Parse JSON
-        const json = unpaddedData.toString('utf8');
+        const json = unpaddedData.toString("utf8");
         const message: ProtocolMessage = JSON.parse(json);
 
         this.handleMessage(message);
       }
     } catch (error) {
-      this.emit('error', new Error(`Failed to process encrypted data: ${error}`));
+      this.emit(
+        "error",
+        new Error(`Failed to process encrypted data: ${error}`)
+      );
     }
   }
 
@@ -129,23 +138,24 @@ export class ClientConnection extends EventEmitter {
     if (!this.authenticated) {
       this.handleAuthorizationMessage(message);
     } else {
-      this.emit('message', message);
+      this.emit("message", message);
     }
   }
 
   /**
    * Handle authorization message
    */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private handleAuthorizationMessage(message: any): void {
     // Authorization message should have uniqueId and token
     if (message.uniqueId && message.token) {
       this.uniqueId = message.uniqueId;
-      this.emit('authorization', {
+      this.emit("authorization", {
         uniqueId: message.uniqueId,
-        token: message.token
+        token: message.token,
       });
     } else {
-      this.emit('error', new Error('Invalid authorization message'));
+      this.emit("error", new Error("Invalid authorization message"));
     }
   }
 
@@ -155,7 +165,7 @@ export class ClientConnection extends EventEmitter {
   setAuthenticated(userId: string): void {
     this.authenticated = true;
     this.userId = userId;
-    this.emit('authenticated', userId);
+    this.emit("authenticated", userId);
   }
 
   /**
@@ -163,13 +173,13 @@ export class ClientConnection extends EventEmitter {
    */
   sendMessage(message: ProtocolMessage): void {
     if (!this.aes) {
-      throw new Error('Cannot send message: AES not initialized');
+      throw new Error("Cannot send message: AES not initialized");
     }
 
     try {
       // Serialize to JSON
       const json = JSON.stringify(message);
-      const buffer = Buffer.from(json, 'utf8');
+      const buffer = Buffer.from(json, "utf8");
 
       // Pad to 16-byte boundary
       const padded = padBuffer(buffer);
@@ -183,7 +193,7 @@ export class ClientConnection extends EventEmitter {
       // Send
       this.socket.write(framed);
     } catch (error) {
-      this.emit('error', new Error(`Failed to send message: ${error}`));
+      this.emit("error", new Error(`Failed to send message: ${error}`));
     }
   }
 

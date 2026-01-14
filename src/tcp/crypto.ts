@@ -1,4 +1,4 @@
-import * as crypto from 'crypto';
+import * as crypto from "crypto";
 
 /**
  * Diffie-Hellman key exchange implementation
@@ -13,25 +13,33 @@ export class DHKeyExchange {
   constructor() {
     // Use standard DH parameters
     // Prime (p) and generator (g) for DH key exchange
-    this.prime = 0xFFFFFFFB; // Large prime number (4294967291)
+    this.prime = 0xfffffffb; // Large prime number (4294967291)
     this.generator = 2;
 
     // Generate private value (random number)
-    this.privateValue = crypto.randomInt(1000, 0xFFFFFF);
+    this.privateValue = crypto.randomInt(1000, 0xffffff);
 
     // Compute public value: g^private mod p
     // For simplicity, use a simpler computation that works with 32-bit numbers
-    this.publicValue = this.modPow(this.generator, this.privateValue, this.prime);
+    this.publicValue = this.modPow(
+      this.generator,
+      this.privateValue,
+      this.prime
+    );
   }
 
   /**
    * Generate DH parameters for handshake
    */
-  generateParameters(): { prime: number; generator: number; sharedKey: number } {
+  generateParameters(): {
+    prime: number;
+    generator: number;
+    sharedKey: number;
+  } {
     return {
       prime: this.prime,
       generator: this.generator,
-      sharedKey: this.publicValue
+      sharedKey: this.publicValue,
     };
   }
 
@@ -77,7 +85,7 @@ export class DHKeyExchange {
 export function deriveMD5Key(privateKey: number): Buffer {
   const buffer = Buffer.allocUnsafe(4);
   buffer.writeUInt32BE(privateKey, 0);
-  return crypto.createHash('md5').update(buffer).digest();
+  return crypto.createHash("md5").update(buffer).digest();
 }
 
 /**
@@ -89,10 +97,10 @@ export class AES128CBC {
 
   constructor(key: Buffer, iv: Buffer) {
     if (key.length !== 16) {
-      throw new Error('AES-128 key must be 16 bytes');
+      throw new Error("AES-128 key must be 16 bytes");
     }
     if (iv.length !== 16) {
-      throw new Error('AES IV must be 16 bytes');
+      throw new Error("AES IV must be 16 bytes");
     }
 
     this.key = key;
@@ -103,7 +111,7 @@ export class AES128CBC {
    * Encrypt data using AES-128-CBC
    */
   encrypt(data: Buffer): Buffer {
-    const cipher = crypto.createCipheriv('aes-128-cbc', this.key, this.iv);
+    const cipher = crypto.createCipheriv("aes-128-cbc", this.key, this.iv);
     cipher.setAutoPadding(false); // Manual padding required
 
     return Buffer.concat([cipher.update(data), cipher.final()]);
@@ -113,7 +121,7 @@ export class AES128CBC {
    * Decrypt data using AES-128-CBC
    */
   decrypt(data: Buffer): Buffer {
-    const decipher = crypto.createDecipheriv('aes-128-cbc', this.key, this.iv);
+    const decipher = crypto.createDecipheriv("aes-128-cbc", this.key, this.iv);
     decipher.setAutoPadding(false); // Manual padding required
 
     return Buffer.concat([decipher.update(data), decipher.final()]);

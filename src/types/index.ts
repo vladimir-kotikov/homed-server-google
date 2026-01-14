@@ -2,7 +2,7 @@
 
 export interface SyncRequest {
   requestId: string;
-  inputs: [{ intent: 'action.devices.SYNC' }];
+  inputs: [{ intent: "action.devices.SYNC" }];
 }
 
 export interface SyncResponse {
@@ -15,12 +15,14 @@ export interface SyncResponse {
 
 export interface QueryRequest {
   requestId: string;
-  inputs: [{
-    intent: 'action.devices.QUERY';
-    payload: {
-      devices: [{ id: string }];
-    };
-  }];
+  inputs: [
+    {
+      intent: "action.devices.QUERY";
+      payload: {
+        devices: [{ id: string }];
+      };
+    },
+  ];
 }
 
 export interface QueryResponse {
@@ -30,6 +32,7 @@ export interface QueryResponse {
       [deviceId: string]: {
         online: boolean;
         status: string;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         [key: string]: any;
       };
     };
@@ -38,40 +41,49 @@ export interface QueryResponse {
 
 export interface ExecuteRequest {
   requestId: string;
-  inputs: [{
-    intent: 'action.devices.EXECUTE';
-    payload: {
-      commands: [{
-        devices: [{ id: string }];
-        execution: [{
-          command: string;
-          params?: any;
-        }];
-      }];
-    };
-  }];
+  inputs: [
+    {
+      intent: "action.devices.EXECUTE";
+      payload: {
+        commands: [
+          {
+            devices: [{ id: string }];
+            execution: [
+              {
+                command: string;
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                params?: any;
+              },
+            ];
+          },
+        ];
+      };
+    },
+  ];
 }
 
 export interface ExecuteResponse {
   requestId: string;
   payload: {
-    commands: [{
-      ids: string[];
-      status: 'SUCCESS' | 'PENDING' | 'OFFLINE' | 'ERROR';
-      states?: any;
-      errorCode?: string;
-    }];
+    commands: [
+      {
+        ids: string[];
+        status: "SUCCESS" | "PENDING" | "OFFLINE" | "ERROR";
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        states?: any;
+        errorCode?: string;
+      },
+    ];
   };
 }
 
 export interface DisconnectRequest {
   requestId: string;
-  inputs: [{ intent: 'action.devices.DISCONNECT' }];
+  inputs: [{ intent: "action.devices.DISCONNECT" }];
 }
 
-export interface DisconnectResponse {
-  // Empty response
-}
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface DisconnectResponse {}
 
 export interface GoogleDevice {
   id: string;
@@ -83,6 +95,7 @@ export interface GoogleDevice {
     nicknames: string[];
   };
   willReportState: boolean;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   attributes?: Record<string, any>;
   deviceInfo?: {
     manufacturer: string;
@@ -90,11 +103,13 @@ export interface GoogleDevice {
     hwVersion: string;
     swVersion: string;
   };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   customData?: any;
 }
 
 export interface GoogleCommand {
   command: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   params?: any;
 }
 

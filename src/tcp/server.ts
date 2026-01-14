@@ -1,7 +1,7 @@
-import { EventEmitter } from 'events';
-import { Server as NetServer, Socket, createServer } from 'net';
-import { ClientConnection } from './client-connection';
-import { ProtocolMessage } from './protocol';
+import { EventEmitter } from "events";
+import { Server as NetServer, Socket, createServer } from "net";
+import { ClientConnection } from "./client-connection";
+import { ProtocolMessage } from "./protocol";
 
 /**
  * TCP server for accepting Homed client connections
@@ -26,13 +26,13 @@ export class TCPServer extends EventEmitter {
         this.handleConnection(socket);
       });
 
-      this.server.on('error', (error: Error) => {
-        this.emit('error', error);
+      this.server.on("error", (error: Error) => {
+        this.emit("error", error);
         reject(error);
       });
 
       this.server.listen(this.port, () => {
-        this.emit('listening', this.port);
+        this.emit("listening", this.port);
         resolve();
       });
     });
@@ -71,17 +71,17 @@ export class TCPServer extends EventEmitter {
    */
   private handleConnection(socket: Socket): void {
     const client = new ClientConnection(socket);
-    const clientId = `${socket.remoteAddress}:${socket.remotePort}`;
+    const _clientId = `${socket.remoteAddress}:${socket.remotePort}`;
 
-    client.on('handshake-complete', () => {
-      this.emit('client-handshake', client);
+    client.on("handshake-complete", () => {
+      this.emit("client-handshake", client);
     });
 
-    client.on('authorization', (auth: { uniqueId: string; token: string }) => {
-      this.emit('client-authorization', client, auth);
+    client.on("authorization", (auth: { uniqueId: string; token: string }) => {
+      this.emit("client-authorization", client, auth);
     });
 
-    client.on('authenticated', (userId: string) => {
+    client.on("authenticated", (userId: string) => {
       // Store client by uniqueId
       const uniqueId = client.getUniqueId();
       if (uniqueId) {
@@ -91,21 +91,22 @@ export class TCPServer extends EventEmitter {
         if (!this.userClients.has(userId)) {
           this.userClients.set(userId, new Set());
         }
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
         this.userClients.get(userId)!.add(uniqueId);
 
-        this.emit('client-authenticated', client, userId);
+        this.emit("client-authenticated", client, userId);
       }
     });
 
-    client.on('message', (message: ProtocolMessage) => {
-      this.emit('client-message', client, message);
+    client.on("message", (message: ProtocolMessage) => {
+      this.emit("client-message", client, message);
     });
 
-    client.on('error', (error: Error) => {
-      this.emit('client-error', client, error);
+    client.on("error", (error: Error) => {
+      this.emit("client-error", client, error);
     });
 
-    client.on('close', () => {
+    client.on("close", () => {
       // Remove client from maps
       const uniqueId = client.getUniqueId();
       const userId = client.getUserId();
@@ -124,7 +125,7 @@ export class TCPServer extends EventEmitter {
         }
       }
 
-      this.emit('client-disconnected', client);
+      this.emit("client-disconnected", client);
     });
   }
 

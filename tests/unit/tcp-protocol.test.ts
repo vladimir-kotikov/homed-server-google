@@ -1,22 +1,22 @@
-import { MessageFramer } from '../../src/tcp/protocol';
+import { MessageFramer } from "../../src/tcp/protocol";
 
-describe('MessageFramer', () => {
+describe("MessageFramer", () => {
   let framer: MessageFramer;
 
   beforeEach(() => {
     framer = new MessageFramer();
   });
 
-  describe('frame', () => {
-    it('should add start and end markers', () => {
-      const data = Buffer.from('test');
+  describe("frame", () => {
+    it("should add start and end markers", () => {
+      const data = Buffer.from("test");
       const framed = framer.frame(data);
 
       expect(framed[0]).toBe(0x42); // START_MARKER
       expect(framed[framed.length - 1]).toBe(0x43); // END_MARKER
     });
 
-    it('should escape START_MARKER in data', () => {
+    it("should escape START_MARKER in data", () => {
       const data = Buffer.from([0x42]);
       const framed = framer.frame(data);
 
@@ -24,7 +24,7 @@ describe('MessageFramer', () => {
       expect(framed).toEqual(Buffer.from([0x42, 0x44, 0x62, 0x43]));
     });
 
-    it('should escape END_MARKER in data', () => {
+    it("should escape END_MARKER in data", () => {
       const data = Buffer.from([0x43]);
       const framed = framer.frame(data);
 
@@ -32,7 +32,7 @@ describe('MessageFramer', () => {
       expect(framed).toEqual(Buffer.from([0x42, 0x44, 0x63, 0x43]));
     });
 
-    it('should escape ESCAPE_MARKER in data', () => {
+    it("should escape ESCAPE_MARKER in data", () => {
       const data = Buffer.from([0x44]);
       const framed = framer.frame(data);
 
@@ -40,16 +40,18 @@ describe('MessageFramer', () => {
       expect(framed).toEqual(Buffer.from([0x42, 0x44, 0x64, 0x43]));
     });
 
-    it('should escape multiple special bytes', () => {
+    it("should escape multiple special bytes", () => {
       const data = Buffer.from([0x42, 0x43, 0x44]);
       const framed = framer.frame(data);
 
       // Should be: [START, ESCAPE, 0x62, ESCAPE, 0x63, ESCAPE, 0x64, END]
-      expect(framed).toEqual(Buffer.from([0x42, 0x44, 0x62, 0x44, 0x63, 0x44, 0x64, 0x43]));
+      expect(framed).toEqual(
+        Buffer.from([0x42, 0x44, 0x62, 0x44, 0x63, 0x44, 0x64, 0x43])
+      );
     });
 
-    it('should handle data with no special bytes', () => {
-      const data = Buffer.from('hello world');
+    it("should handle data with no special bytes", () => {
+      const data = Buffer.from("hello world");
       const framed = framer.frame(data);
 
       expect(framed[0]).toBe(0x42);
@@ -58,9 +60,9 @@ describe('MessageFramer', () => {
     });
   });
 
-  describe('unframe', () => {
-    it('should extract a single complete message', () => {
-      const data = Buffer.from('test');
+  describe("unframe", () => {
+    it("should extract a single complete message", () => {
+      const data = Buffer.from("test");
       const framed = framer.frame(data);
 
       const messages = framer.unframe(framed);
@@ -69,9 +71,9 @@ describe('MessageFramer', () => {
       expect(messages[0]).toEqual(data);
     });
 
-    it('should handle multiple messages in one chunk', () => {
-      const data1 = Buffer.from('message1');
-      const data2 = Buffer.from('message2');
+    it("should handle multiple messages in one chunk", () => {
+      const data1 = Buffer.from("message1");
+      const data2 = Buffer.from("message2");
       const framed1 = framer.frame(data1);
       const framed2 = framer.frame(data2);
       const combined = Buffer.concat([framed1, framed2]);
@@ -83,8 +85,8 @@ describe('MessageFramer', () => {
       expect(messages[1]).toEqual(data2);
     });
 
-    it('should handle partial messages across multiple calls', () => {
-      const data = Buffer.from('test message');
+    it("should handle partial messages across multiple calls", () => {
+      const data = Buffer.from("test message");
       const framed = framer.frame(data);
 
       // Split the framed message in half
@@ -101,7 +103,7 @@ describe('MessageFramer', () => {
       expect(messages[0]).toEqual(data);
     });
 
-    it('should unescape START_MARKER', () => {
+    it("should unescape START_MARKER", () => {
       const data = Buffer.from([0x42]);
       const framed = framer.frame(data);
       const messages = framer.unframe(framed);
@@ -110,7 +112,7 @@ describe('MessageFramer', () => {
       expect(messages[0]).toEqual(data);
     });
 
-    it('should unescape END_MARKER', () => {
+    it("should unescape END_MARKER", () => {
       const data = Buffer.from([0x43]);
       const framed = framer.frame(data);
       const messages = framer.unframe(framed);
@@ -119,7 +121,7 @@ describe('MessageFramer', () => {
       expect(messages[0]).toEqual(data);
     });
 
-    it('should unescape ESCAPE_MARKER', () => {
+    it("should unescape ESCAPE_MARKER", () => {
       const data = Buffer.from([0x44]);
       const framed = framer.frame(data);
       const messages = framer.unframe(framed);
@@ -128,7 +130,7 @@ describe('MessageFramer', () => {
       expect(messages[0]).toEqual(data);
     });
 
-    it('should handle complex escaped sequences', () => {
+    it("should handle complex escaped sequences", () => {
       const data = Buffer.from([0x42, 0x43, 0x44, 0x01, 0x02]);
       const framed = framer.frame(data);
       const messages = framer.unframe(framed);
@@ -137,7 +139,7 @@ describe('MessageFramer', () => {
       expect(messages[0]).toEqual(data);
     });
 
-    it('should handle empty data', () => {
+    it("should handle empty data", () => {
       const data = Buffer.from([]);
       const framed = framer.frame(data);
       const messages = framer.unframe(framed);
@@ -147,9 +149,9 @@ describe('MessageFramer', () => {
     });
   });
 
-  describe('reset', () => {
-    it('should clear internal buffer', () => {
-      const data = Buffer.from('test');
+  describe("reset", () => {
+    it("should clear internal buffer", () => {
+      const data = Buffer.from("test");
       const framed = framer.frame(data);
       const partial = framed.slice(0, 5);
 
@@ -163,8 +165,8 @@ describe('MessageFramer', () => {
     });
   });
 
-  describe('edge cases', () => {
-    it('should handle buffer with only markers', () => {
+  describe("edge cases", () => {
+    it("should handle buffer with only markers", () => {
       const data = Buffer.from([0x42, 0x43]);
       const messages = framer.unframe(data);
 
@@ -172,9 +174,9 @@ describe('MessageFramer', () => {
       expect(messages[0]).toEqual(Buffer.from([]));
     });
 
-    it('should handle data before start marker', () => {
+    it("should handle data before start marker", () => {
       const garbage = Buffer.from([0x01, 0x02, 0x03]);
-      const data = Buffer.from('test');
+      const data = Buffer.from("test");
       const framed = framer.frame(data);
       const combined = Buffer.concat([garbage, framed]);
 
@@ -185,8 +187,8 @@ describe('MessageFramer', () => {
       expect(messages[0]).toEqual(data);
     });
 
-    it('should handle large messages', () => {
-      const data = Buffer.alloc(10000, 0xFF);
+    it("should handle large messages", () => {
+      const data = Buffer.alloc(10000, 0xff);
       const framed = framer.frame(data);
       const messages = framer.unframe(framed);
 
