@@ -1,9 +1,9 @@
-import * as net from 'net';
-import { ClientConnection } from '../../src/tcp/client-connection';
-import { ProtocolMessage } from '../../src/tcp/protocol';
-import { TCPServer } from '../../src/tcp/server';
+import * as net from "net";
+import { ClientConnection } from "../../src/tcp/client-connection";
+import { ProtocolMessage } from "../../src/tcp/protocol";
+import { TCPServer } from "../../src/tcp/server";
 
-describe('TCPServer', () => {
+describe("TCPServer", () => {
   let server: TCPServer;
   const TEST_PORT = 19999 + Math.floor(Math.random() * 1000); // Random port to avoid conflicts
 
@@ -21,14 +21,14 @@ describe('TCPServer', () => {
     }
   });
 
-  describe('lifecycle', () => {
-    it('should start successfully', async () => {
+  describe("lifecycle", () => {
+    it("should start successfully", async () => {
       await expect(server.start()).resolves.not.toThrow();
     });
 
-    it('should emit listening event on start', async () => {
-      const listeningPromise = new Promise<number>((resolve) => {
-        server.on('listening', (port: number) => {
+    it("should emit listening event on start", async () => {
+      const listeningPromise = new Promise<number>(resolve => {
+        server.on("listening", (port: number) => {
           resolve(port);
         });
       });
@@ -39,16 +39,16 @@ describe('TCPServer', () => {
       expect(port).toBe(TEST_PORT);
     });
 
-    it('should stop successfully', async () => {
+    it("should stop successfully", async () => {
       await server.start();
       await expect(server.stop()).resolves.not.toThrow();
     });
 
-    it('should handle stop when not started', async () => {
+    it("should handle stop when not started", async () => {
       await expect(server.stop()).resolves.not.toThrow();
     });
 
-    it.skip('should reject start on port already in use', async () => {
+    it.skip("should reject start on port already in use", async () => {
       await server.start();
 
       const server2 = new TCPServer(TEST_PORT);
@@ -60,47 +60,49 @@ describe('TCPServer', () => {
     }, 15000);
   });
 
-  describe('client management', () => {
-    it('should track connected clients', async () => {
+  describe("client management", () => {
+    it("should track connected clients", async () => {
       await server.start();
 
       expect(server.getClientCount()).toBe(0);
       expect(server.getClientIds()).toEqual([]);
     });
 
-    it('should return empty array for non-existent user', async () => {
+    it("should return empty array for non-existent user", async () => {
       await server.start();
 
-      const clients = server.getClientsByUser('non-existent-user');
+      const clients = server.getClientsByUser("non-existent-user");
       expect(clients).toEqual([]);
     });
 
-    it('should return undefined for non-existent client', async () => {
+    it("should return undefined for non-existent client", async () => {
       await server.start();
 
-      const client = server.getClient('non-existent-client');
+      const client = server.getClient("non-existent-client");
       expect(client).toBeUndefined();
     });
 
-    it('should handle disconnectClient for non-existent client', async () => {
+    it("should handle disconnectClient for non-existent client", async () => {
       await server.start();
 
-      expect(() => server.disconnectClient('non-existent')).not.toThrow();
+      expect(() => server.disconnectClient("non-existent")).not.toThrow();
     });
   });
 
-  describe('events', () => {
-    it('should emit client-handshake event', async () => {
-      const handshakePromise = new Promise<ClientConnection>((resolve, reject) => {
-        const timeout = setTimeout(() => {
-          reject(new Error('Handshake timeout'));
-        }, 8000);
+  describe("events", () => {
+    it("should emit client-handshake event", async () => {
+      const handshakePromise = new Promise<ClientConnection>(
+        (resolve, reject) => {
+          const timeout = setTimeout(() => {
+            reject(new Error("Handshake timeout"));
+          }, 8000);
 
-        server.on('client-handshake', (client: ClientConnection) => {
-          clearTimeout(timeout);
-          resolve(client);
-        });
-      });
+          server.on("client-handshake", (client: ClientConnection) => {
+            clearTimeout(timeout);
+            resolve(client);
+          });
+        }
+      );
 
       await server.start();
 
@@ -121,13 +123,15 @@ describe('TCPServer', () => {
       client.destroy();
     }, 10000);
 
-    it('should emit client-authorization event', async () => {
+    it("should emit client-authorization event", async () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const authPromise = new Promise<any>((resolve) => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        server.on('client-authorization', (client: ClientConnection, auth: any) => {
-          resolve(auth);
-        });
+      const authPromise = new Promise<any>(resolve => {
+        server.on(
+          "client-authorization",
+          (client: ClientConnection, auth: any) => {
+            resolve(auth);
+          }
+        );
       });
 
       await server.start();
@@ -138,22 +142,22 @@ describe('TCPServer', () => {
     });
   });
 
-  describe('message routing', () => {
-    it('should handle broadcastToUser with no clients', async () => {
+  describe("message routing", () => {
+    it("should handle broadcastToUser with no clients", async () => {
       await server.start();
 
       const message: ProtocolMessage = {
-        action: 'publish',
-        topic: 'test/topic',
+        action: "publish",
+        topic: "test/topic",
         message: { test: true },
       };
 
-      expect(() => server.broadcastToUser('user-1', message)).not.toThrow();
+      expect(() => server.broadcastToUser("user-1", message)).not.toThrow();
     });
   });
 
-  describe('error handling', () => {
-    it('should handle server errors gracefully', async () => {
+  describe("error handling", () => {
+    it("should handle server errors gracefully", async () => {
       await server.start();
 
       // The server should be running

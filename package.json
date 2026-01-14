@@ -19,7 +19,11 @@
     "format:check": "prettier --check 'src/**/*.ts' 'tests/**/*.ts'",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
-    "seed:test": "ts-node tests/integration/seed-test-data.ts"
+    "seed:test": "ts-node tests/integration/seed-test-data.ts",
+    "test:integration": "jest --config jest.config.integration.js tests/integration --runInBand --detectOpenHandles --forceExit",
+    "docker:up": "cd tests/integration && docker compose up -d",
+    "docker:down": "cd tests/integration && docker compose down",
+    "docker:logs": "cd tests/integration && docker compose logs -f"
   },
   "dependencies": {
     "@prisma/client": "^5.0.0",
@@ -28,7 +32,8 @@
     "express": "^4.18.2",
     "google-auth-library": "^9.0.0",
     "googleapis": "^126.0.0",
-    "jsonwebtoken": "^9.0.2"
+    "jsonwebtoken": "^9.0.2",
+    "mqtt": "^5.14.1"
   },
   "devDependencies": {
     "@types/bcrypt": "^5.0.1",

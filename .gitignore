@@ -19,3 +19,8 @@ keys/*.json
 !keys/.gitkeep
 
 coverage/
+
+# Integration test artifacts
+tests/integration/test.db
+tests/integration/test.db-journal
+tests/integration/homed-cloud.conf

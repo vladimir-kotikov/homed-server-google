@@ -1,0 +1,66 @@
+services:
+  # MQTT Broker
+  mqtt:
+    image: eclipse-mosquitto:2.0
+    container_name: homed-test-mqtt
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf
+    networks:
+      - homed-test
+    healthcheck:
+      test: ["CMD", "mosquitto_sub", "-t", "$$SYS/#", "-C", "1", "-i", "healthcheck", "-W", "3"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+
+  # TCP Server (our Node.js application)
+  tcp-server:
+    build:
+      context: ../..
+      dockerfile: tests/integration/Dockerfile
+    container_name: homed-test-tcp-server
+    ports:
+      - "8042:8042"
+      - "8080:8080"
+    environment:
+      - DATABASE_URL=file:/app/test.db
+      - TCP_PORT=8042
+      - PORT=8080
+      - NODE_ENV=test
+      - JWT_SECRET=test-jwt-secret-for-integration-tests
+    volumes:
+      - ./test.db:/app/test.db
+      - ../../prisma:/app/prisma
+    networks:
+      - homed-test
+    depends_on:
+      mqtt:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "8042"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Homed Service Cloud Client
+  homed-client:
+    image: debian:bullseye-slim
+    container_name: homed-test-homed-client
+    volumes:
+      - ./homed-cloud.conf:/etc/homed/cloud.conf
+      - ./client-entrypoint.sh:/entrypoint.sh
+    networks:
+      - homed-test
+    depends_on:
+      tcp-server:
+        condition: service_healthy
+      mqtt:
+        condition: service_healthy
+    entrypoint: ["/entrypoint.sh"]
+    restart: unless-stopped
+
+networks:
+  homed-test:
+    driver: bridge

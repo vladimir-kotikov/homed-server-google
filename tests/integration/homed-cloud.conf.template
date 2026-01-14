@@ -1,0 +1,13 @@
+# Homed Service Cloud configuration for integration testing
+# This file is generated from the template by seed-test-data.ts
+
+[cloud]
+uniqueid = integration-test-client
+token = {{CLIENT_TOKEN}}
+host = tcp-server
+port = 8042
+
+[mqtt]
+host = mqtt
+port = 1883
+prefix = homed
