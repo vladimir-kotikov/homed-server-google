@@ -31,15 +31,28 @@ export async function waitForService(
       );
 
       if (result.trim() === serviceName) {
-        // Service is running, check health
-        const healthResult = execSync(
-          `docker inspect --format='{{.State.Health.Status}}' homed-test-${serviceName}`,
-          { encoding: "utf-8", cwd: process.cwd() }
-        ).trim();
+        // Service is running, check health (if it has a healthcheck)
+        try {
+          const healthResult = execSync(
+            `docker inspect --format='{{.State.Health.Status}}' homed-test-${serviceName}`,
+            { encoding: "utf-8", cwd: process.cwd() }
+          ).trim();
 
-        if (healthResult === "healthy" || healthResult === "") {
-          console.log(`✅ Service ${serviceName} is ready`);
-          return;
+          if (healthResult === "healthy") {
+            console.log(`✅ Service ${serviceName} is ready`);
+            return;
+          }
+        } catch {
+          // No health check defined, just check if running
+          const statusResult = execSync(
+            `docker inspect --format='{{.State.Status}}' homed-test-${serviceName}`,
+            { encoding: "utf-8", cwd: process.cwd() }
+          ).trim();
+
+          if (statusResult === "running") {
+            console.log(`✅ Service ${serviceName} is ready`);
+            return;
+          }
         }
       }
     } catch {

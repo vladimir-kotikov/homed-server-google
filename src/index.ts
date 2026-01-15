@@ -1,12 +1,10 @@
 import dotenv from "dotenv";
-import mqtt from "mqtt";
 import { AuthService } from "./services/auth.service";
 import { TCPServer } from "./tcp/server";
 
 dotenv.config();
 
 const TCP_PORT = parseInt(process.env.TCP_PORT || "8042", 10);
-const MQTT_URL = process.env.MQTT_URL || "mqtt://mqtt:1883";
 const DATABASE_URL = process.env.DATABASE_URL || "file:./prisma/dev.db";
 
 console.log("Homed Server Google - Starting...");
@@ -59,34 +57,11 @@ tcpServer.on("client-message", (client: any, message: any) => {
   console.log(
     `Received message from client ${client.getUniqueId()}: ${JSON.stringify(message)}`
   );
-});
 
-tcpServer.on("error", (error: Error) => {
-  console.error("TCP Server error:", error);
-});
-
-// Connect to MQTT broker
-const mqttClient = mqtt.connect(MQTT_URL);
-
-mqttClient.on("connect", () => {
-  console.log("Connected to MQTT broker");
-
-  // Subscribe to all homed topics
-  mqttClient.subscribe("homed/#", err => {
-    if (err) {
-      console.error("Failed to subscribe to MQTT topics:", err);
-    } else {
-      console.log("Subscribed to homed/# topics");
-    }
-  });
-});
-
-mqttClient.on("message", (topic: string, payload: Buffer) => {
-  try {
-    const _message = payload.toString();
-    console.log(`MQTT message received: ${topic}`);
-
-    // Log different message types for test verification
+  // Log different message types for test verification
+  // Messages are received from homed-service-cloud which subscribes to MQTT
+  if (message.topic) {
+    const topic = message.topic;
     if (topic.includes("/status/")) {
       console.log(`Service status update: ${topic}`);
     } else if (topic.includes("/expose/")) {
@@ -98,13 +73,11 @@ mqttClient.on("message", (topic: string, payload: Buffer) => {
       const deviceId = topic.split("/").pop();
       console.log(`Device state update for: ${deviceId}`);
     }
-  } catch (error) {
-    console.error("Error processing MQTT message:", error);
   }
 });
 
-mqttClient.on("error", (error: Error) => {
-  console.error("MQTT error:", error);
+tcpServer.on("error", (error: Error) => {
+  console.error("TCP Server error:", error);
 });
 
 tcpServer
@@ -120,7 +93,6 @@ tcpServer
 // Graceful shutdown
 const shutdown = async () => {
   console.log("Shutting down...");
-  mqttClient.end();
   await tcpServer.stop();
   await authService.disconnect();
   process.exit(0);

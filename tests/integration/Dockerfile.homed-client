@@ -1,0 +1,19 @@
+FROM debian:bullseye-slim
+
+# Install wget and gnupg for repository setup
+RUN apt-get update && \
+    apt-get install -y wget gnupg && \
+    rm -rf /var/lib/apt/lists/*
+
+# Add Homed APT repository and install homed-cloud
+RUN wget -O /etc/apt/trusted.gpg.d/homed.asc https://apt.homed.dev/apt.key && \
+    echo "deb https://apt.homed.dev/ debian main" > /etc/apt/sources.list.d/homed.list && \
+    apt-get update && \
+    apt-get install -y homed-cloud && \
+    rm -rf /var/lib/apt/lists/*
+
+# Copy configuration
+COPY homed-cloud.conf /etc/homed/homed-cloud.conf
+
+# Run homed-cloud
+CMD ["homed-cloud"]
