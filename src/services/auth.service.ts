@@ -18,6 +18,22 @@ export class AuthService {
         where: { clientToken: token },
       });
 
+      if (!user) {
+        return null;
+      }
+
+      // Use constant-time comparison to prevent timing attacks
+      const tokenBuffer = Buffer.from(token);
+      const storedBuffer = Buffer.from(user.clientToken);
+
+      if (tokenBuffer.length !== storedBuffer.length) {
+        return null;
+      }
+
+      if (!crypto.timingSafeEqual(tokenBuffer, storedBuffer)) {
+        return null;
+      }
+
       return user;
     } catch (error) {
       console.error("Error validating client token:", error);

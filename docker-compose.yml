@@ -18,8 +18,8 @@ services:
   # TCP Server (our Node.js application)
   tcp-server:
     build:
-      context: ../..
-      dockerfile: tests/integration/Dockerfile
+      context: .
+      dockerfile: Dockerfile
     container_name: homed-test-tcp-server
     ports:
       - "8042:8042"
@@ -31,8 +31,8 @@ services:
       - NODE_ENV=test
       - JWT_SECRET=test-jwt-secret-for-integration-tests
     volumes:
-      - ./test.db:/app/test.db
-      - ../../prisma:/app/prisma
+      - ./tests/integration/test.db:/app/test.db
+      - ./prisma:/app/prisma
     networks:
       - homed-test
     depends_on:
