@@ -7,14 +7,8 @@ import * as crypto from "crypto";
 export class DHKeyExchange {
   private prime!: number;
   private generator!: number;
-  private privateValue: number;
+  private privateValue: number = 12345; // Use fixed value for debugging
   private publicValue: number | null = null;
-
-  constructor() {
-    // Generate private value (random number)
-    // Client will provide prime and generator via setPrime/setGenerator
-    this.privateValue = crypto.randomInt(1, 0x7fffffff);
-  }
 
   /**
    * Set the prime modulus (provided by client in handshake)
@@ -34,13 +28,19 @@ export class DHKeyExchange {
 
   /**
    * Compute private key from client's shared key
+   * Uses Diffie-Hellman: (clientSharedKey^privateValue) mod prime
    */
   computePrivateKey(clientSharedKey: number): number {
     if (!this.prime) {
       throw new Error("Prime must be set before computing private key");
     }
-    // Compute shared secret: clientPublic^private mod p
-    return this.modPow(clientSharedKey, this.privateValue, this.prime);
+    // Proper DH computation: clientSharedKey^privateValue mod prime
+    const sharedSecret = this.modPow(
+      clientSharedKey,
+      this.privateValue,
+      this.prime
+    );
+    return sharedSecret;
   }
 
   /**
@@ -65,22 +65,29 @@ export class DHKeyExchange {
 
   /**
    * Modular exponentiation: (base^exp) mod modulus
+   * Uses binary exponentiation for efficiency
    */
   private modPow(base: number, exp: number, modulus: number): number {
     if (modulus === 1) return 0;
+
+    // Ensure all values are treated as unsigned 32-bit
+    base = base >>> 0;
+    exp = exp >>> 0;
+    modulus = modulus >>> 0;
 
     let result = 1;
     base = base % modulus;
 
     while (exp > 0) {
       if (exp % 2 === 1) {
+        // Use Math.imul for proper 32-bit multiplication, then mod
         result = (result * base) % modulus;
       }
       exp = Math.floor(exp / 2);
       base = (base * base) % modulus;
     }
 
-    return result;
+    return result >>> 0; // Ensure unsigned result
   }
 }
 

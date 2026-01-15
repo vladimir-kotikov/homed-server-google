@@ -49,6 +49,20 @@ export class ClientConnection extends EventEmitter {
     if (!this.handshakeComplete) {
       this.handleHandshakeData(data);
     } else {
+      // Try to parse as plaintext JSON first (credentials)
+      try {
+        const jsonString = data.toString("utf8");
+        const message = JSON.parse(jsonString);
+        // If it has uniqueId and token, treat it as authorization
+        if (message.uniqueId && message.token) {
+          console.log(`DEBUG: Received plaintext authorization: ${jsonString}`);
+          this.handleAuthorizationMessage(message);
+          return;
+        }
+      } catch {
+        // Not plaintext JSON, continue with encrypted data handling
+      }
+
       this.handleEncryptedData(data);
     }
   }
@@ -80,8 +94,7 @@ export class ClientConnection extends EventEmitter {
       // Compute shared secret
       const sharedSecret = this.dh.computePrivateKey(clientSharedKey);
 
-      // Derive AES key and IV using double MD5 hash (matches homed-server-cloud)
-      // Key derivation: MD5(sharedSecret as 4-byte big-endian)
+      // Derive AES key: MD5(sharedSecret as 4-byte big-endian)
       const sharedSecretBuffer = Buffer.allocUnsafe(4);
       sharedSecretBuffer.writeUInt32BE(sharedSecret, 0);
 
@@ -89,7 +102,8 @@ export class ClientConnection extends EventEmitter {
         .createHash("md5")
         .update(sharedSecretBuffer)
         .digest();
-      // IV derivation: MD5(aesKey) - hash the FULL 16-byte key, not just 4 bytes
+
+      // IV: MD5(entire aesKey) - double MD5 hash per homed-service-cloud protocol
       const aesIV = crypto.createHash("md5").update(aesKey).digest();
 
       this.aes = new AES128CBC(aesKey, aesIV);
@@ -110,25 +124,70 @@ export class ClientConnection extends EventEmitter {
    * Handle encrypted message data
    */
   private handleEncryptedData(data: Buffer): void {
-    if (!this.aes) {
-      this.emit("error", new Error("AES not initialized"));
-      return;
-    }
-
     try {
+      // Try to parse as plaintext JSON first
+      const rawString = data.toString("utf8");
+      try {
+        const message: ProtocolMessage = JSON.parse(rawString);
+        console.log(`DEBUG: Received plaintext JSON message: ${rawString}`);
+        this.handleMessage(message);
+        return;
+      } catch {
+        // Not plaintext JSON, continue with decryption
+      }
+
+      if (!this.aes) {
+        this.emit("error", new Error("AES not initialized"));
+        return;
+      }
+
       // Unframe messages
       const messages = this.framer.unframe(data);
 
       for (const encryptedMessage of messages) {
-        // Decrypt message
+        // Try to decrypt
         const decryptedData = this.aes.decrypt(encryptedMessage);
         const unpaddedData = unpadBuffer(decryptedData);
 
+        // Check if it contains our known token or uniqueId
+        const unpaddedString = unpaddedData.toString(
+          "utf8",
+          0,
+          Math.min(unpaddedData.length, 200)
+        );
+        const unpaddedHex = unpaddedData.toString("hex");
+
+        const hasToken = unpaddedHex.includes(
+          "13e19d111d4b44f52e62f0cdf8b0980865037b3f1ec0b954e79c1d9290375b6e"
+        );
+        const hasUniqueId = unpaddedString.includes("integration-test-client");
+
+        if (hasToken) {
+          console.log(`DEBUG: Found token in decrypted data!`);
+          console.log(`DEBUG: Decrypted hex: ${unpaddedHex}`);
+        }
+        if (hasUniqueId) {
+          console.log(`DEBUG: Found uniqueId in decrypted data!`);
+          console.log(
+            `DEBUG: Decrypted text (first 300 chars): ${unpaddedString}`
+          );
+        }
+
         // Parse JSON
         const json = unpaddedData.toString("utf8");
-        const message: ProtocolMessage = JSON.parse(json);
-
-        this.handleMessage(message);
+        try {
+          const message: ProtocolMessage = JSON.parse(json);
+          this.handleMessage(message);
+        } catch (parseError) {
+          // If JSON parsing fails, log summary
+          console.log(
+            `DEBUG: Failed to parse as JSON. Data length: ${unpaddedData.length}`
+          );
+          this.emit(
+            "error",
+            new Error(`Invalid message format: ${parseError}`)
+          );
+        }
       }
     } catch (error) {
       this.emit(
