@@ -2,10 +2,9 @@
 
 import { PrismaClient } from "@prisma/client";
 import * as bcrypt from "bcrypt";
-import * as crypto from "crypto";
+import * as dotenv from "dotenv";
 import * as fs from "fs";
 import * as path from "path";
-import * as dotenv from "dotenv";
 
 // Load test environment
 dotenv.config({ path: path.join(__dirname, ".env.test") });
@@ -13,7 +12,7 @@ dotenv.config({ path: path.join(__dirname, ".env.test") });
 const prisma = new PrismaClient({
   datasources: {
     db: {
-      url: "file:./tests/integration/test.db",
+      url: `file:${path.join(__dirname, "test.db")}`,
     },
   },
 });
@@ -22,13 +21,29 @@ async function seedTestData() {
   console.log("🌱 Seeding test data...");
 
   try {
-    // Clean existing data
-    await prisma.refreshToken.deleteMany();
-    await prisma.authCode.deleteMany();
-    await prisma.user.deleteMany();
+    // Note: Database schema will be created by Docker container via prisma migrate deploy
+    // We just create the file here and seed data
+    const dbPath = path.join(__dirname, "test.db");
+    if (!fs.existsSync(dbPath)) {
+      console.log("📄 Creating empty database file...");
+      fs.writeFileSync(dbPath, "");
+    }
 
-    // Generate client token (32-byte hex string)
-    const clientToken = crypto.randomBytes(32).toString("hex");
+    // Clean existing data (only if tables exist)
+    try {
+      await prisma.refreshToken.deleteMany();
+      await prisma.authCode.deleteMany();
+      await prisma.user.deleteMany();
+    } catch (error) {
+      // Tables don't exist yet - that's okay, Docker will create them
+      console.log(
+        "ℹ️  Database tables not yet created (Docker will handle this)"
+      );
+    }
+
+    // Use static token for integration tests (prevents sync issues)
+    const clientToken =
+      "13e19d111d4b44f52e62f0cdf8b0980865037b3f1ec0b954e79c1d9290375b6e";
 
     // Create test user
     const user = await prisma.user.create({
@@ -47,16 +62,6 @@ async function seedTestData() {
     console.log(`   Password: ${process.env.TEST_PASSWORD || "test-password"}`);
     console.log(`   Client Token: ${clientToken}`);
     console.log(`   User ID: ${user.id}`);
-
-    // Generate homed-cloud.conf from template
-    const templatePath = path.join(__dirname, "homed-cloud.conf.template");
-    const configPath = path.join(__dirname, "homed-cloud.conf");
-
-    const template = fs.readFileSync(templatePath, "utf-8");
-    const config = template.replace("{{CLIENT_TOKEN}}", clientToken);
-
-    fs.writeFileSync(configPath, config);
-    console.log(`✅ Client configuration written to: ${configPath}`);
 
     console.log("\n📋 Next steps:");
     console.log("   1. Start integration environment: docker-compose up -d");

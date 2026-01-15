@@ -14,14 +14,22 @@ import {
 export default async function globalSetup() {
   console.log("\n🔧 Integration Test Global Setup\n");
 
-  // Check if database is seeded
+  // Check if database needs to be seeded
   if (!testDatabaseExists()) {
-    console.error("❌ Test database not found.");
-    console.error("   Run: npm run seed:test");
-    process.exit(1);
+    console.log("📦 Test database not found, provisioning...");
+    try {
+      execSync("npm run seed:test", {
+        cwd: process.cwd(),
+        stdio: "inherit",
+      });
+      console.log("✅ Test database provisioned");
+    } catch (error) {
+      console.error("❌ Failed to provision test database");
+      throw error;
+    }
+  } else {
+    console.log("✅ Test database found");
   }
-
-  console.log("✅ Test database found");
 
   // Check if Docker is available
   try {

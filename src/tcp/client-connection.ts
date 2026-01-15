@@ -1,12 +1,7 @@
+import * as crypto from "crypto";
 import { EventEmitter } from "events";
 import { Socket } from "net";
-import {
-  AES128CBC,
-  deriveMD5Key,
-  DHKeyExchange,
-  padBuffer,
-  unpadBuffer,
-} from "./crypto";
+import { AES128CBC, DHKeyExchange, padBuffer, unpadBuffer } from "./crypto";
 import { MessageFramer, ProtocolMessage } from "./protocol";
 
 /**
@@ -60,6 +55,7 @@ export class ClientConnection extends EventEmitter {
 
   /**
    * Handle DH handshake data (12 bytes)
+   * Protocol: client sends [prime(4), generator(4), publicKey(4)] in big-endian
    */
   private handleHandshakeData(data: Buffer): void {
     if (data.length < 12) {
@@ -69,20 +65,32 @@ export class ClientConnection extends EventEmitter {
 
     try {
       // Read client's DH parameters (big-endian)
-      const _clientPrime = data.readUInt32BE(0);
-      const _clientGenerator = data.readUInt32BE(4);
+      const clientPrime = data.readUInt32BE(0);
+      const clientGenerator = data.readUInt32BE(4);
       const clientSharedKey = data.readUInt32BE(8);
 
-      // Generate server DH parameters
+      // Create DH instance and set client's parameters
       this.dh = new DHKeyExchange();
+      this.dh.setPrime(clientPrime);
+      this.dh.setGenerator(clientGenerator);
+
+      // Generate server's public key (using client's p and g)
       const serverSharedKey = this.dh.getSharedKey();
 
-      // Compute private key
-      const privateKey = this.dh.computePrivateKey(clientSharedKey);
+      // Compute shared secret
+      const sharedSecret = this.dh.computePrivateKey(clientSharedKey);
 
-      // Derive AES key and IV
-      const aesKey = deriveMD5Key(privateKey);
-      const aesIV = deriveMD5Key(aesKey.readUInt32BE(0));
+      // Derive AES key and IV using double MD5 hash (matches homed-server-cloud)
+      // Key derivation: MD5(sharedSecret as 4-byte big-endian)
+      const sharedSecretBuffer = Buffer.allocUnsafe(4);
+      sharedSecretBuffer.writeUInt32BE(sharedSecret, 0);
+
+      const aesKey = crypto
+        .createHash("md5")
+        .update(sharedSecretBuffer)
+        .digest();
+      // IV derivation: MD5(aesKey) - hash the FULL 16-byte key, not just 4 bytes
+      const aesIV = crypto.createHash("md5").update(aesKey).digest();
 
       this.aes = new AES128CBC(aesKey, aesIV);
 

@@ -1,9 +1,9 @@
 # Homed Service Cloud configuration for integration testing
-# This file is generated from the template by seed-test-data.ts
+# Static configuration with fixed token (matches seeded test database)
 
 [cloud]
 uniqueid = integration-test-client
-token = {{CLIENT_TOKEN}}
+token = 13e19d111d4b44f52e62f0cdf8b0980865037b3f1ec0b954e79c1d9290375b6e
 host = tcp-server
 port = 8042
 

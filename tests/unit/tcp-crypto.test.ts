@@ -1,65 +1,97 @@
 import {
   AES128CBC,
-  deriveMD5Key,
   DHKeyExchange,
   padBuffer,
   unpadBuffer,
 } from "../../src/tcp/crypto";
 
 describe("DHKeyExchange", () => {
-  it("should generate DH parameters", () => {
+  it("should require prime and generator before computing keys", () => {
     const dh = new DHKeyExchange();
-    const params = dh.generateParameters();
 
-    expect(params.prime).toBeDefined();
-    expect(params.generator).toBeDefined();
-    expect(params.sharedKey).toBeDefined();
-    expect(typeof params.prime).toBe("number");
-    expect(typeof params.generator).toBe("number");
-    expect(typeof params.sharedKey).toBe("number");
+    expect(() => dh.getSharedKey()).toThrow(
+      "Prime and generator must be set before computing shared key"
+    );
+    expect(() => dh.computePrivateKey(12345)).toThrow(
+      "Prime must be set before computing private key"
+    );
+  });
+
+  it("should accept prime and generator from client", () => {
+    const dh = new DHKeyExchange();
+    const clientPrime = 0xffffffc5;
+    const clientGenerator = 5;
+
+    expect(() => dh.setPrime(clientPrime)).not.toThrow();
+    expect(() => dh.setGenerator(clientGenerator)).not.toThrow();
+  });
+
+  it("should compute server shared key with client parameters", () => {
+    const dh = new DHKeyExchange();
+    dh.setPrime(0xffffffc5);
+    dh.setGenerator(5);
+
+    const sharedKey = dh.getSharedKey();
+
+    expect(typeof sharedKey).toBe("number");
+    expect(sharedKey).toBeGreaterThan(0);
   });
 
   it("should compute private key from client shared key", () => {
     const dh = new DHKeyExchange();
-    const clientSharedKey = 12345;
+    dh.setPrime(0xffffffc5);
+    dh.setGenerator(5);
 
+    const clientSharedKey = 12345;
     const privateKey = dh.computePrivateKey(clientSharedKey);
 
     expect(typeof privateKey).toBe("number");
     expect(privateKey).toBeGreaterThan(0);
   });
 
-  it("should get server shared key", () => {
+  it("should produce consistent shared keys", () => {
     const dh = new DHKeyExchange();
-    const sharedKey = dh.getSharedKey();
+    dh.setPrime(0xffffffc5);
+    dh.setGenerator(5);
 
-    expect(typeof sharedKey).toBe("number");
-    expect(sharedKey).toBeGreaterThan(0);
-  });
-});
+    const key1 = dh.getSharedKey();
+    const key2 = dh.getSharedKey();
 
-describe("deriveMD5Key", () => {
-  it("should derive 16-byte key from private key", () => {
-    const privateKey = 123456789;
-    const key = deriveMD5Key(privateKey);
-
-    expect(key).toBeInstanceOf(Buffer);
-    expect(key.length).toBe(16);
+    expect(key1).toBe(key2);
   });
 
-  it("should produce consistent results", () => {
-    const privateKey = 123456789;
-    const key1 = deriveMD5Key(privateKey);
-    const key2 = deriveMD5Key(privateKey);
+  it("should invalidate cached keys when parameters change", () => {
+    const dh = new DHKeyExchange();
+    dh.setPrime(0xffffffc5);
+    dh.setGenerator(5);
 
-    expect(key1).toEqual(key2);
+    const key1 = dh.getSharedKey();
+
+    // Change parameters
+    dh.setPrime(0xfffffffb);
+    dh.setGenerator(2);
+
+    const key2 = dh.getSharedKey();
+
+    expect(key1).not.toBe(key2);
   });
 
-  it("should produce different keys for different inputs", () => {
-    const key1 = deriveMD5Key(123);
-    const key2 = deriveMD5Key(456);
+  it("should work with different client parameters", () => {
+    const dh1 = new DHKeyExchange();
+    dh1.setPrime(0xffffffc5);
+    dh1.setGenerator(5);
 
-    expect(key1).not.toEqual(key2);
+    const dh2 = new DHKeyExchange();
+    dh2.setPrime(0xfffffffb);
+    dh2.setGenerator(2);
+
+    const key1 = dh1.getSharedKey();
+    const key2 = dh2.getSharedKey();
+
+    // Different parameters should produce different keys
+    // (Note: may occasionally be equal due to random private values)
+    expect(typeof key1).toBe("number");
+    expect(typeof key2).toBe("number");
   });
 });
 

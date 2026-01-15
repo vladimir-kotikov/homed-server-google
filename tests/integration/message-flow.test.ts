@@ -34,7 +34,7 @@ describe("Message Flow Integration", () => {
 
       // Should contain status-related activity
       expect(logs.length).toBeGreaterThan(0);
-    };);
+    });
 
     it("should route expose/* topics correctly", async () => {
       const device = FIXTURES.light();
@@ -111,7 +111,7 @@ describe("Message Flow Integration", () => {
       expect(serverLogs).not.toContain("parse error");
       // Client may have connection errors due to crypto mismatch, but not critical errors
       expect(clientLogs).not.toContain("fatal");
-    };);
+    });
 
     it("should handle messages with special characters", async () => {
       const device = FIXTURES.light();
@@ -185,7 +185,7 @@ describe("Message Flow Integration", () => {
       expect(serverLogs).not.toContain("crash");
       expect(serverLogs).not.toContain("fatal");
       expect(clientLogs).not.toContain("disconnect");
-    };, 15000);
+    }, 15000);
 
     it("should handle delayed messages", async () => {
       const device = FIXTURES.light();
@@ -218,7 +218,7 @@ describe("Message Flow Integration", () => {
       const logs = getServiceLogs("tcp-server", 50);
       // Should have processed both messages
       expect(logs.length).toBeGreaterThan(0);
-    };, 15000);
+    }, 15000);
   });
 
   describe("Error Scenarios", () => {

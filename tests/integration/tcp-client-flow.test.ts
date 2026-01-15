@@ -64,7 +64,7 @@ describe("TCP Client Integration Flow", () => {
         clientLogs.includes("connect") || clientLogs.length > 0;
 
       expect(clientConnected).toBe(true);
-    };, 30000);
+    }, 30000);
 
     it("should maintain connection for at least 10 seconds", async () => {
       await delay(3000);
@@ -77,7 +77,7 @@ describe("TCP Client Integration Flow", () => {
       expect(laterLogs).not.toContain("Authentication failed");
       // Client may have connection errors due to crypto protocol mismatch
       expect(clientLogs).not.toContain("fatal");
-    };, 15000);
+    }, 15000);
   });
 
   describe("Device Data Flow", () => {
@@ -161,7 +161,7 @@ describe("TCP Client Integration Flow", () => {
         serverLogs.includes(switchDevice.deviceId);
 
       expect(hasStateUpdate).toBe(true);
-    };, 15000);
+    }, 15000);
   });
 
   describe("Multiple Device Handling", () => {

@@ -2,59 +2,64 @@ import * as crypto from "crypto";
 
 /**
  * Diffie-Hellman key exchange implementation
- * Simplified version using crypto primitives
+ * Matches homed-server-cloud protocol where client provides p and g
  */
 export class DHKeyExchange {
-  private prime: number;
-  private generator: number;
+  private prime!: number;
+  private generator!: number;
   private privateValue: number;
-  private publicValue: number;
+  private publicValue: number | null = null;
 
   constructor() {
-    // Use standard DH parameters
-    // Prime (p) and generator (g) for DH key exchange
-    this.prime = 0xfffffffb; // Large prime number (4294967291)
-    this.generator = 2;
-
     // Generate private value (random number)
-    this.privateValue = crypto.randomInt(1000, 0xffffff);
-
-    // Compute public value: g^private mod p
-    // For simplicity, use a simpler computation that works with 32-bit numbers
-    this.publicValue = this.modPow(
-      this.generator,
-      this.privateValue,
-      this.prime
-    );
+    // Client will provide prime and generator via setPrime/setGenerator
+    this.privateValue = crypto.randomInt(1, 0x7fffffff);
   }
 
   /**
-   * Generate DH parameters for handshake
+   * Set the prime modulus (provided by client in handshake)
    */
-  generateParameters(): {
-    prime: number;
-    generator: number;
-    sharedKey: number;
-  } {
-    return {
-      prime: this.prime,
-      generator: this.generator,
-      sharedKey: this.publicValue,
-    };
+  setPrime(value: number): void {
+    this.prime = value;
+    this.publicValue = null; // Invalidate cached public key
+  }
+
+  /**
+   * Set the generator (provided by client in handshake)
+   */
+  setGenerator(value: number): void {
+    this.generator = value;
+    this.publicValue = null; // Invalidate cached public key
   }
 
   /**
    * Compute private key from client's shared key
    */
   computePrivateKey(clientSharedKey: number): number {
+    if (!this.prime) {
+      throw new Error("Prime must be set before computing private key");
+    }
     // Compute shared secret: clientPublic^private mod p
     return this.modPow(clientSharedKey, this.privateValue, this.prime);
   }
 
   /**
    * Get server's shared key (public key) as uint32
+   * Computed as: g^privateValue mod p
    */
   getSharedKey(): number {
+    if (!this.prime || !this.generator) {
+      throw new Error(
+        "Prime and generator must be set before computing shared key"
+      );
+    }
+    if (this.publicValue === null) {
+      this.publicValue = this.modPow(
+        this.generator,
+        this.privateValue,
+        this.prime
+      );
+    }
     return this.publicValue;
   }
 
@@ -77,15 +82,6 @@ export class DHKeyExchange {
 
     return result;
   }
-}
-
-/**
- * Derive MD5-based AES key from private key
- */
-export function deriveMD5Key(privateKey: number): Buffer {
-  const buffer = Buffer.allocUnsafe(4);
-  buffer.writeUInt32BE(privateKey, 0);
-  return crypto.createHash("md5").update(buffer).digest();
 }
 
 /**
