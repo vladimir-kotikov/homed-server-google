@@ -28,6 +28,7 @@ npm run seed:test
 ```
 
 **Output:**
+
 ```
 🌱 Seeding test data...
 ✅ Test user created:
@@ -44,6 +45,7 @@ npm run seed:test
 ```
 
 **This creates:**
+
 - `tests/integration/test.db` - SQLite database with test user
 - `tests/integration/homed-cloud.conf` - Client configuration with auth token
 
@@ -54,6 +56,7 @@ npm run docker:up
 ```
 
 **Or manually:**
+
 ```bash
 cd tests/integration
 docker-compose up -d
@@ -61,6 +64,7 @@ cd ../..
 ```
 
 **Services started:**
+
 - `mqtt` - Mosquitto MQTT broker on port 1883
 - `tcp-server` - Your Node.js server on ports 8042 (TCP) and 8080 (HTTP)
 - `homed-client` - Real homed-service-cloud client
@@ -72,6 +76,7 @@ npm run docker:logs
 ```
 
 **Check for:**
+
 - ✅ MQTT broker: `mosquitto version X.X running`
 - ✅ TCP server: `listening on port 8042`
 - ✅ Homed client: `connected` or similar success message
@@ -83,6 +88,7 @@ npm run test:integration
 ```
 
 **Tests will:**
+
 1. Connect MQTT publisher
 2. Simulate device data on MQTT topics
 3. Verify data flows through client to TCP server
@@ -154,6 +160,7 @@ docker exec homed-test-server netstat -an | grep 8042
 ### Problem: Services won't start
 
 **Solution:**
+
 ```bash
 # Check Docker is running
 docker ps
@@ -169,18 +176,21 @@ npm run docker:up
 ### Problem: Client can't connect to server
 
 **Check 1:** Is the token correct?
+
 ```bash
 cat tests/integration/homed-cloud.conf | grep token
 sqlite3 tests/integration/test.db "SELECT clientToken FROM User;"
 ```
 
 **Check 2:** Network connectivity
+
 ```bash
 docker exec homed-test-client ping tcp-server
 docker exec homed-test-client nc -zv tcp-server 8042
 ```
 
 **Fix:** Regenerate configuration
+
 ```bash
 npm run seed:test
 npm run docker:down
@@ -190,6 +200,7 @@ npm run docker:up
 ### Problem: Tests failing with timeout
 
 **Solution:** Increase test timeout in test files or check services are healthy
+
 ```bash
 # Check service health
 docker ps --filter "name=homed-test"
@@ -200,6 +211,7 @@ docker ps --filter "name=homed-test"
 ### Problem: Database locked
 
 **Solution:**
+
 ```bash
 # Stop all services
 npm run docker:down
@@ -236,8 +248,8 @@ rm tests/integration/homed-cloud.conf
 tests/integration/
 ├── docker-compose.yml          # Service orchestration
 ├── Dockerfile                  # TCP server container build
+├── Dockerfile.homed-client     # Homed client container build
 ├── mosquitto.conf              # MQTT broker config
-├── client-entrypoint.sh        # Client startup script
 ├── homed-cloud.conf.template   # Client config template
 ├── homed-cloud.conf            # Generated client config (gitignored)
 ├── .env.test                   # Test environment variables

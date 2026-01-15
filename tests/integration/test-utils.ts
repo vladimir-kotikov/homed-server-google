@@ -192,6 +192,31 @@ export async function waitFor(
 }
 
 /**
+ * Wait for a log condition to be met by polling service logs
+ * Much faster than fixed delays - polls every 300ms with configurable timeout
+ */
+export async function waitForLogCondition(
+  serviceName: string,
+  checkFn: (logs: string) => boolean,
+  timeoutMs: number = 10000,
+  intervalMs: number = 300
+): Promise<void> {
+  const startTime = Date.now();
+
+  while (Date.now() - startTime < timeoutMs) {
+    const logs = getServiceLogs(serviceName, 100);
+    if (checkFn(logs)) {
+      return;
+    }
+    await new Promise(resolve => setTimeout(resolve, intervalMs));
+  }
+
+  throw new Error(
+    `Timeout waiting for log condition in ${serviceName} after ${timeoutMs}ms`
+  );
+}
+
+/**
  * Delay helper
  */
 export function delay(ms: number): Promise<void> {

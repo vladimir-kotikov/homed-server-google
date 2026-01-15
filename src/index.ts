@@ -1,10 +1,12 @@
 import dotenv from "dotenv";
+import express from "express";
 import { AuthService } from "./services/auth.service";
 import { TCPServer } from "./tcp/server";
 
 dotenv.config();
 
 const TCP_PORT = parseInt(process.env.TCP_PORT || "8042", 10);
+const HTTP_PORT = parseInt(process.env.PORT || "8080", 10);
 const DATABASE_URL = process.env.DATABASE_URL || "file:./prisma/dev.db";
 
 console.log("Homed Server Google - Starting...");
@@ -89,6 +91,32 @@ tcpServer
     console.error("Failed to start TCP Server:", error);
     process.exit(1);
   });
+
+// Start HTTP server for test endpoints (when NODE_ENV=test)
+if (process.env.NODE_ENV === "test") {
+  const app = express();
+
+  // Test endpoint to get connected clients
+  app.get("/test/clients", (_req, res) => {
+    const clients = tcpServer.getClientIds();
+    res.json({
+      count: tcpServer.getClientCount(),
+      clients: clients,
+    });
+  });
+
+  // Test endpoint to check server status
+  app.get("/test/status", (_req, res) => {
+    res.json({
+      status: "ok",
+      clientCount: tcpServer.getClientCount(),
+    });
+  });
+
+  app.listen(HTTP_PORT, () => {
+    console.log(`HTTP Test API listening on port ${HTTP_PORT}`);
+  });
+}
 
 // Graceful shutdown
 const shutdown = async () => {
