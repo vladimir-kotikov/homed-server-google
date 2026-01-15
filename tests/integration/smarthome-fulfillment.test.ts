@@ -4,7 +4,7 @@
  */
 
 import request from "supertest";
-import { readTestConfig } from "./test-utils";
+import { readTestConfig } from "./test-utils.ts";
 
 const BASE_URL = "http://localhost:8080";
 const OAUTH_CLIENT_ID = process.env.OAUTH_CLIENT_ID || "test-client-id";

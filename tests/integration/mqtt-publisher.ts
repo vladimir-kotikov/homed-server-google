@@ -28,12 +28,12 @@ export interface DeviceState {
 export class MQTTPublisher {
   private client: MqttClient | null = null;
   private prefix: string;
+  private host: string;
+  private port: number;
 
-  constructor(
-    private host: string,
-    private port: number,
-    prefix: string = "homed"
-  ) {
+  constructor(host: string, port: number, prefix: string = "homed") {
+    this.host = host;
+    this.port = port;
     this.prefix = prefix;
   }
 

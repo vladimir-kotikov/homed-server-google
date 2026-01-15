@@ -1,4 +1,4 @@
-import { MessageFramer } from "../../src/tcp/protocol";
+import { MessageFramer } from "../../src/tcp/protocol.ts";
 
 describe("MessageFramer", () => {
   let framer: MessageFramer;

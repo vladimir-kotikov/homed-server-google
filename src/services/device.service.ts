@@ -1,6 +1,6 @@
-import { ClientConnection } from "../tcp/client-connection";
-import { ProtocolMessage } from "../tcp/protocol";
-import { TCPServer } from "../tcp/server";
+import { ClientConnection } from "../tcp/client-connection.ts";
+import { type ProtocolMessage } from "../tcp/protocol.ts";
+import { TCPServer } from "../tcp/server.ts";
 
 /**
  * Device service for querying and controlling devices via TCP clients

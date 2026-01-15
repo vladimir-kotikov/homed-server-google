@@ -1,5 +1,5 @@
-import { NextFunction, Request, Response } from "express";
-import { TokenService } from "../services/token.service";
+import type { NextFunction, Request, Response } from "express";
+import { TokenService } from "../services/token.service.ts";
 
 const tokenService = new TokenService();
 
@@ -92,7 +92,7 @@ export function validateOAuthRequest(
 
   // Store OAuth params in request for controller
   req.body.oauthParams = {
-    clientId: client_id as string,
+    clientId: client_id,
     redirectUri: redirect_uri as string,
     state: state as string | undefined,
   };

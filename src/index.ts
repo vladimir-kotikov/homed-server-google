@@ -3,11 +3,10 @@ import * as bcrypt from "bcrypt";
 import dotenv from "dotenv";
 import express from "express";
 import * as fs from "fs";
-import oauthRoutes from "./routes/oauth.routes";
-import smarthomeRoutes from "./routes/smarthome.routes";
-import { setTCPServer } from "./routes/smarthome.routes";
-import { AuthService } from "./services/auth.service";
-import { TCPServer } from "./tcp/server";
+import oauthRoutes from "./routes/oauth.routes.ts";
+import smarthomeRoutes, { setTCPServer } from "./routes/smarthome.routes.ts";
+import { AuthService } from "./services/auth.service.ts";
+import { TCPServer } from "./tcp/server.ts";
 
 dotenv.config();
 

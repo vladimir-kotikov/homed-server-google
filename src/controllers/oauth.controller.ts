@@ -1,6 +1,6 @@
-import { Request, Response } from "express";
-import { AuthService } from "../services/auth.service";
-import { TokenService } from "../services/token.service";
+import type { Request, Response } from "express";
+import { AuthService } from "../services/auth.service.ts";
+import { TokenService } from "../services/token.service.ts";
 
 const tokenService = new TokenService();
 const authService = new AuthService();

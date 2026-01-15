@@ -1,7 +1,7 @@
 import { PrismaClient } from "@prisma/client";
 import * as bcrypt from "bcrypt";
 import * as crypto from "crypto";
-import { User } from "../types";
+import type { User } from "../types.ts";
 
 const prisma = new PrismaClient();
 

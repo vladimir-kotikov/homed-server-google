@@ -1,8 +1,8 @@
 import * as crypto from "crypto";
 import { EventEmitter } from "events";
 import { Socket } from "net";
-import { AES128CBC, DHKeyExchange, padBuffer, unpadBuffer } from "./crypto";
-import { MessageFramer, ProtocolMessage } from "./protocol";
+import { AES128CBC, DHKeyExchange, padBuffer, unpadBuffer } from "./crypto.ts";
+import { MessageFramer, type ProtocolMessage } from "./protocol.ts";
 
 /**
  * Represents a single TCP client connection

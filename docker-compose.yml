@@ -38,6 +38,7 @@ services:
     volumes:
       - ./tests/integration/test.db:/app/test.db
       - ./prisma:/app/prisma
+      - ./src:/app/src
     networks:
       - homed-test
     depends_on:

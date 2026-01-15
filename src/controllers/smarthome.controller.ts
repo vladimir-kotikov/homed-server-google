@@ -1,8 +1,8 @@
-import { Response } from "express";
-import { AuthenticatedRequest } from "../middleware/auth.middleware";
-import { DeviceService } from "../services/device.service";
-import { TokenService } from "../services/token.service";
-import {
+import type { Response } from "express";
+import type { AuthenticatedRequest } from "../middleware/auth.middleware.ts";
+import { DeviceService } from "../services/device.service.ts";
+import { TokenService } from "../services/token.service.ts";
+import type {
   DisconnectRequest,
   DisconnectResponse,
   ExecuteRequest,
@@ -14,7 +14,7 @@ import {
   SmartHomeResponse,
   SyncRequest,
   SyncResponse,
-} from "../types";
+} from "../types.ts";
 
 export class SmartHomeController {
   private deviceService: DeviceService;
@@ -134,7 +134,7 @@ export class SmartHomeController {
     request: QueryRequest,
     userId: string
   ): Promise<QueryResponse> {
-    const deviceIds = request.inputs[0].payload.devices.map(d => d.id);
+    const deviceIds = request.inputs[0].payload.devices.map((d: any) => d.id);
     const states = await this.deviceService.queryDeviceStates(
       userId,
       deviceIds
@@ -181,7 +181,7 @@ export class SmartHomeController {
     const commandResults: any[] = [];
 
     for (const command of commands) {
-      const deviceIds = command.devices.map(d => d.id);
+      const deviceIds = command.devices.map((d: any) => d.id);
       const execution = command.execution[0]; // Take first execution
 
       for (const deviceId of deviceIds) {

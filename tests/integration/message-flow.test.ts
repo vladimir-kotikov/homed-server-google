@@ -3,8 +3,8 @@
  * Tests message routing between MQTT, client, and TCP server
  */
 
-import { FIXTURES, MQTTPublisher } from "./mqtt-publisher";
-import { delay, getServiceLogs, waitForLogCondition } from "./test-utils";
+import { FIXTURES, MQTTPublisher } from "./mqtt-publisher.ts";
+import { delay, getServiceLogs, waitForLogCondition } from "./test-utils.ts";
 
 describe("Message Flow Integration", () => {
   let publisher: MQTTPublisher;

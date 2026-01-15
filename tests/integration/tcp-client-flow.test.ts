@@ -3,13 +3,13 @@
  * Tests the complete flow of client connection, authentication, and message routing
  */
 
-import { FIXTURES, MQTTPublisher } from "./mqtt-publisher";
+import { FIXTURES, MQTTPublisher } from "./mqtt-publisher.ts";
 import {
   delay,
   getServiceLogs,
   readTestConfig,
   waitForLogCondition,
-} from "./test-utils";
+} from "./test-utils.ts";
 
 describe("TCP Client Integration Flow", () => {
   let publisher: MQTTPublisher;

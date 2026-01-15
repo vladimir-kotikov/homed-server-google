@@ -3,7 +3,7 @@ import {
   DHKeyExchange,
   padBuffer,
   unpadBuffer,
-} from "../../src/tcp/crypto";
+} from "../../src/tcp/crypto.ts";
 
 describe("DHKeyExchange", () => {
   it("should require prime and generator before computing keys", () => {
@@ -22,8 +22,12 @@ describe("DHKeyExchange", () => {
     const clientPrime = 0xffffffc5;
     const clientGenerator = 5;
 
-    expect(() => dh.setPrime(clientPrime)).not.toThrow();
-    expect(() => dh.setGenerator(clientGenerator)).not.toThrow();
+    expect(() => {
+      dh.setPrime(clientPrime);
+    }).not.toThrow();
+    expect(() => {
+      dh.setGenerator(clientGenerator);
+    }).not.toThrow();
   });
 
   it("should compute server shared key with client parameters", () => {

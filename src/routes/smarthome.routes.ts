@@ -1,9 +1,9 @@
 import { Router } from "express";
-import { SmartHomeController } from "../controllers/smarthome.controller";
-import { authenticateToken } from "../middleware/auth.middleware";
-import { DeviceService } from "../services/device.service";
-import { TokenService } from "../services/token.service";
-import { TCPServer } from "../tcp/server";
+import { SmartHomeController } from "../controllers/smarthome.controller.ts";
+import { authenticateToken } from "../middleware/auth.middleware.ts";
+import { DeviceService } from "../services/device.service.ts";
+import { TokenService } from "../services/token.service.ts";
+import { TCPServer } from "../tcp/server.ts";
 
 // These will be injected from index.ts
 let tcpServer: TCPServer;

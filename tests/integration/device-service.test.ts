@@ -4,18 +4,17 @@
  */
 
 import request from "supertest";
-import { FIXTURES, MQTTPublisher } from "./mqtt-publisher";
-import { delay, getServiceLogs, readTestConfig } from "./test-utils";
+import { FIXTURES, MQTTPublisher } from "./mqtt-publisher.ts";
+import { delay, getServiceLogs } from "./test-utils.ts";
 
 const BASE_URL = "http://localhost:8080";
 
 describe("Device Service Integration", () => {
-  let accessToken: string;
-  let publisher: MQTTPublisher;
+  let accessToken!: string;
+  let publisher!: MQTTPublisher;
 
   beforeAll(async () => {
     try {
-      testConfig = readTestConfig();
       console.log("📋 Test configuration loaded");
     } catch {
       throw new Error("Test configuration not found. Run: npm run seed:test");
@@ -26,6 +25,11 @@ describe("Device Service Integration", () => {
     if (publisher) {
       await publisher.disconnect();
     }
+  });
+
+  beforeEach(async () => {
+    publisher = new MQTTPublisher("localhost", 1883);
+    await publisher.connect();
   });
 
   describe("Device Discovery via MQTT", () => {
@@ -254,9 +258,12 @@ describe("Device Service Integration", () => {
 
       // Subscribe to MQTT topic to verify command is sent
       const commandReceived = new Promise<any>(resolve => {
-        publisher.subscribe(`homed/td/${testDevice.deviceId}`, message => {
-          resolve(message);
-        });
+        publisher.subscribe(
+          `homed/td/${testDevice.deviceId}`,
+          (message: any) => {
+            resolve(message);
+          }
+        );
       });
 
       // Execute command via Google Smart Home API
@@ -307,9 +314,12 @@ describe("Device Service Integration", () => {
       const testDevice = FIXTURES.light();
 
       const commandReceived = new Promise<any>(resolve => {
-        publisher.subscribe(`homed/td/${testDevice.deviceId}`, message => {
-          resolve(message);
-        });
+        publisher.subscribe(
+          `homed/td/${testDevice.deviceId}`,
+          (message: any) => {
+            resolve(message);
+          }
+        );
       });
 
       const response = await request(BASE_URL)
@@ -357,9 +367,12 @@ describe("Device Service Integration", () => {
       const testDevice = FIXTURES.colorLight();
 
       const commandReceived = new Promise<any>(resolve => {
-        publisher.subscribe(`homed/td/${testDevice.deviceId}`, message => {
-          resolve(message);
-        });
+        publisher.subscribe(
+          `homed/td/${testDevice.deviceId}`,
+          (message: any) => {
+            resolve(message);
+          }
+        );
       });
 
       const response = await request(BASE_URL)

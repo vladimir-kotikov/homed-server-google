@@ -1,6 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 import * as bcrypt from "bcrypt";
-import { TokenService } from "../../src/services/token.service";
+import { TokenService } from "../../src/services/token.service.ts";
 
 // Set test database URL
 process.env.DATABASE_URL = "file:./prisma/test-token.db";

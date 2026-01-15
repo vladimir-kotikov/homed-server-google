@@ -1,7 +1,7 @@
 import * as net from "net";
-import { ClientConnection } from "../../src/tcp/client-connection";
-import { ProtocolMessage } from "../../src/tcp/protocol";
-import { TCPServer } from "../../src/tcp/server";
+import { ClientConnection } from "../../src/tcp/client-connection.ts";
+import type { ProtocolMessage } from "../../src/tcp/protocol.ts";
+import { TCPServer } from "../../src/tcp/server.ts";
 
 describe("TCPServer", () => {
   let server: TCPServer;
@@ -85,7 +85,9 @@ describe("TCPServer", () => {
     it("should handle disconnectClient for non-existent client", async () => {
       await server.start();
 
-      expect(() => server.disconnectClient("non-existent")).not.toThrow();
+      expect(() => {
+        server.disconnectClient("non-existent");
+      }).not.toThrow();
     });
   });
 
@@ -152,7 +154,9 @@ describe("TCPServer", () => {
         message: { test: true },
       };
 
-      expect(() => server.broadcastToUser("user-1", message)).not.toThrow();
+      expect(() => {
+        server.broadcastToUser("user-1", message);
+      }).not.toThrow();
     });
   });
 

@@ -1,7 +1,7 @@
 import { EventEmitter } from "events";
 import { Socket } from "net";
-import { ClientConnection } from "../../src/tcp/client-connection";
-import { ProtocolMessage } from "../../src/tcp/protocol";
+import { ClientConnection } from "../../src/tcp/client-connection.ts";
+import type { ProtocolMessage } from "../../src/tcp/protocol.ts";
 
 // Mock Socket
 class MockSocket extends EventEmitter {
@@ -29,7 +29,8 @@ describe("ClientConnection", () => {
   });
 
   describe("handshake", () => {
-    it("should handle valid handshake data", done => {
+    it("should handle valid handshake data", () => {
+      const { promise, resolve: done } = Promise.withResolvers<void>();
       client.on("handshake-complete", () => {
         expect(mockSocket.writtenData.length).toBe(1);
         expect(mockSocket.writtenData[0].length).toBe(4);
@@ -43,21 +44,25 @@ describe("ClientConnection", () => {
       handshake.writeUInt32BE(12345, 8); // sharedKey
 
       mockSocket.emit("data", handshake);
+      return promise;
     });
 
-    it("should reject invalid handshake length", done => {
-      client.on("error", (error: Error) => {
-        expect(error.message).toContain("Invalid handshake data length");
-        done();
+    it("should reject invalid handshake length", () => {
+      return new Promise<void>(done => {
+        client.on("error", (error: Error) => {
+          expect(error.message).toContain("Invalid handshake data length");
+          done();
+        });
+        const invalidHandshake = Buffer.from([1, 2, 3]);
+        mockSocket.emit("data", invalidHandshake);
       });
-
-      const invalidHandshake = Buffer.from([1, 2, 3]);
-      mockSocket.emit("data", invalidHandshake);
     });
   });
 
   describe("authorization", () => {
-    it("should emit authorization event with credentials", done => {
+    it("should emit authorization event with credentials", () => {
+      const { promise, resolve: done } = Promise.withResolvers<void>();
+
       let handshakeComplete = false;
 
       client.on("handshake-complete", () => {
@@ -83,13 +88,6 @@ describe("ClientConnection", () => {
 
       // Wait for handshake to complete, then send auth message
       setTimeout(() => {
-        // For this test, we'll simulate receiving an already encrypted/framed auth message
-        // In reality, this would be encrypted and framed, but for simplicity we'll mock it
-        const _authData = JSON.stringify({
-          uniqueId: "test-client-001",
-          token: "abc123token",
-        });
-
         // We need to properly encrypt and frame the message
         // This is a simplified version - in real scenario it would go through crypto
         client.setAuthenticated("user-123"); // Manually set for testing
@@ -98,6 +96,8 @@ describe("ClientConnection", () => {
 
         done();
       }, 10);
+
+      return promise;
     });
 
     it("should track authentication state", () => {
@@ -112,13 +112,14 @@ describe("ClientConnection", () => {
   });
 
   describe("message handling", () => {
-    it("should emit authenticated event", done => {
-      client.on("authenticated", (userId: string) => {
-        expect(userId).toBe("user-789");
-        done();
+    it("should emit authenticated event", () => {
+      return new Promise<void>(done => {
+        client.on("authenticated", (userId: string) => {
+          expect(userId).toBe("user-789");
+          done();
+        });
+        client.setAuthenticated("user-789");
       });
-
-      client.setAuthenticated("user-789");
     });
   });
 
@@ -139,29 +140,33 @@ describe("ClientConnection", () => {
   });
 
   describe("connection lifecycle", () => {
-    it("should handle socket close event", done => {
-      client.on("close", () => {
-        done();
+    it("should handle socket close event", () => {
+      return new Promise<void>(done => {
+        client.on("close", () => {
+          done();
+        });
+        mockSocket.emit("close");
       });
-
-      mockSocket.emit("close");
     });
 
-    it("should handle socket error event", done => {
-      client.on("error", (error: Error) => {
-        expect(error.message).toBe("Socket error");
-        done();
+    it("should handle socket error event", () => {
+      return new Promise<void>(done => {
+        client.on("error", (error: Error) => {
+          expect(error.message).toBe("Socket error");
+          done();
+        });
+        mockSocket.emit("error", new Error("Socket error"));
       });
-
-      mockSocket.emit("error", new Error("Socket error"));
     });
 
-    it("should close the socket", done => {
-      client.on("close", () => {
-        done();
-      });
+    it("should close the socket", () => {
+      return new Promise<void>(done => {
+        client.on("close", () => {
+          done();
+        });
 
-      client.close();
+        client.close();
+      });
     });
   });
 
@@ -173,9 +178,9 @@ describe("ClientConnection", () => {
         message: { test: true },
       };
 
-      expect(() => client.sendMessage(message)).toThrow(
-        "Cannot send message: AES not initialized"
-      );
+      expect(() => {
+        client.sendMessage(message);
+      }).toThrow("Cannot send message: AES not initialized");
     });
   });
 });

@@ -1,7 +1,7 @@
 import { EventEmitter } from "events";
 import { Server as NetServer, Socket, createServer } from "net";
-import { ClientConnection } from "./client-connection";
-import { ProtocolMessage } from "./protocol";
+import { ClientConnection } from "./client-connection.ts";
+import type { ProtocolMessage } from "./protocol.ts";
 
 /**
  * TCP server for accepting Homed client connections
@@ -71,7 +71,6 @@ export class TCPServer extends EventEmitter {
    */
   private handleConnection(socket: Socket): void {
     const client = new ClientConnection(socket);
-    const _clientId = `${socket.remoteAddress}:${socket.remotePort}`;
 
     client.on("handshake-complete", () => {
       this.emit("client-handshake", client);
@@ -91,7 +90,7 @@ export class TCPServer extends EventEmitter {
         if (!this.userClients.has(userId)) {
           this.userClients.set(userId, new Set());
         }
-        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+
         this.userClients.get(userId)!.add(uniqueId);
 
         this.emit("client-authenticated", client, userId);
