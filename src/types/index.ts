@@ -1,5 +1,18 @@
 // Google Smart Home API Types
 
+// Base types for all requests and responses
+export type SmartHomeRequest =
+  | SyncRequest
+  | QueryRequest
+  | ExecuteRequest
+  | DisconnectRequest;
+
+export type SmartHomeResponse =
+  | SyncResponse
+  | QueryResponse
+  | ExecuteResponse
+  | DisconnectResponse;
+
 export interface SyncRequest {
   requestId: string;
   inputs: [{ intent: "action.devices.SYNC" }];
@@ -65,15 +78,13 @@ export interface ExecuteRequest {
 export interface ExecuteResponse {
   requestId: string;
   payload: {
-    commands: [
-      {
-        ids: string[];
-        status: "SUCCESS" | "PENDING" | "OFFLINE" | "ERROR";
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        states?: any;
-        errorCode?: string;
-      },
-    ];
+    commands: Array<{
+      ids: string[];
+      status: "SUCCESS" | "PENDING" | "OFFLINE" | "ERROR";
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      states?: any;
+      errorCode?: string;
+    }>;
   };
 }
 
@@ -82,8 +93,10 @@ export interface DisconnectRequest {
   inputs: [{ intent: "action.devices.DISCONNECT" }];
 }
 
-// eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface DisconnectResponse {}
+export interface DisconnectResponse {
+  requestId: string;
+  payload: Record<string, never>;
+}
 
 export interface GoogleDevice {
   id: string;

@@ -61,6 +61,32 @@ export class MQTTPublisher {
   }
 
   /**
+   * Subscribe to a topic and handle messages
+   */
+  subscribe(topic: string, handler: (message: any) => void): void {
+    if (!this.client) {
+      throw new Error("MQTT client not connected");
+    }
+
+    this.client.subscribe(topic, err => {
+      if (err) {
+        console.error(`Failed to subscribe to ${topic}:`, err);
+      }
+    });
+
+    this.client.on("message", (receivedTopic, payload) => {
+      if (receivedTopic === topic) {
+        try {
+          const message = JSON.parse(payload.toString());
+          handler(message);
+        } catch (error) {
+          console.error("Failed to parse MQTT message:", error);
+        }
+      }
+    });
+  }
+
+  /**
    * Publish service status (device list)
    */
   async publishServiceStatus(

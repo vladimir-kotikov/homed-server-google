@@ -6,7 +6,7 @@ services:
     ports:
       - "1883:1883"
     volumes:
-      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf
+      - ./resources/mosquitto.conf:/mosquitto/config/mosquitto.conf
     networks:
       - homed-test
     healthcheck:
@@ -30,6 +30,11 @@ services:
       - PORT=8080
       - NODE_ENV=test
       - JWT_SECRET=test-jwt-secret-for-integration-tests
+      - OAUTH_CLIENT_ID=test-client-id
+      - OAUTH_CLIENT_SECRET=test-client-secret
+      - OAUTH_REDIRECT_URI=https://oauth-redirect.googleusercontent.com/r/test-project
+      - TEST_USERNAME=test-user
+      - TEST_PASSWORD=test-password
     volumes:
       - ./tests/integration/test.db:/app/test.db
       - ./prisma:/app/prisma

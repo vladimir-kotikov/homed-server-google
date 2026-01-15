@@ -19,13 +19,15 @@ model User {
 }
 
 model AuthCode {
-  id        String   @id @default(uuid())
-  code      String   @unique
-  userId    String
-  user      User     @relation(fields: [userId], references: [id])
-  expiresAt DateTime
-  used      Boolean  @default(false)
-  createdAt DateTime @default(now())
+  id          String   @id @default(uuid())
+  code        String   @unique
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  clientId    String
+  redirectUri String
+  expiresAt   DateTime
+  used        Boolean  @default(false)
+  createdAt   DateTime @default(now())
 }
 
 model RefreshToken {

@@ -2,6 +2,10 @@ import { PrismaClient } from "@prisma/client";
 import * as bcrypt from "bcrypt";
 import dotenv from "dotenv";
 import express from "express";
+import * as fs from "fs";
+import oauthRoutes from "./routes/oauth.routes";
+import smarthomeRoutes from "./routes/smarthome.routes";
+import { setTCPServer } from "./routes/smarthome.routes";
 import { AuthService } from "./services/auth.service";
 import { TCPServer } from "./tcp/server";
 
@@ -45,6 +49,26 @@ async function initializeDatabase() {
 
       console.log(`✅ Initial user created: ${username}`);
       console.log(`   Client Token: ${clientToken}`);
+
+      // TODO: Figure out why this is needed for tests to pass
+      if (process.env.NODE_ENV === "test") {
+        // Write test configuration file
+        const confPath = "tests/integration/homed-cloud.conf";
+        const confTemplate = fs.existsSync(
+          "tests/integration/homed-cloud.conf.template"
+        )
+          ? fs.readFileSync(
+              "tests/integration/homed-cloud.conf.template",
+              "utf8"
+            )
+          : `cloud:\n  token: ${clientToken}\n  username: ${username}`;
+
+        fs.writeFileSync(
+          confPath,
+          confTemplate.replace("${CLIENT_TOKEN}", clientToken)
+        );
+        console.log(`✅ Test configuration written to ${confPath}`);
+      }
     }
   } catch (error) {
     console.warn("Database initialization check failed:", error);
@@ -142,6 +166,14 @@ async function initializeDatabase() {
   // Start HTTP server for test endpoints (when NODE_ENV=test)
   if (process.env.NODE_ENV === "test") {
     const app = express();
+    app.use(express.json());
+
+    // Set the TCP server for smarthome routes
+    setTCPServer(tcpServer);
+
+    // Register OAuth and fulfillment routes
+    app.use("/oauth", oauthRoutes);
+    app.use(smarthomeRoutes);
 
     // Test endpoint to get connected clients
     app.get("/test/clients", (_req, res) => {
@@ -161,7 +193,10 @@ async function initializeDatabase() {
     });
 
     app.listen(HTTP_PORT, () => {
-      console.log(`HTTP Test API listening on port ${HTTP_PORT}`);
+      console.log(`✅ HTTP Server listening on port ${HTTP_PORT}`);
+      console.log(`   OAuth: http://localhost:${HTTP_PORT}/oauth/authorize`);
+      console.log(`   Fulfillment: http://localhost:${HTTP_PORT}/fulfillment`);
+      console.log(`   Test API: http://localhost:${HTTP_PORT}/test/*`);
     });
   }
 
