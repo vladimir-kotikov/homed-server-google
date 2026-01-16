@@ -128,7 +128,12 @@ async function initializeDatabase() {
   tcpServer.on("client-message", (client: any, message: any) => {
     const userId = client.getUserId();
     console.log(
-      `Received message from client ${client.getUniqueId()} (user: ${userId}): ${JSON.stringify(message)}`
+      `📩 Received message from client ${client.getUniqueId()} (user: ${userId}):`
+    );
+    console.log(`   Topic: ${message.topic || "(no topic)"}`);
+    console.log(`   Action: ${message.action || "(no action)"}`);
+    console.log(
+      `   Message: ${JSON.stringify(message.message || {}).substring(0, 200)}`
     );
 
     // Log different message types for test verification
@@ -136,36 +141,24 @@ async function initializeDatabase() {
     if (message.topic) {
       const topic = message.topic;
 
-      if (topic.includes("/status/")) {
+      if (topic.startsWith("status/")) {
         console.log(`Service status update: ${topic}`);
-      } else if (topic.includes("/expose/")) {
+      } else if (topic.startsWith("expose/")) {
         console.log(`Device expose update: ${topic}`);
-        // Cache device information from expose messages
-        if (userId && message.message && message.message.endpoints) {
-          const deviceId = topic.split("/").pop();
-          if (deviceId) {
-            const device = {
-              id: deviceId,
-              name: deviceId,
-              endpoints: message.message.endpoints,
-              ...message.message,
-            };
-            console.log(`Caching device ${deviceId} for user ${userId}`);
-            tcpServer.cacheDevice(userId, deviceId, device);
-          }
-        }
-      } else if (topic.includes("/device/")) {
-        const deviceId = topic.split("/").pop();
-        console.log(`Device update for: ${deviceId}`);
-      } else if (topic.includes("/fd/")) {
-        const deviceId = topic.split("/").pop();
-        console.log(`Device state update for: ${deviceId}`);
+      } else if (topic.startsWith("device/")) {
+        console.log(`Device update: ${topic}`);
+      } else if (topic.startsWith("fd/")) {
+        console.log(`Device state update: ${topic}`);
       }
     }
   });
 
   tcpServer.on("error", (error: Error) => {
     console.error("TCP Server error:", error);
+  });
+
+  tcpServer.on("client-error", (client: any, error: Error) => {
+    console.error(`Client ${client.getUniqueId()} error:`, error.message);
   });
 
   tcpServer

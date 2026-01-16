@@ -1,147 +1,63 @@
-import {
-  AES128CBC,
-  DHKeyExchange,
-  padBuffer,
-  unpadBuffer,
-} from "../../src/tcp/crypto.ts";
-
-describe("DHKeyExchange", () => {
-  it("should require prime and generator before computing keys", () => {
-    const dh = new DHKeyExchange();
-
-    expect(() => dh.getSharedKey()).toThrow(
-      "Prime and generator must be set before computing shared key"
-    );
-    expect(() => dh.computePrivateKey(12345)).toThrow(
-      "Prime must be set before computing private key"
-    );
-  });
-
-  it("should accept prime and generator from client", () => {
-    const dh = new DHKeyExchange();
-    const clientPrime = 0xffffffc5;
-    const clientGenerator = 5;
-
-    expect(() => {
-      dh.setPrime(clientPrime);
-    }).not.toThrow();
-    expect(() => {
-      dh.setGenerator(clientGenerator);
-    }).not.toThrow();
-  });
-
-  it("should compute server shared key with client parameters", () => {
-    const dh = new DHKeyExchange();
-    dh.setPrime(0xffffffc5);
-    dh.setGenerator(5);
-
-    const sharedKey = dh.getSharedKey();
-
-    expect(typeof sharedKey).toBe("number");
-    expect(sharedKey).toBeGreaterThan(0);
-  });
-
-  it("should compute private key from client shared key", () => {
-    const dh = new DHKeyExchange();
-    dh.setPrime(0xffffffc5);
-    dh.setGenerator(5);
-
-    const clientSharedKey = 12345;
-    const privateKey = dh.computePrivateKey(clientSharedKey);
-
-    expect(typeof privateKey).toBe("number");
-    expect(privateKey).toBeGreaterThan(0);
-  });
-
-  it("should produce consistent shared keys", () => {
-    const dh = new DHKeyExchange();
-    dh.setPrime(0xffffffc5);
-    dh.setGenerator(5);
-
-    const key1 = dh.getSharedKey();
-    const key2 = dh.getSharedKey();
-
-    expect(key1).toBe(key2);
-  });
-
-  it("should invalidate cached keys when parameters change", () => {
-    const dh = new DHKeyExchange();
-    dh.setPrime(0xffffffc5);
-    dh.setGenerator(5);
-
-    const key1 = dh.getSharedKey();
-
-    // Change parameters
-    dh.setPrime(0xfffffffb);
-    dh.setGenerator(2);
-
-    const key2 = dh.getSharedKey();
-
-    expect(key1).not.toBe(key2);
-  });
-
-  it("should work with different client parameters", () => {
-    const dh1 = new DHKeyExchange();
-    dh1.setPrime(0xffffffc5);
-    dh1.setGenerator(5);
-
-    const dh2 = new DHKeyExchange();
-    dh2.setPrime(0xfffffffb);
-    dh2.setGenerator(2);
-
-    const key1 = dh1.getSharedKey();
-    const key2 = dh2.getSharedKey();
-
-    // Different parameters should produce different keys
-    // (Note: may occasionally be equal due to random private values)
-    expect(typeof key1).toBe("number");
-    expect(typeof key2).toBe("number");
-  });
-});
+import { AES128CBC } from "../../src/tcp/crypto.ts";
 
 describe("AES128CBC", () => {
-  const testKey = Buffer.from("0123456789abcdef");
-  const testIV = Buffer.from("fedcba9876543210");
-
   describe("constructor", () => {
-    it("should accept 16-byte key and IV", () => {
-      expect(() => new AES128CBC(testKey, testIV)).not.toThrow();
+    it("should create AES cipher from shared secret buffer", () => {
+      const sharedSecret = Buffer.from("shared-secret-key");
+      expect(() => new AES128CBC(sharedSecret)).not.toThrow();
     });
 
-    it("should throw on invalid key length", () => {
-      const shortKey = Buffer.from("short");
-      expect(() => new AES128CBC(shortKey, testIV)).toThrow(
-        "AES-128 key must be 16 bytes"
-      );
-    });
+    it("should derive different keys from different shared secrets", () => {
+      const secret1 = Buffer.from("secret1");
+      const secret2 = Buffer.from("secret2");
 
-    it("should throw on invalid IV length", () => {
-      const shortIV = Buffer.from("short");
-      expect(() => new AES128CBC(testKey, shortIV)).toThrow(
-        "AES IV must be 16 bytes"
-      );
+      const aes1 = new AES128CBC(secret1);
+      const aes2 = new AES128CBC(secret2);
+
+      // Encrypt same data with different secrets should produce different results
+      const data = Buffer.from("test data here  "); // 16 bytes
+      const encrypted1 = aes1.encrypt(data);
+      const encrypted2 = aes2.encrypt(data);
+
+      expect(encrypted1).not.toEqual(encrypted2);
     });
   });
 
   describe("encrypt/decrypt", () => {
-    it("should encrypt and decrypt data correctly with message-level IV persistence", () => {
-      // In CBC mode with persistent IV (like the C++ implementation),
-      // each message is encrypted with current IV, then IV updates.
-      // To test decrypt, we create a new AES instance to simulate receiving the message.
-      const aes = new AES128CBC(testKey, testIV);
-      const plaintext = Buffer.from("Hello, World!!!!"); // 16 bytes
+    it("should encrypt and decrypt 16-byte (block-aligned) data", () => {
+      const sharedSecret = Buffer.from("test-secret-16b-");
+      const aes1 = new AES128CBC(sharedSecret);
+      const aes2 = new AES128CBC(sharedSecret);
 
-      const encrypted = aes.encrypt(plaintext);
-      // At this point, currentIV has been updated to last block of encrypted
-      // Simulate receiving by creating new instance with same initial IV
-      const aes2 = new AES128CBC(testKey, testIV);
+      const plaintext = Buffer.from("0123456789abcdef"); // 16 bytes
+      const encrypted = aes1.encrypt(plaintext);
+
+      expect(encrypted.length).toBe(16);
+      expect(encrypted).not.toEqual(plaintext);
+
       const decrypted = aes2.decrypt(encrypted);
-
       expect(decrypted).toEqual(plaintext);
     });
 
-    it("should produce different ciphertext than plaintext", () => {
-      const aes = new AES128CBC(testKey, testIV);
+    it("should handle unaligned data by padding to 16-byte boundary", () => {
+      const sharedSecret = Buffer.from("test-secret-key!");
+      const aes1 = new AES128CBC(sharedSecret);
+      const aes2 = new AES128CBC(sharedSecret);
+
+      const plaintext = Buffer.from("Hello!"); // 6 bytes
+      const encrypted = aes1.encrypt(plaintext);
+
+      // Should be padded to 16 bytes
+      expect(encrypted.length % 16).toBe(0);
+
+      const decrypted = aes2.decrypt(encrypted);
+      // After decryption, should have trailing zeros (padding)
+      expect(decrypted.subarray(0, 6)).toEqual(plaintext);
+    });
+
+    it("should produce different ciphertext from plaintext", () => {
+      const sharedSecret = Buffer.from("test-secret-key!");
+      const aes = new AES128CBC(sharedSecret);
       const plaintext = Buffer.from("0123456789abcdef");
 
       const encrypted = aes.encrypt(plaintext);
@@ -149,211 +65,151 @@ describe("AES128CBC", () => {
       expect(encrypted).not.toEqual(plaintext);
     });
 
-    it("should handle 32-byte data with IV persistence", () => {
-      const aes = new AES128CBC(testKey, testIV);
+    it("should handle 32-byte data", () => {
+      const sharedSecret = Buffer.from("test-secret-key!");
+      const aes1 = new AES128CBC(sharedSecret);
+      const aes2 = new AES128CBC(sharedSecret);
+
       const plaintext = Buffer.from("01234567890123456789012345678901"); // 32 bytes
+      const encrypted = aes1.encrypt(plaintext);
 
-      const encrypted = aes.encrypt(plaintext);
-      // Create new instance to decrypt with same initial IV
-      const aes2 = new AES128CBC(testKey, testIV);
+      expect(encrypted.length).toBe(32);
+
       const decrypted = aes2.decrypt(encrypted);
-
       expect(decrypted).toEqual(plaintext);
     });
 
-    it("should handle 48-byte data with IV persistence", () => {
-      const aes = new AES128CBC(testKey, testIV);
+    it("should handle 48-byte data", () => {
+      const sharedSecret = Buffer.from("test-secret-key!");
+      const aes1 = new AES128CBC(sharedSecret);
+      const aes2 = new AES128CBC(sharedSecret);
+
       const plaintext = Buffer.from(
         "012345678901234567890123456789012345678901234567"
       ); // 48 bytes
+      const encrypted = aes1.encrypt(plaintext);
 
-      const encrypted = aes.encrypt(plaintext);
-      // Create new instance to decrypt with same initial IV
-      const aes2 = new AES128CBC(testKey, testIV);
+      expect(encrypted.length).toBe(48);
+
       const decrypted = aes2.decrypt(encrypted);
-
       expect(decrypted).toEqual(plaintext);
     });
+  });
 
-    it("should maintain IV persistence across multiple messages", () => {
-      // Test that IV evolves correctly through message sequence
-      const aes = new AES128CBC(testKey, testIV);
+  describe("fromHandshake - Diffie-Hellman key exchange", () => {
+    it("should create AES from DH handshake data", () => {
+      // Client sends: [prime(4), generator(4), clientPublic(4)]
+      const handshake = Buffer.allocUnsafe(12);
+      handshake.writeUInt32BE(0xfffffffb, 0); // prime
+      handshake.writeUInt32BE(2, 4); // generator
+      handshake.writeUInt32BE(12345, 8); // clientPublic
 
-      // Encrypt message 1 - must pad to 16-byte boundary first
-      const plaintext1 = Buffer.from("Message Number 1!!!"); // 20 bytes
-      const padded1 = padBuffer(plaintext1);
-      const encrypted1 = aes.encrypt(padded1);
+      const [aes, serverPublic] = AES128CBC.fromHandshake(handshake);
 
-      // Encrypt message 2 with evolved IV - must pad first
-      const plaintext2 = Buffer.from("Message Number 2!!!"); // 20 bytes
-      const padded2 = padBuffer(plaintext2);
-      const encrypted2 = aes.encrypt(padded2);
+      expect(aes).toBeInstanceOf(AES128CBC);
+      expect(serverPublic).toHaveLength(4); // 4-byte public key
+      expect(serverPublic).toBeInstanceOf(Buffer);
+    });
 
-      // Now decrypt in same session with persistent IV
-      // Create new instance that will evolve through same sequence
-      const aes2 = new AES128CBC(testKey, testIV);
-      const decrypted1 = aes2.decrypt(encrypted1);
-      const unpadded1 = unpadBuffer(decrypted1);
-      // Now IV of aes2 should match IV of aes after first decrypt
-      const decrypted2 = aes2.decrypt(encrypted2);
-      const unpadded2 = unpadBuffer(decrypted2);
+    it("should derive different keys from different client public keys", () => {
+      // Different client public keys should lead to different shared secrets
+      const handshake1 = Buffer.allocUnsafe(12);
+      handshake1.writeUInt32BE(0xfffffffb, 0);
+      handshake1.writeUInt32BE(2, 4);
+      handshake1.writeUInt32BE(100, 8);
 
-      expect(unpadded1).toEqual(plaintext1);
-      expect(unpadded2).toEqual(plaintext2);
+      const handshake2 = Buffer.allocUnsafe(12);
+      handshake2.writeUInt32BE(0xfffffffb, 0);
+      handshake2.writeUInt32BE(2, 4);
+      handshake2.writeUInt32BE(200, 8);
+
+      const [aes1] = AES128CBC.fromHandshake(handshake1);
+      const [aes2] = AES128CBC.fromHandshake(handshake2);
+
+      const plaintext = Buffer.from("0123456789abcdef");
+      const encrypted1 = aes1.encrypt(plaintext);
+      const encrypted2 = aes2.encrypt(plaintext);
+
+      // Should produce different ciphertexts
+      expect(encrypted1).not.toEqual(encrypted2);
+    });
+
+    it("should produce 4-byte server public key in big-endian format", () => {
+      const handshake = Buffer.allocUnsafe(12);
+      handshake.writeUInt32BE(0xfffffffb, 0);
+      handshake.writeUInt32BE(2, 4);
+      handshake.writeUInt32BE(12345, 8);
+
+      const result = AES128CBC.fromHandshake(handshake);
+      const serverPublic = result[1];
+
+      expect(serverPublic.length).toBe(4);
+      // Reading it back should give a UInt32
+      const value = serverPublic.readUInt32BE(0);
+      expect(typeof value).toBe("number");
+    });
+
+    it("should handle different prime and generator values", () => {
+      const handshake1 = Buffer.allocUnsafe(12);
+      handshake1.writeUInt32BE(0xffffffc5, 0);
+      handshake1.writeUInt32BE(5, 4);
+      handshake1.writeUInt32BE(54321, 8);
+
+      const handshake2 = Buffer.allocUnsafe(12);
+      handshake2.writeUInt32BE(0xfffffffb, 0);
+      handshake2.writeUInt32BE(2, 4);
+      handshake2.writeUInt32BE(54321, 8);
+
+      const [aes1] = AES128CBC.fromHandshake(handshake1);
+      const [aes2] = AES128CBC.fromHandshake(handshake2);
+
+      // Both should be valid AES instances
+      expect(aes1).toBeInstanceOf(AES128CBC);
+      expect(aes2).toBeInstanceOf(AES128CBC);
+
+      // They should produce different encryption results
+      const plaintext = Buffer.from("0123456789abcdef");
+      const encrypted1 = aes1.encrypt(plaintext);
+      const encrypted2 = aes2.encrypt(plaintext);
+
+      expect(encrypted1).not.toEqual(encrypted2);
     });
   });
-});
 
-describe("padBuffer", () => {
-  it("should pad to 16-byte boundary", () => {
-    const buffer = Buffer.from("hello"); // 5 bytes
-    const padded = padBuffer(buffer);
+  describe("encryption round-trip", () => {
+    it("should correctly encrypt and decrypt JSON message", () => {
+      const sharedSecret = Buffer.from("test-secret-key!");
+      const aes1 = new AES128CBC(sharedSecret);
+      const aes2 = new AES128CBC(sharedSecret);
 
-    expect(padded.length).toBe(16);
-    expect(padded.length % 16).toBe(0);
-  });
+      const message = {
+        action: "publish",
+        topic: "test/topic",
+        message: { data: "hello" },
+      };
 
-  it("should not pad if already aligned", () => {
-    const buffer = Buffer.from("0123456789abcdef"); // 16 bytes
-    const padded = padBuffer(buffer);
+      const plaintext = Buffer.from(JSON.stringify(message));
+      // Pad to 16-byte boundary
+      const padded =
+        plaintext.length % 16 === 0
+          ? plaintext
+          : Buffer.concat([
+              plaintext,
+              Buffer.alloc(16 - (plaintext.length % 16)),
+            ]);
 
-    expect(padded.length).toBe(16);
-    expect(padded).toEqual(buffer);
-  });
+      const encrypted = aes1.encrypt(padded);
+      const decrypted = aes2.decrypt(encrypted);
 
-  it("should pad with zeros", () => {
-    const buffer = Buffer.from("test"); // 4 bytes
-    const padded = padBuffer(buffer);
+      // Remove padding: find first run of zeros at end and trim
+      let unpadLen = decrypted.length;
+      while (unpadLen > 0 && decrypted[unpadLen - 1] === 0x00) {
+        unpadLen--;
+      }
+      const unpadded = decrypted.subarray(0, unpadLen);
 
-    expect(padded.length).toBe(16);
-    expect(padded.slice(0, 4)).toEqual(buffer);
-    expect(padded.slice(4).every(b => b === 0)).toBe(true);
-  });
-
-  it("should handle 15-byte buffer", () => {
-    const buffer = Buffer.from("123456789012345"); // 15 bytes
-    const padded = padBuffer(buffer);
-
-    expect(padded.length).toBe(16);
-  });
-
-  it("should handle 17-byte buffer", () => {
-    const buffer = Buffer.from("12345678901234567"); // 17 bytes
-    const padded = padBuffer(buffer);
-
-    expect(padded.length).toBe(32);
-  });
-
-  it("should handle empty buffer", () => {
-    const buffer = Buffer.from([]);
-    const padded = padBuffer(buffer);
-
-    expect(padded.length).toBe(0);
-  });
-});
-
-describe("unpadBuffer", () => {
-  it("should remove zero padding", () => {
-    const original = Buffer.from("hello");
-    const padded = padBuffer(original);
-    const unpadded = unpadBuffer(padded);
-
-    expect(unpadded).toEqual(original);
-  });
-
-  it("should handle buffer with no padding", () => {
-    const buffer = Buffer.from("0123456789abcdef");
-    const unpadded = unpadBuffer(buffer);
-
-    expect(unpadded).toEqual(buffer);
-  });
-
-  it("should handle buffer that ends with non-zero", () => {
-    const buffer = Buffer.from([1, 2, 3, 4, 5]);
-    const unpadded = unpadBuffer(buffer);
-
-    expect(unpadded).toEqual(buffer);
-  });
-
-  it("should handle all-zero buffer", () => {
-    const buffer = Buffer.from([0, 0, 0, 0]);
-    const unpadded = unpadBuffer(buffer);
-
-    expect(unpadded.length).toBe(0);
-  });
-
-  it("should preserve data before padding", () => {
-    const original = Buffer.from("test data here");
-    const padded = padBuffer(original);
-    const unpadded = unpadBuffer(padded);
-
-    expect(unpadded.toString()).toBe(original.toString());
-  });
-});
-
-describe("Integration: padBuffer + AES + unpadBuffer", () => {
-  it("should handle round-trip encryption with padding", () => {
-    const testKey = Buffer.from("0123456789abcdef");
-    const testIV = Buffer.from("fedcba9876543210");
-    const aes = new AES128CBC(testKey, testIV);
-
-    const plaintext = Buffer.from("This is a test message!");
-    const padded = padBuffer(plaintext);
-    const encrypted = aes.encrypt(padded);
-    // Create new AES instance with same IV to decrypt
-    const aes2 = new AES128CBC(testKey, testIV);
-    const decrypted = aes2.decrypt(encrypted);
-    const unpadded = unpadBuffer(decrypted);
-
-    expect(unpadded).toEqual(plaintext);
-  });
-
-  it("should handle JSON data", () => {
-    const testKey = Buffer.from("0123456789abcdef");
-    const testIV = Buffer.from("fedcba9876543210");
-    const aes = new AES128CBC(testKey, testIV);
-
-    const json = JSON.stringify({
-      action: "test",
-      topic: "test/topic",
-      message: "hello",
+      const recoveredMessage = JSON.parse(unpadded.toString());
+      expect(recoveredMessage).toEqual(message);
     });
-    const plaintext = Buffer.from(json);
-    const padded = padBuffer(plaintext);
-    const encrypted = aes.encrypt(padded);
-    // Create new AES instance with same IV to decrypt
-    const aes2 = new AES128CBC(testKey, testIV);
-    const decrypted = aes2.decrypt(encrypted);
-    const unpadded = unpadBuffer(decrypted);
-
-    expect(unpadded.toString()).toBe(json);
-    expect(JSON.parse(unpadded.toString())).toEqual(JSON.parse(json));
-  });
-
-  it("should handle multiple messages with IV persistence", () => {
-    // Simulate a session with multiple encrypted messages
-    const testKey = Buffer.from("0123456789abcdef");
-    const testIV = Buffer.from("fedcba9876543210");
-
-    // Sender side
-    const aesEncrypt = new AES128CBC(testKey, testIV);
-    const msg1 = Buffer.from("First message here!!!");
-    const padded1 = padBuffer(msg1);
-    const encrypted1 = aesEncrypt.encrypt(padded1);
-
-    const msg2 = Buffer.from("Second message here!!");
-    const padded2 = padBuffer(msg2);
-    const encrypted2 = aesEncrypt.encrypt(padded2); // Uses evolved IV
-
-    // Receiver side - must decrypt in same order with same IV evolution
-    const aesDecrypt = new AES128CBC(testKey, testIV);
-    const decrypted1 = aesDecrypt.decrypt(encrypted1);
-    const unpadded1 = unpadBuffer(decrypted1);
-
-    const decrypted2 = aesDecrypt.decrypt(encrypted2); // Uses evolved IV
-    const unpadded2 = unpadBuffer(decrypted2);
-
-    expect(unpadded1).toEqual(msg1);
-    expect(unpadded2).toEqual(msg2);
   });
 });

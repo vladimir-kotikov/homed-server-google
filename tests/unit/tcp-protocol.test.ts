@@ -1,215 +1,320 @@
-import { MessageFramer } from "../../src/tcp/protocol.ts";
+import {
+  escapePacket,
+  readPacket,
+  unescapePacket,
+  type ProtocolMessage,
+} from "../../src/tcp/protocol.ts";
 
-describe("MessageFramer", () => {
-  let framer: MessageFramer;
+describe("Protocol Packet Handling", () => {
+  describe("readPacket", () => {
+    it("should extract packet between start and end markers", () => {
+      const data = Buffer.from([0x42, 0x01, 0x02, 0x03, 0x43]);
+      const [packet, remainder] = readPacket(data);
 
-  beforeEach(() => {
-    framer = new MessageFramer();
+      expect(packet).toEqual(Buffer.from([0x01, 0x02, 0x03]));
+      expect(remainder).toEqual(Buffer.from([]));
+    });
+
+    it("should return null if no start marker", () => {
+      const data = Buffer.from([0x01, 0x02, 0x43]);
+      const [packet, remainder] = readPacket(data);
+
+      expect(packet).toBeNull();
+      expect(remainder).toEqual(data);
+    });
+
+    it("should return null if no end marker", () => {
+      const data = Buffer.from([0x42, 0x01, 0x02]);
+      const [packet, remainder] = readPacket(data);
+
+      expect(packet).toBeNull();
+      expect(remainder).toEqual(data);
+    });
+
+    it("should return null if end marker before start marker", () => {
+      const data = Buffer.from([0x43, 0x42, 0x01]);
+      const [packet, remainder] = readPacket(data);
+
+      expect(packet).toBeNull();
+      expect(remainder).toEqual(data);
+    });
+
+    it("should extract first complete packet and return remainder", () => {
+      const data = Buffer.from([
+        0x42, 0x01, 0x02, 0x43, 0x42, 0x03, 0x04, 0x43,
+      ]);
+      const [packet, remainder] = readPacket(data);
+
+      expect(packet).toEqual(Buffer.from([0x01, 0x02]));
+      expect(remainder).toEqual(Buffer.from([0x42, 0x03, 0x04, 0x43]));
+    });
+
+    it("should handle empty packet", () => {
+      const data = Buffer.from([0x42, 0x43]);
+      const [packet, remainder] = readPacket(data);
+
+      expect(packet).toEqual(Buffer.from([]));
+      expect(remainder).toEqual(Buffer.from([]));
+    });
+
+    it("should handle escaped markers in packet content", () => {
+      // Packet: [0x42, ESCAPED_START, 0x01, 0x43] -> should extract [ESCAPED_START, 0x01]
+      const data = Buffer.from([0x42, 0x44, 0x62, 0x01, 0x43]);
+      const [packet, remainder] = readPacket(data);
+
+      expect(packet).toEqual(Buffer.from([0x44, 0x62, 0x01]));
+      expect(remainder).toEqual(Buffer.from([]));
+    });
   });
 
-  describe("frame", () => {
-    it("should add start and end markers", () => {
-      const data = Buffer.from("test");
-      const framed = framer.frame(data);
-
-      expect(framed[0]).toBe(0x42); // START_MARKER
-      expect(framed[framed.length - 1]).toBe(0x43); // END_MARKER
-    });
-
-    it("should escape START_MARKER in data", () => {
+  describe("escapePacket", () => {
+    it("should escape START_MARKER (0x42)", () => {
       const data = Buffer.from([0x42]);
-      const framed = framer.frame(data);
+      const escaped = escapePacket(data);
 
-      // Should be: [START, ESCAPE, 0x62, END]
-      expect(framed).toEqual(Buffer.from([0x42, 0x44, 0x62, 0x43]));
+      expect(escaped).toEqual(Buffer.from([0x44, 0x62]));
     });
 
-    it("should escape END_MARKER in data", () => {
+    it("should escape END_MARKER (0x43)", () => {
       const data = Buffer.from([0x43]);
-      const framed = framer.frame(data);
+      const escaped = escapePacket(data);
 
-      // Should be: [START, ESCAPE, 0x63, END]
-      expect(framed).toEqual(Buffer.from([0x42, 0x44, 0x63, 0x43]));
+      expect(escaped).toEqual(Buffer.from([0x44, 0x63]));
     });
 
-    it("should escape ESCAPE_MARKER in data", () => {
+    it("should escape ESCAPE_MARKER (0x44)", () => {
       const data = Buffer.from([0x44]);
-      const framed = framer.frame(data);
+      const escaped = escapePacket(data);
 
-      // Should be: [START, ESCAPE, 0x64, END]
-      expect(framed).toEqual(Buffer.from([0x42, 0x44, 0x64, 0x43]));
+      expect(escaped).toEqual(Buffer.from([0x44, 0x64]));
     });
 
     it("should escape multiple special bytes", () => {
       const data = Buffer.from([0x42, 0x43, 0x44]);
-      const framed = framer.frame(data);
+      const escaped = escapePacket(data);
 
-      // Should be: [START, ESCAPE, 0x62, ESCAPE, 0x63, ESCAPE, 0x64, END]
-      expect(framed).toEqual(
-        Buffer.from([0x42, 0x44, 0x62, 0x44, 0x63, 0x44, 0x64, 0x43])
+      expect(escaped).toEqual(
+        Buffer.from([0x44, 0x62, 0x44, 0x63, 0x44, 0x64])
       );
     });
 
-    it("should handle data with no special bytes", () => {
-      const data = Buffer.from("hello world");
-      const framed = framer.frame(data);
+    it("should not escape regular bytes", () => {
+      const data = Buffer.from([0x01, 0x02, 0x03]);
+      const escaped = escapePacket(data);
 
-      expect(framed[0]).toBe(0x42);
-      expect(framed[framed.length - 1]).toBe(0x43);
-      expect(framed.slice(1, -1)).toEqual(data);
+      expect(escaped).toEqual(data);
+    });
+
+    it("should handle mixed regular and special bytes", () => {
+      const data = Buffer.from([0x01, 0x42, 0x02, 0x43, 0x03]);
+      const escaped = escapePacket(data);
+
+      expect(escaped).toEqual(
+        Buffer.from([0x01, 0x44, 0x62, 0x02, 0x44, 0x63, 0x03])
+      );
     });
   });
 
-  describe("unframe", () => {
-    it("should extract a single complete message", () => {
-      const data = Buffer.from("test");
-      const framed = framer.frame(data);
+  describe("unescapePacket", () => {
+    it("should unescape START_MARKER sequence", () => {
+      const escaped = Buffer.from([0x44, 0x62]);
+      const unescaped = unescapePacket(escaped);
 
-      const messages = framer.unframe(framed);
-
-      expect(messages).toHaveLength(1);
-      expect(messages[0]).toEqual(data);
+      expect(unescaped).toEqual(Buffer.from([0x42]));
     });
 
-    it("should handle multiple messages in one chunk", () => {
-      const data1 = Buffer.from("message1");
-      const data2 = Buffer.from("message2");
-      const framed1 = framer.frame(data1);
-      const framed2 = framer.frame(data2);
+    it("should unescape END_MARKER sequence", () => {
+      const escaped = Buffer.from([0x44, 0x63]);
+      const unescaped = unescapePacket(escaped);
+
+      expect(unescaped).toEqual(Buffer.from([0x43]));
+    });
+
+    it("should unescape ESCAPE_MARKER sequence", () => {
+      const escaped = Buffer.from([0x44, 0x64]);
+      const unescaped = unescapePacket(escaped);
+
+      expect(unescaped).toEqual(Buffer.from([0x44]));
+    });
+
+    it("should unescape multiple sequences", () => {
+      const escaped = Buffer.from([0x44, 0x62, 0x44, 0x63, 0x44, 0x64]);
+      const unescaped = unescapePacket(escaped);
+
+      expect(unescaped).toEqual(Buffer.from([0x42, 0x43, 0x44]));
+    });
+
+    it("should leave regular bytes unchanged", () => {
+      const escaped = Buffer.from([0x01, 0x02, 0x03]);
+      const unescaped = unescapePacket(escaped);
+
+      expect(unescaped).toEqual(escaped);
+    });
+
+    it("should handle mixed regular and escaped bytes", () => {
+      const escaped = Buffer.from([0x01, 0x44, 0x62, 0x02, 0x44, 0x63, 0x03]);
+      const unescaped = unescapePacket(escaped);
+
+      expect(unescaped).toEqual(Buffer.from([0x01, 0x42, 0x02, 0x43, 0x03]));
+    });
+
+    it("should handle escape marker at end of buffer", () => {
+      const escaped = Buffer.from([0x01, 0x02, 0x44]);
+      const unescaped = unescapePacket(escaped);
+
+      // Escape marker at end with no following byte
+      expect(unescaped).toEqual(Buffer.from([0x01, 0x02, 0x44]));
+    });
+
+    it("should handle incomplete escape sequence", () => {
+      const escaped = Buffer.from([0x01, 0x44]); // 0x44 at end, no next byte
+      const unescaped = unescapePacket(escaped);
+
+      expect(unescaped).toEqual(Buffer.from([0x01, 0x44]));
+    });
+
+    it("should handle invalid escape sequence", () => {
+      const escaped = Buffer.from([0x44, 0xff]); // Invalid escape code
+      const unescaped = unescapePacket(escaped);
+
+      expect(unescaped).toEqual(Buffer.from([0x44, 0xff]));
+    });
+  });
+
+  describe("round-trip: escape and unescape", () => {
+    it("should recover original data after escape/unescape", () => {
+      const original = Buffer.from([0x42, 0x43, 0x44, 0x01, 0x02]);
+      const escaped = escapePacket(original);
+      const unescaped = unescapePacket(escaped);
+
+      expect(unescaped).toEqual(original);
+    });
+
+    it("should handle regular data without modification", () => {
+      const original = Buffer.from([0x01, 0x02, 0x03, 0x04]);
+      const escaped = escapePacket(original);
+      const unescaped = unescapePacket(escaped);
+
+      expect(escaped).toEqual(original);
+      expect(unescaped).toEqual(original);
+    });
+
+    it("should handle large data", () => {
+      const original = Buffer.alloc(1000);
+      for (let i = 0; i < original.length; i++) {
+        original[i] = i % 256;
+      }
+
+      const escaped = escapePacket(original);
+      const unescaped = unescapePacket(escaped);
+
+      expect(unescaped).toEqual(original);
+    });
+
+    it("should handle all special bytes", () => {
+      const special = Buffer.from([0x42, 0x43, 0x44, 0x42, 0x44, 0x43]);
+      const escaped = escapePacket(special);
+      const unescaped = unescapePacket(escaped);
+
+      expect(unescaped).toEqual(special);
+    });
+  });
+
+  describe("protocol message framing", () => {
+    it("should frame and unframe a complete message", () => {
+      const messageData = Buffer.from(
+        JSON.stringify({
+          action: "publish",
+          topic: "test/topic",
+          message: { data: "hello" },
+        })
+      );
+
+      // Escape the data
+      const escaped = escapePacket(messageData);
+
+      // Create frame: [START, escaped_data, END]
+      const framed = Buffer.concat([
+        Buffer.from([0x42]),
+        escaped,
+        Buffer.from([0x43]),
+      ]);
+
+      // Extract packet
+      const [packet, remainder] = readPacket(framed);
+
+      expect(packet).toEqual(escaped);
+      expect(remainder).toEqual(Buffer.from([]));
+
+      // Unescape to get original
+      const unescaped = unescapePacket(packet!);
+      expect(unescaped).toEqual(messageData);
+
+      // Parse JSON
+      const message: ProtocolMessage = JSON.parse(unescaped.toString());
+      expect(message.action).toBe("publish");
+      expect(message.topic).toBe("test/topic");
+    });
+
+    it("should handle multiple framed messages", () => {
+      const msg1 = Buffer.from("message1");
+      const msg2 = Buffer.from("message2");
+
+      const escaped1 = escapePacket(msg1);
+      const escaped2 = escapePacket(msg2);
+
+      const framed1 = Buffer.concat([
+        Buffer.from([0x42]),
+        escaped1,
+        Buffer.from([0x43]),
+      ]);
+      const framed2 = Buffer.concat([
+        Buffer.from([0x42]),
+        escaped2,
+        Buffer.from([0x43]),
+      ]);
+
       const combined = Buffer.concat([framed1, framed2]);
 
-      const messages = framer.unframe(combined);
+      // Extract first message
+      const [packet1, remainder1] = readPacket(combined);
+      expect(packet1).toEqual(escaped1);
 
-      expect(messages).toHaveLength(2);
-      expect(messages[0]).toEqual(data1);
-      expect(messages[1]).toEqual(data2);
+      // Extract second message from remainder
+      const [packet2, remainder2] = readPacket(remainder1);
+      expect(packet2).toEqual(escaped2);
+      expect(remainder2).toEqual(Buffer.from([]));
+
+      // Verify unescaping
+      expect(unescapePacket(packet1!)).toEqual(msg1);
+      expect(unescapePacket(packet2!)).toEqual(msg2);
     });
 
-    it("should handle partial messages across multiple calls", () => {
-      const data = Buffer.from("test message");
-      const framed = framer.frame(data);
+    it("should handle partial messages in buffer", () => {
+      const messageData = Buffer.from("test message content");
+      const escaped = escapePacket(messageData);
+      const framed = Buffer.concat([
+        Buffer.from([0x42]),
+        escaped,
+        Buffer.from([0x43]),
+      ]);
 
-      // Split the framed message in half
-      const part1 = framed.slice(0, Math.floor(framed.length / 2));
-      const part2 = framed.slice(Math.floor(framed.length / 2));
+      // Split message in half
+      const half = Math.floor(framed.length / 2);
+      const part1 = framed.slice(0, half);
+      const part2 = framed.slice(half);
 
-      // First call should return no complete messages
-      let messages = framer.unframe(part1);
-      expect(messages).toHaveLength(0);
+      // First read should return null (incomplete)
+      const [packet1] = readPacket(part1);
+      expect(packet1).toBeNull();
 
-      // Second call should return the complete message
-      messages = framer.unframe(part2);
-      expect(messages).toHaveLength(1);
-      expect(messages[0]).toEqual(data);
-    });
+      // Combine and read again
+      const combined = Buffer.concat([part1, part2]);
+      const [packet2, remainder] = readPacket(combined);
 
-    it("should unescape START_MARKER", () => {
-      const data = Buffer.from([0x42]);
-      const framed = framer.frame(data);
-      const messages = framer.unframe(framed);
-
-      expect(messages).toHaveLength(1);
-      expect(messages[0]).toEqual(data);
-    });
-
-    it("should unescape END_MARKER", () => {
-      const data = Buffer.from([0x43]);
-      const framed = framer.frame(data);
-      const messages = framer.unframe(framed);
-
-      expect(messages).toHaveLength(1);
-      expect(messages[0]).toEqual(data);
-    });
-
-    it("should unescape ESCAPE_MARKER", () => {
-      const data = Buffer.from([0x44]);
-      const framed = framer.frame(data);
-      const messages = framer.unframe(framed);
-
-      expect(messages).toHaveLength(1);
-      expect(messages[0]).toEqual(data);
-    });
-
-    it("should handle complex escaped sequences", () => {
-      const data = Buffer.from([0x42, 0x43, 0x44, 0x01, 0x02]);
-      const framed = framer.frame(data);
-      const messages = framer.unframe(framed);
-
-      expect(messages).toHaveLength(1);
-      expect(messages[0]).toEqual(data);
-    });
-
-    it("should handle empty data", () => {
-      const data = Buffer.from([]);
-      const framed = framer.frame(data);
-      const messages = framer.unframe(framed);
-
-      expect(messages).toHaveLength(1);
-      expect(messages[0]).toEqual(data);
-    });
-  });
-
-  describe("reset", () => {
-    it("should clear internal buffer", () => {
-      const data = Buffer.from("test");
-      const framed = framer.frame(data);
-      const partial = framed.slice(0, 5);
-
-      framer.unframe(partial);
-      framer.reset();
-
-      // After reset, the buffer should be empty
-      const messages = framer.unframe(framed);
-      expect(messages).toHaveLength(1);
-      expect(messages[0]).toEqual(data);
-    });
-  });
-
-  describe("edge cases", () => {
-    it("should handle buffer with only markers", () => {
-      const data = Buffer.from([0x42, 0x43]);
-      const messages = framer.unframe(data);
-
-      expect(messages).toHaveLength(1);
-      expect(messages[0]).toEqual(Buffer.from([]));
-    });
-
-    it("should handle data before start marker", () => {
-      const garbage = Buffer.from([0x01, 0x02, 0x03]);
-      const data = Buffer.from("test");
-      const framed = framer.frame(data);
-      const combined = Buffer.concat([garbage, framed]);
-
-      const messages = framer.unframe(combined);
-
-      // Should ignore garbage before start marker
-      expect(messages).toHaveLength(1);
-      expect(messages[0]).toEqual(data);
-    });
-
-    it("should handle large messages", () => {
-      const data = Buffer.alloc(10000, 0xff);
-      const framed = framer.frame(data);
-      const messages = framer.unframe(framed);
-
-      expect(messages).toHaveLength(1);
-      expect(messages[0]).toEqual(data);
-    });
-
-    it("should apply & 0xDF mask to all bytes after ESCAPE_MARKER", () => {
-      // Critical test: unescape applies & 0xDF to ANY byte after 0x44
-      // This is a bitwise AND operation, not conditional logic
-      // Examples: 0x62 & 0xDF = 0x42, 0x65 & 0xDF = 0x45, 0xFF & 0xDF = 0xDF
-
-      // Now manually create data with escape sequence
-      // If we receive [START, ESCAPE, 0x65, END]
-      // The unescape should apply & 0xDF to 0x65: 0x65 & 0xDF = 0x45
-      const manualEscaped = Buffer.from([0x42, 0x44, 0x65, 0x43]);
-      const messages = framer.unframe(manualEscaped);
-
-      // Result should be [0x45] because 0x65 & 0xDF = 0x45
-      expect(messages).toHaveLength(1);
-      expect(messages[0]).toEqual(Buffer.from([0x45]));
+      expect(packet2).toEqual(escaped);
+      expect(remainder).toEqual(Buffer.from([]));
+      expect(unescapePacket(packet2!)).toEqual(messageData);
     });
   });
 });
