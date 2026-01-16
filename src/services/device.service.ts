@@ -1,6 +1,8 @@
 import { ClientConnection } from "../tcp/client-connection.ts";
 import { type ProtocolMessage } from "../tcp/protocol.ts";
 import { TCPServer } from "../tcp/server.ts";
+import type { GoogleDevice } from "../types.ts";
+import { CapabilityMapper, type HomedDevice } from "./mapper.service.ts";
 
 /**
  * Device service for querying and controlling devices via TCP clients
@@ -10,9 +12,11 @@ import { TCPServer } from "../tcp/server.ts";
  */
 export class DeviceService {
   private tcpServer: TCPServer;
+  private mapper: CapabilityMapper;
 
   constructor(tcpServer: TCPServer) {
     this.tcpServer = tcpServer;
+    this.mapper = new CapabilityMapper();
   }
 
   /**
@@ -113,6 +117,136 @@ export class DeviceService {
       // Broadcast to all user's clients
       this.tcpServer.broadcastToUser(userId, publishMessage);
       return { success: true };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Unknown error",
+      };
+    }
+  }
+
+  /**
+   * Get Google Smart Home devices for SYNC intent
+   * Converts Homed devices to Google format using the capability mapper
+   */
+  async getGoogleDevices(userId: string): Promise<GoogleDevice[]> {
+    const homedDevices = await this.getAllDevices(userId);
+    const googleDevices: GoogleDevice[] = [];
+
+    // Get a sample client ID for device ID generation
+    const clients = this.tcpServer.getClientsByUser(userId);
+    if (clients.length === 0) {
+      return [];
+    }
+    const clientId = clients[0].getUniqueId() || "client-unknown";
+
+    for (const homedDevice of homedDevices) {
+      try {
+        // Only map if device has the expected structure
+        if (!homedDevice.key || !homedDevice.name) {
+          continue;
+        }
+
+        // Convert to proper HomedDevice interface
+        const device: HomedDevice = {
+          key: homedDevice.key,
+          name: homedDevice.name,
+          description: homedDevice.description,
+          available: homedDevice.available !== false,
+          type: homedDevice.type,
+          endpoints: homedDevice.endpoints || [],
+        };
+
+        const googleDevice = this.mapper.mapToGoogleDevice(device, clientId);
+        googleDevices.push(googleDevice);
+      } catch (error) {
+        console.error(`Failed to map device ${homedDevice.key}:`, error);
+        // Continue mapping other devices
+      }
+    }
+
+    return googleDevices;
+  }
+
+  /**
+   * Get Google state for devices (QUERY intent)
+   * Converts Homed device states to Google format
+   */
+  async getGoogleDeviceStates(
+    userId: string,
+    homedDevices: HomedDevice[],
+    stateData: Map<string, any>
+  ): Promise<Record<string, any>> {
+    const states: Record<string, any> = {};
+
+    const clients = this.tcpServer.getClientsByUser(userId);
+    if (clients.length === 0) {
+      return states;
+    }
+    const clientId = clients[0].getUniqueId() || "client-unknown";
+
+    for (const device of homedDevices) {
+      try {
+        const googleDeviceId = `${clientId}-${device.key}`;
+        const deviceState = stateData.get(device.key) || {};
+
+        states[googleDeviceId] = this.mapper.mapToGoogleState(
+          device,
+          deviceState
+        );
+      } catch (error) {
+        console.error(`Failed to map state for device ${device.key}:`, error);
+        states[`${clientId}-${device.key}`] = {
+          online: false,
+          status: "ERROR",
+        };
+      }
+    }
+
+    return states;
+  }
+
+  /**
+   * Get Google state for a single device by key
+   * Converts Homed device state to Google format
+   */
+  getGoogleDeviceState(
+    homedDevice: HomedDevice,
+    stateData: any
+  ): Record<string, any> {
+    try {
+      return this.mapper.mapToGoogleState(homedDevice, stateData);
+    } catch (error) {
+      console.error(
+        `Failed to map state for device ${homedDevice.key}:`,
+        error
+      );
+      return {
+        online: false,
+        status: "ERROR",
+      };
+    }
+  }
+
+  /**
+   * Execute Google command on a Homed device
+   * Converts Google command to Homed topic/message
+   */
+  async executeGoogleCommand(
+    userId: string,
+    device: HomedDevice,
+    command: any
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      const homedCommand = this.mapper.mapToHomedCommand(device, command);
+      if (!homedCommand) {
+        return {
+          success: false,
+          error: `Command '${command.command}' not supported for this device`,
+        };
+      }
+
+      return await this.executeCommand(userId, device.key, homedCommand);
     } catch (error) {
       return {
         success: false,

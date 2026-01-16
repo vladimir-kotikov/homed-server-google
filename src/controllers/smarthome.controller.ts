@@ -7,7 +7,6 @@ import type {
   DisconnectResponse,
   ExecuteRequest,
   ExecuteResponse,
-  GoogleDevice,
   QueryRequest,
   QueryResponse,
   SmartHomeRequest,
@@ -93,30 +92,7 @@ export class SmartHomeController {
     request: SyncRequest,
     userId: string
   ): Promise<SyncResponse> {
-    const devices = await this.deviceService.getAllDevices(userId);
-
-    // Convert Homed devices to Google Smart Home devices
-    const googleDevices: GoogleDevice[] = devices.map(device => {
-      // TODO: Implement proper device mapping in Step 4
-      // For now, return basic structure
-      return {
-        id: device.id || device.key || "unknown",
-        type: "action.devices.types.OUTLET", // Placeholder
-        traits: ["action.devices.traits.OnOff"], // Placeholder
-        name: {
-          defaultNames: [device.name || "Unknown Device"],
-          name: device.name || "Unknown Device",
-          nicknames: [device.name || "Unknown Device"],
-        },
-        willReportState: false,
-        deviceInfo: {
-          manufacturer: "Homed",
-          model: device.model || "unknown",
-          hwVersion: "1.0",
-          swVersion: "1.0",
-        },
-      };
-    });
+    const googleDevices = await this.deviceService.getGoogleDevices(userId);
 
     return {
       requestId: request.requestId,
@@ -134,32 +110,48 @@ export class SmartHomeController {
     request: QueryRequest,
     userId: string
   ): Promise<QueryResponse> {
-    const deviceIds = request.inputs[0].payload.devices.map((d: any) => d.id);
+    const googleDeviceIds = request.inputs[0].payload.devices.map(
+      (d: any) => d.id
+    );
+
+    // Get all devices to build device map
+    const homedDevices = await this.deviceService.getAllDevices(userId);
+    const deviceMap = new Map<string, any>();
+
+    for (const device of homedDevices) {
+      if (device.key) {
+        deviceMap.set(device.key, device);
+      }
+    }
+
+    // Get device states for all devices
     const states = await this.deviceService.queryDeviceStates(
       userId,
-      deviceIds
+      Array.from(deviceMap.keys())
     );
 
     // Build device states response
     const devices: Record<string, any> = {};
 
-    for (const deviceId of deviceIds) {
-      const state = states.get(deviceId);
+    for (const googleDeviceId of googleDeviceIds) {
+      // Extract device key from Google ID (format: clientId-deviceKey)
+      const parts = googleDeviceId.split("-");
+      const deviceKey = parts.slice(1).join("-");
 
-      if (state) {
-        // TODO: Implement proper state mapping in Step 4
-        // For now, return basic online state
-        devices[deviceId] = {
-          online: true,
-          status: "SUCCESS",
-          ...state, // Include raw state for now
-        };
-      } else {
-        devices[deviceId] = {
+      const homedDevice = deviceMap.get(deviceKey);
+      if (!homedDevice) {
+        devices[googleDeviceId] = {
           online: false,
           status: "OFFLINE",
         };
+        continue;
       }
+
+      const deviceState = states.get(deviceKey);
+      devices[googleDeviceId] = this.deviceService.getGoogleDeviceState(
+        homedDevice,
+        deviceState || {}
+      );
     }
 
     return {
@@ -180,45 +172,60 @@ export class SmartHomeController {
     const commands = request.inputs[0].payload.commands;
     const commandResults: any[] = [];
 
+    // Get all devices for mapping
+    const homedDevices = await this.deviceService.getAllDevices(userId);
+    const deviceMap = new Map<string, any>();
+
+    for (const device of homedDevices) {
+      if (device.key) {
+        deviceMap.set(device.key, device);
+      }
+    }
+
     for (const command of commands) {
-      const deviceIds = command.devices.map((d: any) => d.id);
+      const googleDeviceIds = command.devices.map((d: any) => d.id);
       const execution = command.execution[0]; // Take first execution
 
-      for (const deviceId of deviceIds) {
+      for (const googleDeviceId of googleDeviceIds) {
         try {
-          // TODO: Implement proper command mapping in Step 4
-          // For now, send raw command
-          const result = await this.deviceService.executeCommand(
+          // Extract device key from Google ID (format: clientId-deviceKey)
+          const parts = googleDeviceId.split("-");
+          const deviceKey = parts.slice(1).join("-");
+
+          const homedDevice = deviceMap.get(deviceKey);
+          if (!homedDevice) {
+            commandResults.push({
+              ids: [googleDeviceId],
+              status: "ERROR",
+              errorCode: "deviceNotFound",
+            });
+            continue;
+          }
+
+          // Execute command using mapper
+          const result = await this.deviceService.executeGoogleCommand(
             userId,
-            deviceId,
-            {
-              topic: `td/${deviceId}`, // to-device topic
-              message: {
-                command: execution.command,
-                params: execution.params,
-              },
-            }
+            homedDevice,
+            execution
           );
 
           if (result.success) {
             commandResults.push({
-              ids: [deviceId],
+              ids: [googleDeviceId],
               status: "SUCCESS",
-              states: {
-                online: true,
-                ...execution.params, // Return command params as new state
-              },
             });
           } else {
             commandResults.push({
-              ids: [deviceId],
+              ids: [googleDeviceId],
               status: "ERROR",
-              errorCode: "deviceOffline",
+              errorCode: result.error?.includes("No connected")
+                ? "deviceOffline"
+                : "hardError",
             });
           }
         } catch (error) {
           commandResults.push({
-            ids: [deviceId],
+            ids: [googleDeviceId],
             status: "ERROR",
             errorCode: "hardError",
             debugString:
