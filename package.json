@@ -17,8 +17,8 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "test": "npx npm-run-all --parallel test:*",
-    "test:unit": "vitest --globals tests/unit",
-    "test:integration": "vitest --no-file-parallelism --globals tests/integration",
+    "test:unit": "vitest run --globals tests/unit",
+    "test:integration": "vitest run --no-file-parallelism --globals tests/integration",
     "prepare": "husky"
   },
   "dependencies": {

@@ -111,26 +111,25 @@ export class MessageFramer {
   /**
    * Unescape special byte sequences in data
    */
+  /**
+   * Unescape special byte sequences in data
+   * CRITICAL: C++ implementation applies & 0xDF to ALL bytes after 0x44 escape marker,
+   * not just the known escape sequences (0x62, 0x63, 0x64).
+   * This is a bitwise AND operation that masks off bit 5 of the byte.
+   * Examples: 0x62 & 0xDF = 0x42, 0x63 & 0xDF = 0x43, 0x64 & 0xDF = 0x44
+   * If encrypted data contains 0x44 followed by any other byte, the & 0xDF is applied.
+   * For unknown escape sequences like [0x44, 0x65], output is [0x45] (0x65 & 0xDF).
+   */
   private unescape(data: Buffer): Buffer {
     const unescaped: number[] = [];
 
     for (let i = 0; i < data.length; i++) {
       if (data[i] === ESCAPE_MARKER && i + 1 < data.length) {
         const next = data[i + 1];
-
-        if (next === 0x62) {
-          unescaped.push(START_MARKER);
-          i++; // Skip next byte
-        } else if (next === 0x63) {
-          unescaped.push(END_MARKER);
-          i++;
-        } else if (next === 0x64) {
-          unescaped.push(ESCAPE_MARKER);
-          i++;
-        } else {
-          // Invalid escape sequence, keep as-is
-          unescaped.push(data[i]);
-        }
+        // Apply & 0xDF mask to next byte, matching C++ exactly
+        // This converts 0x62→0x42, 0x63→0x43, 0x64→0x44, 0x65→0x45, etc.
+        unescaped.push(next & 0xdf);
+        i++; // Skip the next byte as it's part of escape sequence
       } else {
         unescaped.push(data[i]);
       }

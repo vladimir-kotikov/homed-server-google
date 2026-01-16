@@ -124,12 +124,18 @@ describe("AES128CBC", () => {
   });
 
   describe("encrypt/decrypt", () => {
-    it("should encrypt and decrypt data correctly", () => {
+    it("should encrypt and decrypt data correctly with message-level IV persistence", () => {
+      // In CBC mode with persistent IV (like the C++ implementation),
+      // each message is encrypted with current IV, then IV updates.
+      // To test decrypt, we create a new AES instance to simulate receiving the message.
       const aes = new AES128CBC(testKey, testIV);
       const plaintext = Buffer.from("Hello, World!!!!"); // 16 bytes
 
       const encrypted = aes.encrypt(plaintext);
-      const decrypted = aes.decrypt(encrypted);
+      // At this point, currentIV has been updated to last block of encrypted
+      // Simulate receiving by creating new instance with same initial IV
+      const aes2 = new AES128CBC(testKey, testIV);
+      const decrypted = aes2.decrypt(encrypted);
 
       expect(decrypted).toEqual(plaintext);
     });
@@ -143,26 +149,57 @@ describe("AES128CBC", () => {
       expect(encrypted).not.toEqual(plaintext);
     });
 
-    it("should handle 32-byte data", () => {
+    it("should handle 32-byte data with IV persistence", () => {
       const aes = new AES128CBC(testKey, testIV);
       const plaintext = Buffer.from("01234567890123456789012345678901"); // 32 bytes
 
       const encrypted = aes.encrypt(plaintext);
-      const decrypted = aes.decrypt(encrypted);
+      // Create new instance to decrypt with same initial IV
+      const aes2 = new AES128CBC(testKey, testIV);
+      const decrypted = aes2.decrypt(encrypted);
 
       expect(decrypted).toEqual(plaintext);
     });
 
-    it("should handle 48-byte data", () => {
+    it("should handle 48-byte data with IV persistence", () => {
       const aes = new AES128CBC(testKey, testIV);
       const plaintext = Buffer.from(
         "012345678901234567890123456789012345678901234567"
       ); // 48 bytes
 
       const encrypted = aes.encrypt(plaintext);
-      const decrypted = aes.decrypt(encrypted);
+      // Create new instance to decrypt with same initial IV
+      const aes2 = new AES128CBC(testKey, testIV);
+      const decrypted = aes2.decrypt(encrypted);
 
       expect(decrypted).toEqual(plaintext);
+    });
+
+    it("should maintain IV persistence across multiple messages", () => {
+      // Test that IV evolves correctly through message sequence
+      const aes = new AES128CBC(testKey, testIV);
+
+      // Encrypt message 1 - must pad to 16-byte boundary first
+      const plaintext1 = Buffer.from("Message Number 1!!!"); // 20 bytes
+      const padded1 = padBuffer(plaintext1);
+      const encrypted1 = aes.encrypt(padded1);
+
+      // Encrypt message 2 with evolved IV - must pad first
+      const plaintext2 = Buffer.from("Message Number 2!!!"); // 20 bytes
+      const padded2 = padBuffer(plaintext2);
+      const encrypted2 = aes.encrypt(padded2);
+
+      // Now decrypt in same session with persistent IV
+      // Create new instance that will evolve through same sequence
+      const aes2 = new AES128CBC(testKey, testIV);
+      const decrypted1 = aes2.decrypt(encrypted1);
+      const unpadded1 = unpadBuffer(decrypted1);
+      // Now IV of aes2 should match IV of aes after first decrypt
+      const decrypted2 = aes2.decrypt(encrypted2);
+      const unpadded2 = unpadBuffer(decrypted2);
+
+      expect(unpadded1).toEqual(plaintext1);
+      expect(unpadded2).toEqual(plaintext2);
     });
   });
 });
@@ -263,7 +300,9 @@ describe("Integration: padBuffer + AES + unpadBuffer", () => {
     const plaintext = Buffer.from("This is a test message!");
     const padded = padBuffer(plaintext);
     const encrypted = aes.encrypt(padded);
-    const decrypted = aes.decrypt(encrypted);
+    // Create new AES instance with same IV to decrypt
+    const aes2 = new AES128CBC(testKey, testIV);
+    const decrypted = aes2.decrypt(encrypted);
     const unpadded = unpadBuffer(decrypted);
 
     expect(unpadded).toEqual(plaintext);
@@ -282,10 +321,39 @@ describe("Integration: padBuffer + AES + unpadBuffer", () => {
     const plaintext = Buffer.from(json);
     const padded = padBuffer(plaintext);
     const encrypted = aes.encrypt(padded);
-    const decrypted = aes.decrypt(encrypted);
+    // Create new AES instance with same IV to decrypt
+    const aes2 = new AES128CBC(testKey, testIV);
+    const decrypted = aes2.decrypt(encrypted);
     const unpadded = unpadBuffer(decrypted);
 
     expect(unpadded.toString()).toBe(json);
     expect(JSON.parse(unpadded.toString())).toEqual(JSON.parse(json));
+  });
+
+  it("should handle multiple messages with IV persistence", () => {
+    // Simulate a session with multiple encrypted messages
+    const testKey = Buffer.from("0123456789abcdef");
+    const testIV = Buffer.from("fedcba9876543210");
+
+    // Sender side
+    const aesEncrypt = new AES128CBC(testKey, testIV);
+    const msg1 = Buffer.from("First message here!!!");
+    const padded1 = padBuffer(msg1);
+    const encrypted1 = aesEncrypt.encrypt(padded1);
+
+    const msg2 = Buffer.from("Second message here!!");
+    const padded2 = padBuffer(msg2);
+    const encrypted2 = aesEncrypt.encrypt(padded2); // Uses evolved IV
+
+    // Receiver side - must decrypt in same order with same IV evolution
+    const aesDecrypt = new AES128CBC(testKey, testIV);
+    const decrypted1 = aesDecrypt.decrypt(encrypted1);
+    const unpadded1 = unpadBuffer(decrypted1);
+
+    const decrypted2 = aesDecrypt.decrypt(encrypted2); // Uses evolved IV
+    const unpadded2 = unpadBuffer(decrypted2);
+
+    expect(unpadded1).toEqual(msg1);
+    expect(unpadded2).toEqual(msg2);
   });
 });

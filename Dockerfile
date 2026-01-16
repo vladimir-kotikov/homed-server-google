@@ -18,26 +18,21 @@ COPY prisma ./prisma
 RUN npx prisma generate
 
 # Build stage
-FROM node:18-alpine
+FROM node:24-alpine
 
 RUN apk add --no-cache netcat-openbsd openssl
 
 WORKDIR /app
 
 # Copy dependencies from previous stage
-COPY --from=dependencies /app/node_modules ./node_modules
 COPY --from=dependencies /app/package*.json ./
-COPY --from=dependencies /app/tsconfig.json ./
 COPY --from=dependencies /app/prisma ./prisma
-
-# Copy source code (changes frequently)
 COPY src ./src
 
-# Build TypeScript
-RUN npm run build
+RUN npm ci
 
 # Expose ports
 EXPOSE 8042 8080
 
 # Start server - run migrations first, then start
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/index.js"]
+CMD ["sh", "-c", "npx prisma migrate deploy && node src/index.ts"]

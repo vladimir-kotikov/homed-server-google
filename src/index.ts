@@ -126,18 +126,34 @@ async function initializeDatabase() {
   });
 
   tcpServer.on("client-message", (client: any, message: any) => {
+    const userId = client.getUserId();
     console.log(
-      `Received message from client ${client.getUniqueId()}: ${JSON.stringify(message)}`
+      `Received message from client ${client.getUniqueId()} (user: ${userId}): ${JSON.stringify(message)}`
     );
 
     // Log different message types for test verification
     // Messages are received from homed-service-cloud which subscribes to MQTT
     if (message.topic) {
       const topic = message.topic;
+
       if (topic.includes("/status/")) {
         console.log(`Service status update: ${topic}`);
       } else if (topic.includes("/expose/")) {
         console.log(`Device expose update: ${topic}`);
+        // Cache device information from expose messages
+        if (userId && message.message && message.message.endpoints) {
+          const deviceId = topic.split("/").pop();
+          if (deviceId) {
+            const device = {
+              id: deviceId,
+              name: deviceId,
+              endpoints: message.message.endpoints,
+              ...message.message,
+            };
+            console.log(`Caching device ${deviceId} for user ${userId}`);
+            tcpServer.cacheDevice(userId, deviceId, device);
+          }
+        }
       } else if (topic.includes("/device/")) {
         const deviceId = topic.split("/").pop();
         console.log(`Device update for: ${deviceId}`);

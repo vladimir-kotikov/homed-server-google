@@ -45,24 +45,15 @@ export class ClientConnection extends EventEmitter {
   /**
    * Handle incoming data
    */
+  /**
+   * Handle incoming data
+   */
   private handleData(data: Buffer): void {
     if (!this.handshakeComplete) {
       this.handleHandshakeData(data);
     } else {
-      // Try to parse as plaintext JSON first (credentials)
-      try {
-        const jsonString = data.toString("utf8");
-        const message = JSON.parse(jsonString);
-        // If it has uniqueId and token, treat it as authorization
-        if (message.uniqueId && message.token) {
-          console.log(`DEBUG: Received plaintext authorization: ${jsonString}`);
-          this.handleAuthorizationMessage(message);
-          return;
-        }
-      } catch {
-        // Not plaintext JSON, continue with encrypted data handling
-      }
-
+      // All post-handshake data MUST be framed and encrypted
+      // There is no plaintext JSON fallback - this is protocol-critical
       this.handleEncryptedData(data);
     }
   }
@@ -123,55 +114,25 @@ export class ClientConnection extends EventEmitter {
   /**
    * Handle encrypted message data
    */
+  /**
+   * Handle encrypted message data
+   * All messages after handshake must be framed (0x42...0x43) and encrypted.
+   * This includes the authorization message {uniqueId, token}.
+   */
   private handleEncryptedData(data: Buffer): void {
     try {
-      // Try to parse as plaintext JSON first
-      const rawString = data.toString("utf8");
-      try {
-        const message: ProtocolMessage = JSON.parse(rawString);
-        console.log(`DEBUG: Received plaintext JSON message: ${rawString}`);
-        this.handleMessage(message);
-        return;
-      } catch {
-        // Not plaintext JSON, continue with decryption
-      }
-
       if (!this.aes) {
         this.emit("error", new Error("AES not initialized"));
         return;
       }
 
-      // Unframe messages
+      // Unframe messages - all data must be properly framed
       const messages = this.framer.unframe(data);
 
       for (const encryptedMessage of messages) {
-        // Try to decrypt
+        // Decrypt the message
         const decryptedData = this.aes.decrypt(encryptedMessage);
         const unpaddedData = unpadBuffer(decryptedData);
-
-        // Check if it contains our known token or uniqueId
-        const unpaddedString = unpaddedData.toString(
-          "utf8",
-          0,
-          Math.min(unpaddedData.length, 200)
-        );
-        const unpaddedHex = unpaddedData.toString("hex");
-
-        const hasToken = unpaddedHex.includes(
-          "13e19d111d4b44f52e62f0cdf8b0980865037b3f1ec0b954e79c1d9290375b6e"
-        );
-        const hasUniqueId = unpaddedString.includes("integration-test-client");
-
-        if (hasToken) {
-          console.log(`DEBUG: Found token in decrypted data!`);
-          console.log(`DEBUG: Decrypted hex: ${unpaddedHex}`);
-        }
-        if (hasUniqueId) {
-          console.log(`DEBUG: Found uniqueId in decrypted data!`);
-          console.log(
-            `DEBUG: Decrypted text (first 300 chars): ${unpaddedString}`
-          );
-        }
 
         // Parse JSON
         const json = unpaddedData.toString("utf8");
@@ -179,10 +140,7 @@ export class ClientConnection extends EventEmitter {
           const message: ProtocolMessage = JSON.parse(json);
           this.handleMessage(message);
         } catch (parseError) {
-          // If JSON parsing fails, log summary
-          console.log(
-            `DEBUG: Failed to parse as JSON. Data length: ${unpaddedData.length}`
-          );
+          // If JSON parsing fails, this is a protocol error
           this.emit(
             "error",
             new Error(`Invalid message format: ${parseError}`)

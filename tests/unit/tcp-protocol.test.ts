@@ -195,5 +195,21 @@ describe("MessageFramer", () => {
       expect(messages).toHaveLength(1);
       expect(messages[0]).toEqual(data);
     });
+
+    it("should apply & 0xDF mask to all bytes after ESCAPE_MARKER", () => {
+      // Critical test: unescape applies & 0xDF to ANY byte after 0x44
+      // This is a bitwise AND operation, not conditional logic
+      // Examples: 0x62 & 0xDF = 0x42, 0x65 & 0xDF = 0x45, 0xFF & 0xDF = 0xDF
+
+      // Now manually create data with escape sequence
+      // If we receive [START, ESCAPE, 0x65, END]
+      // The unescape should apply & 0xDF to 0x65: 0x65 & 0xDF = 0x45
+      const manualEscaped = Buffer.from([0x42, 0x44, 0x65, 0x43]);
+      const messages = framer.unframe(manualEscaped);
+
+      // Result should be [0x45] because 0x65 & 0xDF = 0x45
+      expect(messages).toHaveLength(1);
+      expect(messages[0]).toEqual(Buffer.from([0x45]));
+    });
   });
 });

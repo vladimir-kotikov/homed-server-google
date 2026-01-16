@@ -7,7 +7,7 @@ import * as crypto from "crypto";
 export class DHKeyExchange {
   private prime!: number;
   private generator!: number;
-  private privateValue: number = 12345; // Use fixed value for debugging
+  private privateValue: number = 12345; // FIXME: Use fixed value for debugging
   private publicValue: number | null = null;
 
   /**
@@ -70,24 +70,27 @@ export class DHKeyExchange {
   private modPow(base: number, exp: number, modulus: number): number {
     if (modulus === 1) return 0;
 
-    // Ensure all values are treated as unsigned 32-bit
-    base = base >>> 0;
-    exp = exp >>> 0;
-    modulus = modulus >>> 0;
+    // Use BigInt for safe arbitrary-precision arithmetic during modular exponentiation
+    // This prevents floating-point precision loss and integer overflow in JavaScript
+    const baseBig = BigInt(base >>> 0);
+    const expBig = BigInt(exp >>> 0);
+    const modulusBig = BigInt(modulus >>> 0);
 
-    let result = 1;
-    base = base % modulus;
+    // Compute base^exp mod modulus using BigInt
+    let result = 1n;
+    let b = baseBig % modulusBig;
+    let e = expBig;
 
-    while (exp > 0) {
-      if (exp % 2 === 1) {
-        // Use Math.imul for proper 32-bit multiplication, then mod
-        result = (result * base) % modulus;
+    while (e > 0n) {
+      if ((e & 1n) === 1n) {
+        result = (result * b) % modulusBig;
       }
-      exp = Math.floor(exp / 2);
-      base = (base * base) % modulus;
+      e = e >> 1n;
+      b = (b * b) % modulusBig;
     }
 
-    return result >>> 0; // Ensure unsigned result
+    // Convert back to unsigned 32-bit integer
+    return Number(result) >>> 0;
   }
 }
 
@@ -97,6 +100,7 @@ export class DHKeyExchange {
 export class AES128CBC {
   private key: Buffer;
   private iv: Buffer;
+  private currentIV: Buffer; // Track IV state across messages for CBC chaining
 
   constructor(key: Buffer, iv: Buffer) {
     if (key.length !== 16) {
@@ -108,26 +112,72 @@ export class AES128CBC {
 
     this.key = key;
     this.iv = iv;
+    // Initialize current IV with the provided IV
+    this.currentIV = Buffer.from(iv);
   }
 
   /**
-   * Encrypt data using AES-128-CBC
+   * Encrypt data using AES-128-CBC with persistent IV state
+   * CRITICAL: IV evolves across the session. After encrypting each 16-byte block,
+   * the ciphertext of that block becomes the IV for the next message's first block.
+   * This matches the C++ homed-service-cloud implementation exactly.
+   *
+   * For correct operation:
+   * - Each message is encrypted with the current IV
+   * - After encryption, currentIV is updated to the last ciphertext block
+   * - Next message will use that as its starting IV
    */
   encrypt(data: Buffer): Buffer {
-    const cipher = crypto.createCipheriv("aes-128-cbc", this.key, this.iv);
+    const cipher = crypto.createCipheriv(
+      "aes-128-cbc",
+      this.key,
+      this.currentIV
+    );
     cipher.setAutoPadding(false); // Manual padding required
 
-    return Buffer.concat([cipher.update(data), cipher.final()]);
+    const encrypted = Buffer.concat([cipher.update(data), cipher.final()]);
+
+    // Update currentIV to the last ciphertext block for next message's encryption
+    // In CBC mode, the last ciphertext block of message N becomes the IV for message N+1
+    if (encrypted.length >= 16) {
+      this.currentIV = Buffer.from(
+        encrypted.slice(encrypted.length - 16, encrypted.length)
+      );
+    }
+
+    return encrypted;
   }
 
   /**
-   * Decrypt data using AES-128-CBC
+   * Decrypt data using AES-128-CBC with persistent IV state
+   * CRITICAL: In CBC decryption, you need the ciphertext block as IV, not plaintext.
+   * The IV for decryption should be the last ciphertext block of the previous message.
+   *
+   * For correct operation in a session:
+   * - When receiving multiple encrypted messages
+   * - Each message's first plaintext byte depends on: ciphertext_byte XOR previous_ciphertext_block
+   * - The currentIV is the last ciphertext block from the previous message
+   *
+   * NOTE: Do NOT update currentIV after decryption of a received message in a normal flow,
+   * because the last ciphertext block of this message will be used as IV for NEXT received message.
    */
   decrypt(data: Buffer): Buffer {
-    const decipher = crypto.createDecipheriv("aes-128-cbc", this.key, this.iv);
+    const decipher = crypto.createDecipheriv(
+      "aes-128-cbc",
+      this.key,
+      this.currentIV
+    );
     decipher.setAutoPadding(false); // Manual padding required
 
-    return Buffer.concat([decipher.update(data), decipher.final()]);
+    const decrypted = Buffer.concat([decipher.update(data), decipher.final()]);
+
+    // Update currentIV to the last ciphertext block for next message's decryption
+    // The last block of received ciphertext becomes IV for next message
+    if (data.length >= 16) {
+      this.currentIV = Buffer.from(data.slice(data.length - 16, data.length));
+    }
+
+    return decrypted;
   }
 }
 

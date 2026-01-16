@@ -16,10 +16,18 @@ export class DeviceService {
   }
 
   /**
-   * Get all devices for a user by aggregating from all their TCP clients
-   * Devices are retrieved from multiple clients if present
+   * Get all devices for a user by aggregating from cache and TCP clients
+   * Devices are cached from MQTT expose messages received from TCP clients
    */
   async getAllDevices(userId: string): Promise<any[]> {
+    // First try to get devices from cache
+    const cachedDevices = this.tcpServer.getCachedDevices(userId);
+
+    if (cachedDevices.length > 0) {
+      return cachedDevices;
+    }
+
+    // Fallback: query TCP clients if cache is empty
     const clients = this.tcpServer.getClientsByUser(userId);
 
     if (clients.length === 0) {
@@ -41,6 +49,8 @@ export class DeviceService {
         const deviceId = device.id || device.key;
         if (deviceId && !deviceMap.has(deviceId)) {
           deviceMap.set(deviceId, device);
+          // Cache the device
+          this.tcpServer.cacheDevice(userId, deviceId, device);
         }
       }
     }

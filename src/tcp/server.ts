@@ -5,12 +5,17 @@ import type { ProtocolMessage } from "./protocol.ts";
 
 /**
  * TCP server for accepting Homed client connections
+ *
+ * Device caching: Stores MQTT expose messages for each user so SYNC requests
+ * can return device list without requiring subscribe/query roundtrips
  */
 export class TCPServer extends EventEmitter {
   private port: number;
   private server: NetServer | null = null;
   private clients: Map<string, ClientConnection> = new Map();
   private userClients: Map<string, Set<string>> = new Map();
+  // Cache: userId -> deviceId -> device object
+  private userDevices: Map<string, Map<string, any>> = new Map();
 
   constructor(port: number) {
     super();
@@ -93,6 +98,26 @@ export class TCPServer extends EventEmitter {
 
         this.userClients.get(userId)!.add(uniqueId);
 
+        // Send initial subscription requests to client for common topics
+        // This ensures the client will forward MQTT messages to us
+        // Use setImmediate to ensure client is fully ready to receive encrypted messages
+        setImmediate(() => {
+          const defaultTopics = ["expose/#", "device/#", "fd/#", "status/#"];
+          for (const topic of defaultTopics) {
+            console.log(
+              `Sending subscribe request to client for topic: ${topic}`
+            );
+            try {
+              client.sendMessage({
+                action: "subscribe",
+                topic: topic,
+              });
+            } catch (error) {
+              console.error(`Failed to send subscribe for ${topic}:`, error);
+            }
+          }
+        });
+
         this.emit("client-authenticated", client, userId);
       }
     });
@@ -120,6 +145,8 @@ export class TCPServer extends EventEmitter {
           userClientSet.delete(uniqueId);
           if (userClientSet.size === 0) {
             this.userClients.delete(userId);
+            // Clear device cache when last client for user disconnects
+            this.clearUserDeviceCache(userId);
           }
         }
       }
@@ -187,5 +214,38 @@ export class TCPServer extends EventEmitter {
    */
   getClientIds(): string[] {
     return Array.from(this.clients.keys());
+  }
+
+  /**
+   * Store device information from MQTT expose message
+   * Called when server receives expose messages from TCP client
+   */
+  cacheDevice(userId: string, deviceId: string, device: any): void {
+    if (!this.userDevices.has(userId)) {
+      this.userDevices.set(userId, new Map());
+    }
+
+    const userDeviceMap = this.userDevices.get(userId)!;
+    userDeviceMap.set(deviceId, device);
+  }
+
+  /**
+   * Get all cached devices for a user
+   * Used by SYNC endpoint to return device list
+   */
+  getCachedDevices(userId: string): any[] {
+    const userDeviceMap = this.userDevices.get(userId);
+    if (!userDeviceMap) {
+      return [];
+    }
+
+    return Array.from(userDeviceMap.values());
+  }
+
+  /**
+   * Clear device cache for a user (e.g., when client disconnects)
+   */
+  clearUserDeviceCache(userId: string): void {
+    this.userDevices.delete(userId);
   }
 }
