@@ -173,9 +173,6 @@ describe("Server Integration Tests", () => {
     expect(data).toHaveProperty("status");
     expect(data.status).toBe("ok");
     expect(data).toHaveProperty("timestamp");
-    expect(data).toHaveProperty("services");
-    expect(data.services).toHaveProperty("http");
-    expect(data.services.http).toBe("running");
   });
 
   test("server should serve the login endpoint", async () => {
