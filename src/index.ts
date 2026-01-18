@@ -201,6 +201,10 @@ async function initDb() {
 
   // Start HTTP server (always on; test-only routes are scoped)
   const app = express();
+
+  // Serve static files from public directory
+  app.use(express.static("public"));
+
   app.use(express.json());
 
   // Session middleware
