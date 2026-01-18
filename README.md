@@ -12,9 +12,19 @@ This server implements a Google Smart Home fulfillment endpoint that connects to
 Google Home → Fulfillment Server (Node.js) → TCP (encrypted) → homed-service-cloud → MQTT → Homed Devices
 ```
 
+## Database
+
+SQLite with **Drizzle ORM** (zero-config, auto-creates tables on first run). All database operations are centralized in a **repository pattern**:
+
+- **UserRepository** — User authentication and storage
+- **AuthCodeRepository** — OAuth authorization codes
+- **RefreshTokenRepository** — JWT refresh token lifecycle
+
+**No migrations needed** — tables auto-created from [src/db/schema.ts](src/db/schema.ts) on first startup.
+
 ## Prerequisites
 
-- Node.js 18+
+- Node.js 25.x
 - Docker & Docker Compose (for integration tests)
 
 ## Quick Start
@@ -23,11 +33,8 @@ Google Home → Fulfillment Server (Node.js) → TCP (encrypted) → homed-servi
 # Install dependencies
 npm install
 
-# Generate Prisma client
-npm run prisma:generate
-
 # Run development server (auto-initializes database)
-npm run dev
+npm run dev    # Database auto-initializes with admin/password
 
 # Run tests
 npm test                    # Unit tests
@@ -39,7 +46,7 @@ npm run test:integration    # Integration tests
 
 ### Configuration
 
-Copy `.env.example` to `.env` and adjust as needed. The application auto-initializes the database on first startup.
+Copy `.env.example` to `.env` and adjust as needed. **No Prisma setup step required.**
 
 ### Development Server
 
@@ -107,16 +114,20 @@ Tests publish MQTT messages and verify they flow through the Homed client to the
 
 ```
 src/
+├── db/               # Drizzle ORM database (schema, initialization)
 ├── tcp/              # TCP server with encrypted protocol (DH + AES-128-CBC)
-├── services/         # Business logic (auth, device mapping)
-├── types/           # TypeScript interfaces
-└── index.ts         # Entry point (auto-initializes DB)
+├── services/         # Business logic (auth, device mapping, tokens)
+├── routes/           # Express route handlers (OAuth, fulfillment)
+├── controllers/      # Request handlers (OAuth, SmartHome)
+├── middleware/       # Express middleware (auth, logging)
+├── types/            # TypeScript interfaces
+└── index.ts          # Entry point (auto-initializes DB)
 
 tests/
-├── unit/            # Unit tests for TCP protocol, crypto, connections
-└── integration/     # Docker-based integration tests, connection flows, message routing
+├── unit/             # Unit tests for TCP protocol, crypto, connections
+└── integration/      # Docker-based integration tests, connection flows, message routing
 
-docker-compose.yml   # Docker services for integration testing
+docker-compose.yml    # Docker services for integration testing
 
 ## API Endpoints
 
@@ -133,3 +144,4 @@ docker-compose.yml   # Docker services for integration testing
 ## License
 
 ISC
+```

@@ -5,16 +5,65 @@
 All deliverables completed:
 
 - ✅ package.json with all dependencies
-- ✅ tsconfig.json and jest.config.js
+- ✅ tsconfig.json and vitest config
 - ✅ .env.example and .gitignore
 - ✅ Complete directory structure
-- ✅ Prisma schema with User, AuthCode, RefreshToken models
+- ✅ SQLite database with Drizzle ORM (replaced Prisma v7)
+- ✅ Repository pattern for all database operations (UserRepository, AuthCodeRepository, RefreshTokenRepository)
 - ✅ TypeScript types for Google Smart Home API
 - ✅ README.md with setup instructions
 - ✅ Sample test passing
-- ✅ Dependencies installed
-- ✅ TypeScript compiles without errors
-- ✅ Prisma client generated
+- ✅ Dependencies installed (Node.js 25.x)
+- ✅ TypeScript compiles without errors (0 errors, 79 pre-existing warnings)
+- ✅ Auto-database initialization with optional dev seeding
+
+**Recent Improvements (January 2026):**
+
+- Migrated from Prisma v7 (required paid accelerate adapter) to Drizzle ORM + better-sqlite3 (zero-config)
+- Implemented complete repository pattern: UserRepository, AuthCodeRepository, RefreshTokenRepository
+- Refactored all services to use repositories instead of direct Drizzle calls (auth.service.ts, token.service.ts, index.ts)
+- Removed build-time code generation requirement; tables auto-created on first run
+- Fail-fast production startup validation with strict environment variable checking
+- Dev auto-seeding with ALLOW_DEV_AUTO_SEED guard (admin/password defaults)
+- HTTP server always-on (test routes gated by NODE_ENV=test)
+
+## ✅ Step 2: TCP Server with Homed Protocol - COMPLETE
+
+**Status:** ✅ 100% Compatible with C++ reference implementation
+
+**Implementation:**
+
+- TCP server with DH handshake and AES-128-CBC encryption
+  **Pending:**
+
+- Step 5: Google Home Graph API integration
+
+## ✅ Step 1: Project Initialization & Testing Infrastructure - COMPLETE
+
+All deliverables completed:
+
+- ✅ package.json with all dependencies
+- ✅ tsconfig.json and vitest config
+- ✅ .env.example and .gitignore
+- ✅ Complete directory structure
+- ✅ SQLite database with Drizzle ORM (replaced Prisma v7)
+- ✅ Repository pattern for all database operations (UserRepository, AuthCodeRepository, RefreshTokenRepository)
+- ✅ TypeScript types for Google Smart Home API
+- ✅ README.md with setup instructions
+- ✅ Sample test passing
+- ✅ Dependencies installed (Node.js 25.x)
+- ✅ TypeScript compiles without errors (0 errors, 79 pre-existing warnings)
+- ✅ Auto-database initialization with optional dev seeding
+
+**Recent Improvements (January 2026):**
+
+- Migrated from Prisma v7 (required paid accelerate adapter) to Drizzle ORM + better-sqlite3 (zero-config)
+- Implemented complete repository pattern: UserRepository, AuthCodeRepository, RefreshTokenRepository
+- Refactored all services to use repositories instead of direct Drizzle calls (auth.service.ts, token.service.ts, index.ts)
+- Removed build-time code generation requirement; tables auto-created on first run
+- Fail-fast production startup validation with strict environment variable checking
+- Dev auto-seeding with ALLOW_DEV_AUTO_SEED guard (admin/password defaults)
+- HTTP server always-on (test routes gated by NODE_ENV=test)
 
 ## ✅ Step 2: TCP Server with Homed Protocol - COMPLETE
 

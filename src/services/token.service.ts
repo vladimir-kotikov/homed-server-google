@@ -1,8 +1,8 @@
-import { PrismaClient } from "@prisma/client";
-import { randomBytes } from "crypto";
 import jwt from "jsonwebtoken";
-
-const prisma = new PrismaClient();
+import {
+  AuthCodeRepository,
+  RefreshTokenRepository,
+} from "../db/repositories/index.ts";
 
 export interface AccessTokenPayload {
   userId: string;
@@ -19,6 +19,8 @@ export class TokenService {
   private jwtSecret: string;
   private accessExpiresIn: string;
   private refreshExpiresIn: string;
+  private authCodeRepository: AuthCodeRepository;
+  private refreshTokenRepository: RefreshTokenRepository;
 
   constructor(
     jwtSecret: string = process.env.JWT_SECRET || "default-secret",
@@ -28,6 +30,8 @@ export class TokenService {
     this.jwtSecret = jwtSecret;
     this.accessExpiresIn = accessExpiresIn;
     this.refreshExpiresIn = refreshExpiresIn;
+    this.authCodeRepository = new AuthCodeRepository();
+    this.refreshTokenRepository = new RefreshTokenRepository();
   }
 
   /**
@@ -52,13 +56,10 @@ export class TokenService {
     expiresAt.setDate(expiresAt.getDate() + 30);
 
     // Create refresh token record in database
-    const refreshTokenRecord = await prisma.refreshToken.create({
-      data: {
-        userId,
-        token: randomBytes(32).toString("hex"),
-        expiresAt,
-      },
-    });
+    const refreshTokenRecord = await this.refreshTokenRepository.create(
+      userId,
+      expiresAt
+    );
 
     // Create JWT with token ID
     const payload: RefreshTokenPayload = {
@@ -97,9 +98,9 @@ export class TokenService {
       }
 
       // Check if token still exists in database (not revoked)
-      const refreshTokenRecord = await prisma.refreshToken.findUnique({
-        where: { id: decoded.tokenId },
-      });
+      const refreshTokenRecord = await this.refreshTokenRepository.findById(
+        decoded.tokenId
+      );
 
       if (!refreshTokenRecord || refreshTokenRecord.userId !== decoded.userId) {
         return null;
@@ -119,20 +120,7 @@ export class TokenService {
     clientId: string,
     redirectUri: string
   ): Promise<string> {
-    const code = randomBytes(32).toString("hex");
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
-
-    await prisma.authCode.create({
-      data: {
-        code,
-        userId,
-        clientId,
-        redirectUri,
-        expiresAt,
-      },
-    });
-
-    return code;
+    return this.authCodeRepository.create(userId, clientId, redirectUri);
   }
 
   /**
@@ -143,9 +131,7 @@ export class TokenService {
     clientId: string,
     redirectUri: string
   ): Promise<string | null> {
-    const authCode = await prisma.authCode.findUnique({
-      where: { code },
-    });
+    const authCode = await this.authCodeRepository.findByCode(code);
 
     if (!authCode) {
       return null;
@@ -153,7 +139,7 @@ export class TokenService {
 
     // Check if code expired
     if (authCode.expiresAt < new Date()) {
-      await prisma.authCode.delete({ where: { code } });
+      await this.authCodeRepository.delete(code);
       return null;
     }
 
@@ -166,7 +152,7 @@ export class TokenService {
     }
 
     // Delete code (one-time use)
-    await prisma.authCode.delete({ where: { code } });
+    await this.authCodeRepository.delete(code);
 
     return authCode.userId;
   }
@@ -175,15 +161,13 @@ export class TokenService {
    * Revoke refresh token (for logout/disconnect)
    */
   async revokeRefreshToken(tokenId: string): Promise<void> {
-    await prisma.refreshToken.delete({ where: { id: tokenId } }).catch(() => {
-      // Ignore errors if token doesn't exist
-    });
+    await this.refreshTokenRepository.delete(tokenId);
   }
 
   /**
    * Revoke all refresh tokens for a user (for account unlinking)
    */
   async revokeAllUserTokens(userId: string): Promise<void> {
-    await prisma.refreshToken.deleteMany({ where: { userId } });
+    await this.refreshTokenRepository.deleteByUserId(userId);
   }
 }

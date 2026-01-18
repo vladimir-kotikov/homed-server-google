@@ -1,44 +1,20 @@
-import { PrismaClient } from "@prisma/client";
 import * as bcrypt from "bcrypt";
 import * as crypto from "crypto";
+import { UserRepository } from "../db/repositories/index.ts";
 import type { User } from "../types.ts";
 
-const prisma = new PrismaClient();
-
-/**
- * Authentication service for user management and token validation
- */
 export class AuthService {
+  private userRepository: UserRepository;
+
+  constructor() {
+    this.userRepository = new UserRepository();
+  }
+
   /**
    * Validate a client token and return the associated user
    */
   async validateClientToken(token: string): Promise<User | null> {
-    try {
-      const user = await prisma.user.findUnique({
-        where: { clientToken: token },
-      });
-
-      if (!user) {
-        return null;
-      }
-
-      // Use constant-time comparison to prevent timing attacks
-      const tokenBuffer = Buffer.from(token);
-      const storedBuffer = Buffer.from(user.clientToken);
-
-      if (tokenBuffer.length !== storedBuffer.length) {
-        return null;
-      }
-
-      if (!crypto.timingSafeEqual(tokenBuffer, storedBuffer)) {
-        return null;
-      }
-
-      return user;
-    } catch (error) {
-      console.error("Error validating client token:", error);
-      return null;
-    }
+    return this.userRepository.findByClientToken(token);
   }
 
   /**
@@ -53,15 +29,7 @@ export class AuthService {
       // Generate random client token (hex string)
       const clientToken = this.generateClientToken();
 
-      const user = await prisma.user.create({
-        data: {
-          username,
-          passwordHash,
-          clientToken,
-        },
-      });
-
-      return user;
+      return this.userRepository.create(username, passwordHash, clientToken);
     } catch (error) {
       console.error("Error creating user:", error);
       throw new Error("Failed to create user");
@@ -76,9 +44,7 @@ export class AuthService {
     password: string
   ): Promise<User | null> {
     try {
-      const user = await prisma.user.findUnique({
-        where: { username },
-      });
+      const user = await this.userRepository.findByUsername(username);
 
       if (!user) {
         return null;
@@ -101,32 +67,14 @@ export class AuthService {
    * Get user by ID
    */
   async getUserById(userId: string): Promise<User | null> {
-    try {
-      const user = await prisma.user.findUnique({
-        where: { id: userId },
-      });
-
-      return user;
-    } catch (error) {
-      console.error("Error getting user by ID:", error);
-      return null;
-    }
+    return this.userRepository.findById(userId);
   }
 
   /**
    * Get user by username
    */
   async getUserByUsername(username: string): Promise<User | null> {
-    try {
-      const user = await prisma.user.findUnique({
-        where: { username },
-      });
-
-      return user;
-    } catch (error) {
-      console.error("Error getting user by username:", error);
-      return null;
-    }
+    return this.userRepository.findByUsername(username);
   }
 
   /**
@@ -137,9 +85,10 @@ export class AuthService {
   }
 
   /**
-   * Close Prisma connection
+   * Close database connection
    */
   async disconnect(): Promise<void> {
-    await prisma.$disconnect();
+    // Drizzle with better-sqlite3 doesn't need explicit disconnect
+    // but we keep the method for API compatibility
   }
 }

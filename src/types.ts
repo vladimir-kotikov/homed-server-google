@@ -126,7 +126,7 @@ export interface GoogleCommand {
   params?: any;
 }
 
-// Prisma User type (will be imported from @prisma/client after generation)
+// User type from Drizzle ORM schema (src/db/schema.ts)
 export interface User {
   id: string;
   username: string;

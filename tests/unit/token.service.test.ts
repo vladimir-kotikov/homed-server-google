@@ -1,34 +1,47 @@
-import { PrismaClient } from "@prisma/client";
 import * as bcrypt from "bcrypt";
+import { eq } from "drizzle-orm";
+import {
+  closeDatabase,
+  getDrizzle,
+  initializeDatabase,
+} from "../../src/db/index.ts";
+import { UserRepository } from "../../src/db/repositories/user.repository.ts";
+import { authCodes, refreshTokens, users } from "../../src/db/schema.ts";
 import { TokenService } from "../../src/services/token.service.ts";
 
 // Set test database URL
 process.env.DATABASE_URL = "file:./prisma/test-token.db";
 
-const prisma = new PrismaClient();
-
 describe("TokenService", () => {
   let tokenService: TokenService;
   let testUserId: string;
+  const userRepository = new UserRepository();
 
   beforeAll(async () => {
+    initializeDatabase(process.env.DATABASE_URL!);
+
+    const db = getDrizzle();
+
+    // Ensure clean slate
+    await db.delete(refreshTokens);
+    await db.delete(authCodes);
+    await db.delete(users);
+
     // Create test user
-    const user = await prisma.user.create({
-      data: {
-        username: "tokentest",
-        passwordHash: await bcrypt.hash("password", 10),
-        clientToken: "test-token-" + Date.now(),
-      },
-    });
+    const user = await userRepository.create(
+      "tokentest",
+      await bcrypt.hash("password", 10),
+      "test-token-" + Date.now()
+    );
     testUserId = user.id;
   });
 
   afterAll(async () => {
-    // Clean up
-    await prisma.refreshToken.deleteMany({ where: { userId: testUserId } });
-    await prisma.authCode.deleteMany({ where: { userId: testUserId } });
-    await prisma.user.delete({ where: { id: testUserId } });
-    await prisma.$disconnect();
+    const db = getDrizzle();
+    await db.delete(refreshTokens).where(eq(refreshTokens.userId, testUserId));
+    await db.delete(authCodes).where(eq(authCodes.userId, testUserId));
+    await db.delete(users).where(eq(users.id, testUserId));
+    await closeDatabase();
   });
 
   beforeEach(() => {
@@ -217,10 +230,11 @@ describe("TokenService", () => {
       );
 
       // Manually expire the code by updating database
-      await prisma.authCode.update({
-        where: { code },
-        data: { expiresAt: new Date(Date.now() - 1000) }, // 1 second ago
-      });
+      const db = getDrizzle();
+      await db
+        .update(authCodes)
+        .set({ expiresAt: new Date(Date.now() - 1000) })
+        .where(eq(authCodes.code, code));
 
       const userId = await tokenService.validateAuthCode(
         code,

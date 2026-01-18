@@ -1,56 +1,85 @@
-import { PrismaClient } from "@prisma/client";
 import * as bcrypt from "bcrypt";
-import dotenv from "dotenv";
+import * as crypto from "crypto";
 import express from "express";
 import * as fs from "fs";
+import { type AppConfig, loadConfig } from "./config/config.ts";
+import { closeDatabase, initializeDatabase } from "./db/index.ts";
+import { UserRepository } from "./db/repositories/index.ts";
 import oauthRoutes from "./routes/oauth.routes.ts";
 import smarthomeRoutes, { setTCPServer } from "./routes/smarthome.routes.ts";
 import { AuthService } from "./services/auth.service.ts";
 import { TCPServer } from "./tcp/server.ts";
 
-dotenv.config();
+let appConfig: AppConfig;
+try {
+  appConfig = loadConfig();
+} catch (error) {
+  console.error((error as Error).message);
+  process.exit(1);
+}
 
-const TCP_PORT = parseInt(process.env.TCP_PORT || "8042", 10);
-const HTTP_PORT = parseInt(process.env.PORT || "8080", 10);
-const DATABASE_URL = process.env.DATABASE_URL || "file:./prisma/dev.db";
+const { isProd, isTest, allowAutoSeed, databaseUrl, tcpPort, httpPort } =
+  appConfig;
 
 console.log("Homed Server Google - Starting...");
-console.log(`Database: ${DATABASE_URL}`);
+console.log(`Database: ${databaseUrl}`);
 
 // Database initialization
-async function initializeDatabase() {
-  const prisma = new PrismaClient();
+async function initDb() {
+  // Initialize database connection
+  initializeDatabase(databaseUrl);
+  const userRepository = new UserRepository();
 
   try {
-    // Check if database is initialized by trying to query users
-    const userCount = await prisma.user.count();
+    // Check if database is initialized by checking if any users exist
+    const hasUsers = await userRepository.exists();
 
-    if (userCount === 0) {
-      console.log("Database empty, creating initial user...");
+    if (!hasUsers) {
+      if (!allowAutoSeed) {
+        console.error(
+          "Database is empty and ALLOW_DEV_AUTO_SEED is disabled. Seed the database manually or set ALLOW_DEV_AUTO_SEED=true with ADMIN_USERNAME and ADMIN_PASSWORD."
+        );
+        process.exit(1);
+      }
 
       const username =
-        process.env.TEST_USERNAME || process.env.INITIAL_USERNAME || "admin";
+        process.env.TEST_USERNAME ||
+        process.env.ADMIN_USERNAME ||
+        process.env.INITIAL_USERNAME ||
+        "admin";
       const password =
-        process.env.TEST_PASSWORD || process.env.INITIAL_PASSWORD || "changeme";
-      const clientToken =
-        process.env.NODE_ENV === "test"
-          ? "13e19d111d4b44f52e62f0cdf8b0980865037b3f1ec0b954e79c1d9290375b6e"
-          : // eslint-disable-next-line @typescript-eslint/no-require-imports
-            require("crypto").randomBytes(32).toString("hex");
+        process.env.TEST_PASSWORD ||
+        process.env.ADMIN_PASSWORD ||
+        process.env.INITIAL_PASSWORD ||
+        "password";
 
-      await prisma.user.create({
-        data: {
-          username,
-          passwordHash: await bcrypt.hash(password, 10),
-          clientToken,
-        },
-      });
+      if (
+        isProd &&
+        (!process.env.ADMIN_USERNAME || !process.env.ADMIN_PASSWORD)
+      ) {
+        console.error(
+          "Production startup requires ADMIN_USERNAME and ADMIN_PASSWORD to seed the initial user or a pre-seeded database."
+        );
+        process.exit(1);
+      }
+
+      const clientToken = isTest
+        ? "13e19d111d4b44f52e62f0cdf8b0980865037b3f1ec0b954e79c1d9290375b6e"
+        : crypto.randomBytes(32).toString("hex");
+
+      await userRepository.create(
+        username,
+        await bcrypt.hash(password, 10),
+        clientToken
+      );
 
       console.log(`✅ Initial user created: ${username}`);
-      console.log(`   Client Token: ${clientToken}`);
+      if (isTest) {
+        console.log(`   Client Token: ${clientToken}`);
+      }
 
       // TODO: Figure out why this is needed for tests to pass
-      if (process.env.NODE_ENV === "test") {
+      if (isTest) {
         // Write test configuration file
         const confPath = "tests/integration/homed-cloud.conf";
         const confTemplate = fs.existsSync(
@@ -71,20 +100,18 @@ async function initializeDatabase() {
     }
   } catch (error) {
     console.warn("Database initialization check failed:", error);
-  } finally {
-    await prisma.$disconnect();
   }
 }
 
 // Initialize database before starting servers
 (async () => {
-  await initializeDatabase();
+  await initDb();
 
   // Initialize auth service
   const authService = new AuthService();
 
   // Start TCP server
-  const tcpServer = new TCPServer(TCP_PORT);
+  const tcpServer = new TCPServer(tcpPort);
 
   tcpServer.on("listening", (port: number) => {
     console.log(`TCP Server listening on port ${port}`);
@@ -171,18 +198,18 @@ async function initializeDatabase() {
       process.exit(1);
     });
 
-  // Start HTTP server for test endpoints (when NODE_ENV=test)
-  if (process.env.NODE_ENV === "test") {
-    const app = express();
-    app.use(express.json());
+  // Start HTTP server (always on; test-only routes are scoped)
+  const app = express();
+  app.use(express.json());
 
-    // Set the TCP server for smarthome routes
-    setTCPServer(tcpServer);
+  // Set the TCP server for smarthome routes
+  setTCPServer(tcpServer);
 
-    // Register OAuth and fulfillment routes
-    app.use("/oauth", oauthRoutes);
-    app.use(smarthomeRoutes);
+  // Register OAuth and fulfillment routes
+  app.use("/oauth", oauthRoutes);
+  app.use(smarthomeRoutes);
 
+  if (isTest) {
     // Test endpoint to get connected clients
     app.get("/test/clients", (_req, res) => {
       const clients = tcpServer.getClientIds();
@@ -199,20 +226,23 @@ async function initializeDatabase() {
         clientCount: tcpServer.getClientCount(),
       });
     });
-
-    app.listen(HTTP_PORT, () => {
-      console.log(`✅ HTTP Server listening on port ${HTTP_PORT}`);
-      console.log(`   OAuth: http://localhost:${HTTP_PORT}/oauth/authorize`);
-      console.log(`   Fulfillment: http://localhost:${HTTP_PORT}/fulfillment`);
-      console.log(`   Test API: http://localhost:${HTTP_PORT}/test/*`);
-    });
   }
+
+  app.listen(httpPort, () => {
+    console.log(`✅ HTTP Server listening on port ${httpPort}`);
+    console.log(`   OAuth: http://localhost:${httpPort}/oauth/authorize`);
+    console.log(`   Fulfillment: http://localhost:${httpPort}/fulfillment`);
+    if (isTest) {
+      console.log(`   Test API: http://localhost:${httpPort}/test/*`);
+    }
+  });
 
   // Graceful shutdown
   const shutdown = async () => {
     console.log("Shutting down...");
     await tcpServer.stop();
     await authService.disconnect();
+    closeDatabase();
     process.exit(0);
   };
 
