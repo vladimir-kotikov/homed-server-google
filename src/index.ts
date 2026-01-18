@@ -202,12 +202,8 @@ async function initDb() {
   // Start HTTP server (always on; test-only routes are scoped)
   const app = express();
 
-  // Serve static files from public directory
   app.use(express.static("public"));
-
   app.use(express.json());
-
-  // Session middleware
   app.use(
     session({
       secret: process.env.SESSION_SECRET || "dev-session-secret-change-in-prod",
@@ -223,6 +219,16 @@ async function initDb() {
 
   // Set the TCP server for smarthome routes
   setTCPServer(tcpServer);
+  app.get("/health", (_req, res) => {
+    res.json({
+      status: "ok",
+      timestamp: new Date().toISOString(),
+      services: {
+        http: "running",
+        tcp: tcpServer.getClientCount() !== undefined ? "running" : "error",
+      },
+    });
+  });
 
   // Register routes
   app.use("/", userRoutes);
@@ -236,14 +242,6 @@ async function initDb() {
       res.json({
         count: tcpServer.getClientCount(),
         clients: clients,
-      });
-    });
-
-    // Test endpoint to check server status
-    app.get("/test/status", (_req, res) => {
-      res.json({
-        status: "ok",
-        clientCount: tcpServer.getClientCount(),
       });
     });
   }

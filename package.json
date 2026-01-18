@@ -14,8 +14,8 @@
     "start": "node src/index.ts",
     "lint": "eslint src tests && tsc",
     "format": "prettier --write src tests; eslint src tests --fix",
-    "test": "npx npm-run-all --parallel test:*",
-    "test:unit": "vitest run --globals tests/unit",
+    "test": "vitest run --globals tests/unit",
+    "test:all": "npx npm-run-all --parallel test test:integration",
     "test:integration": "vitest run --no-file-parallelism --globals tests/integration",
     "prepare": "husky"
   },
