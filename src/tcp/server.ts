@@ -16,6 +16,8 @@ export class TCPServer extends EventEmitter {
   private userClients: Map<string, Set<string>> = new Map();
   // Cache: userId -> deviceId -> device object
   private userDevices: Map<string, Map<string, any>> = new Map();
+  // Cache: userId -> deviceId -> latest state
+  private userDeviceStates: Map<string, Map<string, any>> = new Map();
 
   constructor(port: number) {
     super();
@@ -229,6 +231,15 @@ export class TCPServer extends EventEmitter {
     userDeviceMap.set(deviceId, device);
   }
 
+  cacheDeviceState(userId: string, deviceId: string, state: any): void {
+    if (!this.userDeviceStates.has(userId)) {
+      this.userDeviceStates.set(userId, new Map());
+    }
+
+    const userStateMap = this.userDeviceStates.get(userId)!;
+    userStateMap.set(deviceId, state);
+  }
+
   /**
    * Get all cached devices for a user
    * Used by SYNC endpoint to return device list
@@ -242,10 +253,23 @@ export class TCPServer extends EventEmitter {
     return Array.from(userDeviceMap.values());
   }
 
+  getCachedDevice(userId: string, deviceId: string): any | undefined {
+    return this.userDevices.get(userId)?.get(deviceId);
+  }
+
+  getCachedDeviceStates(userId: string): Map<string, any> {
+    return new Map(this.userDeviceStates.get(userId));
+  }
+
+  getCachedDeviceState(userId: string, deviceId: string): any | undefined {
+    return this.userDeviceStates.get(userId)?.get(deviceId);
+  }
+
   /**
    * Clear device cache for a user (e.g., when client disconnects)
    */
   clearUserDeviceCache(userId: string): void {
     this.userDevices.delete(userId);
+    this.userDeviceStates.delete(userId);
   }
 }
