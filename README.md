@@ -33,8 +33,14 @@ SQLite with **Drizzle ORM** (zero-config, auto-creates tables on first run). All
 # Install dependencies
 npm install
 
+# Configure environment variables (see Configuration section below)
+# Set required environment variables in your shell or use a tool like direnv
+
 # Run development server (auto-initializes database)
-npm run dev    # Database auto-initializes with admin/password
+npm run dev
+
+# Access web UI
+# Open http://localhost:8080 and sign in with your Google account
 
 # Run tests
 npm test                    # Unit tests
@@ -42,11 +48,72 @@ npm run docker:up           # Start Docker services (required for integration te
 npm run test:integration    # Integration tests
 ```
 
-## Development
+## Configuration
 
-### Configuration
+The server is configured entirely through environment variables. You can set these in your shell, use a process manager, or use tools like `direnv` or `dotenv-cli` to load them from a file.
 
-Copy `.env.example` to `.env` and adjust as needed. **No Prisma setup step required.**
+### Required Environment Variables
+
+These must be set for the server to start:
+
+#### Google OAuth Credentials (User Authentication)
+
+Used for signing users into the web UI:
+
+- **`GOOGLE_USER_CLIENT_ID`** - OAuth 2.0 Client ID from Google Cloud Console
+- **`GOOGLE_USER_CLIENT_SECRET`** - OAuth 2.0 Client Secret from Google Cloud Console
+- **`GOOGLE_USER_REDIRECT_URI`** - OAuth callback URL (e.g., `http://localhost:8080/auth/google/callback`)
+
+#### Production-Only Required Variables
+
+When `NODE_ENV=production`, these additional variables are required:
+
+- **`DATABASE_URL`** - SQLite database file path (e.g., `file:./prod.db`)
+- **`OAUTH_CLIENT_ID`** - Google Smart Home OAuth Client ID
+- **`OAUTH_CLIENT_SECRET`** - Google Smart Home OAuth Client Secret
+- **`JWT_SECRET`** - Secret for signing JWT tokens (min 32 characters recommended)
+- **`SESSION_SECRET`** - Secret for Express sessions (min 32 characters recommended)
+
+### Optional Environment Variables
+
+These have sensible defaults for development:
+
+- **`NODE_ENV`** - Environment mode: `development` (default), `test`, or `production`
+- **`PORT`** - HTTP server port (default: `8080`)
+- **`TCP_PORT`** - TCP server port for homed-service-cloud connections (default: `8042`)
+- **`DATABASE_URL`** - SQLite database path (default: `file:./prisma/dev.db` in dev/test)
+- **`OAUTH_CLIENT_ID`** - Smart Home OAuth Client ID (default: `dev-oauth-client-id` in dev/test)
+- **`OAUTH_CLIENT_SECRET`** - Smart Home OAuth Client Secret (default: `dev-oauth-client-secret` in dev/test)
+- **`JWT_SECRET`** - JWT signing secret (default: `dev-jwt-secret` in dev/test)
+- **`JWT_ACCESS_EXPIRES_IN`** - JWT access token lifetime (default: `1h`)
+- **`JWT_REFRESH_EXPIRES_IN`** - JWT refresh token lifetime (default: `30d`)
+- **`SESSION_SECRET`** - Express session secret (default: `dev-session-secret-change-in-prod` in dev/test)
+
+### Test Environment Variables
+
+Used in `NODE_ENV=test` mode:
+
+- **`TEST_USERNAME`** - Auto-created test user username (default: `test`)
+- **`TEST_PASSWORD`** - Auto-created test user password (default: `test`)
+
+### Google OAuth Setup (User Authentication)
+
+See the "Required Environment Variables" section above for the complete list of environment variables needed.
+
+To obtain Google OAuth credentials for user authentication:
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com)
+2. Create a new project or select existing one
+3. Enable "Google+ API" or "People API"
+4. Go to "Credentials" → "Create Credentials" → "OAuth 2.0 Client ID"
+5. Configure OAuth consent screen
+6. Create OAuth client ID:
+   - Application type: Web application
+   - Authorized redirect URIs: `http://localhost:8080/auth/google/callback`
+7. Set the Client ID, Client Secret, and Redirect URI as environment variables:
+   - `GOOGLE_USER_CLIENT_ID`
+   - `GOOGLE_USER_CLIENT_SECRET`
+   - `GOOGLE_USER_REDIRECT_URI`
 
 ### Development Server
 
@@ -96,16 +163,16 @@ npm start
 Integration tests use a complete Docker environment:
 
 ```
-┌──────────────┐     MQTT      ┌───────────────┐     TCP       ┌────────────┐
-│ Test Code    │◄─────────────►│ MQTT Broker   │               │ TCP Server │
-│ (MQTT pub)   │                │ (Mosquitto)   │               │ (Node.js)  │
-└──────────────┘                └───────────────┘               └────────────┘
-                                        │                              ▲
-                                        ▼                              │
-                                ┌───────────────┐                      │
-                                │ Homed Client  │──────────────────────┘
-                                │ (real binary) │
-                                └───────────────┘
+┌──────────────┐      MQTT      ┌───────────────┐      TCP       ┌────────────┐
+│ Test Code    │◄────────────-─►│ MQTT Broker   │                │ TCP Server │
+│ (MQTT pub)   │                │ (Mosquitto)   │                │ (Node.js)  │
+└──────────────┘                └───────────────┘                └────────────┘
+                                        │                               ▲
+                                        ▼                               │
+                                 ┌───────────────┐                      │
+                                 │ Homed Client  │──────────────────────┘
+                                 │ (real binary) │
+                                 └───────────────┘
 ```
 
 Tests publish MQTT messages and verify they flow through the Homed client to the TCP server via encrypted connection.

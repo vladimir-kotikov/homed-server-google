@@ -1,17 +1,11 @@
-import dotenv from "dotenv";
-
 export interface AppConfig {
-  env: string;
-  isDev: boolean;
-  isTest: boolean;
-  isProd: boolean;
+  env: "production" | string;
   tcpPort: number;
   httpPort: number;
   databaseUrl: string;
-  allowAutoSeed: boolean;
 }
 
-const DEFAULT_DATABASE_URL = "file:./prisma/dev.db";
+const DEFAULT_DATABASE_URL = "file:./dev.db";
 const DEV_OAUTH_CLIENT_ID = "dev-oauth-client-id";
 const DEV_OAUTH_CLIENT_SECRET = "dev-oauth-client-secret";
 const DEV_JWT_SECRET = "dev-jwt-secret";
@@ -25,13 +19,8 @@ function normalizeEnv(value: string | undefined, fallback: string): string {
 }
 
 export function loadConfig(): AppConfig {
-  dotenv.config();
-
-  const env = (process.env.NODE_ENV || "development").toLowerCase();
-  const isTest = env === "test";
-  const isDev = env === "development";
+  const env = (process.env.NODE_ENV || "production").toLowerCase();
   const isProd = env === "production";
-
   const tcpPort = parseInt(normalizeEnv(process.env.TCP_PORT, "8042"), 10);
   const httpPort = parseInt(normalizeEnv(process.env.PORT, "8080"), 10);
 
@@ -75,23 +64,10 @@ export function loadConfig(): AppConfig {
     );
   }
 
-  const allowAutoSeed = (() => {
-    if (process.env.ALLOW_DEV_AUTO_SEED !== undefined) {
-      return ["1", "true", "yes"].includes(
-        process.env.ALLOW_DEV_AUTO_SEED.toLowerCase()
-      );
-    }
-    return isDev || isTest;
-  })();
-
   return {
     env,
-    isDev,
-    isTest,
-    isProd,
     tcpPort,
     httpPort,
     databaseUrl,
-    allowAutoSeed,
   };
 }
