@@ -61,17 +61,10 @@ describe("TCPServer", () => {
   });
 
   describe("client management", () => {
-    it("should track connected clients", async () => {
-      await server.start();
-
-      expect(server.getClientCount()).toBe(0);
-      expect(server.getClientIds()).toEqual([]);
-    });
-
     it("should return empty array for non-existent user", async () => {
       await server.start();
 
-      const clients = server.getClientsByUser("non-existent-user");
+      const clients = server.getClientIds("non-existent-user");
       expect(clients).toEqual([]);
     });
 
@@ -157,15 +150,6 @@ describe("TCPServer", () => {
       expect(() => {
         server.broadcastToUser("user-1", message);
       }).not.toThrow();
-    });
-  });
-
-  describe("error handling", () => {
-    it("should handle server errors gracefully", async () => {
-      await server.start();
-
-      // The server should be running
-      expect(server.getClientCount()).toBe(0);
     });
   });
 });

@@ -205,17 +205,14 @@ export class TCPServer extends EventEmitter {
   }
 
   /**
-   * Get total number of connected clients
+   * Get all connected client unique IDs for a specific user
    */
-  getClientCount(): number {
-    return this.clients.size;
-  }
-
-  /**
-   * Get all connected client unique IDs
-   */
-  getClientIds(): string[] {
-    return Array.from(this.clients.keys());
+  getClientIds(userId: string): string[] {
+    const clientIds = this.userClients.get(userId);
+    if (!clientIds) {
+      return [];
+    }
+    return Array.from(clientIds);
   }
 
   /**

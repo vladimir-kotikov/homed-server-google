@@ -223,10 +223,6 @@ async function initDb() {
     res.json({
       status: "ok",
       timestamp: new Date().toISOString(),
-      services: {
-        http: "running",
-        tcp: tcpServer.getClientCount() !== undefined ? "running" : "error",
-      },
     });
   });
 
@@ -234,17 +230,6 @@ async function initDb() {
   app.use("/", userRoutes);
   app.use("/oauth", oauthRoutes);
   app.use(smarthomeRoutes);
-
-  if (env !== "production") {
-    // Test endpoint to get connected clients
-    app.get("/test/clients", (_req, res) => {
-      const clients = tcpServer.getClientIds();
-      res.json({
-        count: tcpServer.getClientCount(),
-        clients: clients,
-      });
-    });
-  }
 
   app.listen(httpPort, () => {
     console.log(`✅ HTTP Server listening on port ${httpPort}`);

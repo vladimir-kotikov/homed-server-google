@@ -23,4 +23,16 @@ router.post("/fulfillment", authenticateToken, (req, res) => {
   controller.handleFulfillment(req, res);
 });
 
+router.get("/api/clients", authenticateToken, (req, res) => {
+  const userId = (req as any).userId;
+
+  if (!userId) {
+    res.status(401).json({ error: "Not authenticated" });
+    return;
+  }
+
+  const clientIds = tcpServer.getClientIds(userId);
+  res.json({ clients: clientIds });
+});
+
 export default router;
