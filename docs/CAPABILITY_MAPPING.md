@@ -27,50 +27,50 @@ The Capability Mapping System is the core component that translates between Home
 
 ### Switches and Outlets
 
-| Homed Expose | Google Type | Traits | Example |
-|---|---|---|---|
-| `switch` | SWITCH | OnOff | Light switch, relay |
-| `outlet` | OUTLET | OnOff | Power outlet, smart plug |
+| Homed Expose | Google Type | Traits | Example                  |
+| ------------ | ----------- | ------ | ------------------------ |
+| `switch`     | SWITCH      | OnOff  | Light switch, relay      |
+| `outlet`     | OUTLET      | OnOff  | Power outlet, smart plug |
 
 ### Lighting Devices
 
-| Homed Expose | Google Type | Traits | Example |
-|---|---|---|---|
-| `light` | LIGHT | OnOff | Simple on/off light |
-| `light` + `brightness` | LIGHT | OnOff, Brightness | Dimmable light |
-| `color_light` | LIGHT | OnOff, Brightness, ColorSetting | RGB/Color temperature light |
+| Homed Expose           | Google Type | Traits                          | Example                     |
+| ---------------------- | ----------- | ------------------------------- | --------------------------- |
+| `light`                | LIGHT       | OnOff                           | Simple on/off light         |
+| `light` + `brightness` | LIGHT       | OnOff, Brightness               | Dimmable light              |
+| `color_light`          | LIGHT       | OnOff, Brightness, ColorSetting | RGB/Color temperature light |
 
 ### Door Locks
 
-| Homed Expose | Google Type | Traits | Example |
-|---|---|---|---|
-| `lock` | LOCK | OnOff | Electronic door lock |
+| Homed Expose | Google Type | Traits | Example              |
+| ------------ | ----------- | ------ | -------------------- |
+| `lock`       | LOCK        | OnOff  | Electronic door lock |
 
 ### Window Coverings
 
-| Homed Expose | Google Type | Traits | Example |
-|---|---|---|---|
-| `cover` | BLINDS | OpenClose | Motorized blinds, curtains, shutters |
+| Homed Expose | Google Type | Traits    | Example                              |
+| ------------ | ----------- | --------- | ------------------------------------ |
+| `cover`      | BLINDS      | OpenClose | Motorized blinds, curtains, shutters |
 
 ### Climate Control
 
-| Homed Expose | Google Type | Traits | Example |
-|---|---|---|---|
-| `thermostat` | THERMOSTAT | TemperatureSetting | HVAC thermostat |
+| Homed Expose | Google Type | Traits             | Example         |
+| ------------ | ----------- | ------------------ | --------------- |
+| `thermostat` | THERMOSTAT  | TemperatureSetting | HVAC thermostat |
 
 ### Sensors
 
-| Homed Expose | Google Type | Traits | Example |
-|---|---|---|---|
-| `contact` | SENSOR | SensorState | Door/window contact sensor |
-| `occupancy` | SENSOR | SensorState | Motion detector, occupancy sensor |
-| `motion` | SENSOR | SensorState | Motion sensor |
-| `smoke` | SMOKE_DETECTOR | SensorState | Smoke detector |
-| `water_leak` | SENSOR | SensorState | Water leak detector |
-| `gas` | SENSOR | SensorState | Gas sensor |
-| `temperature` | SENSOR | SensorState | Temperature sensor |
-| `humidity` | SENSOR | SensorState | Humidity sensor |
-| `pressure` | SENSOR | SensorState | Barometric pressure sensor |
+| Homed Expose  | Google Type    | Traits      | Example                           |
+| ------------- | -------------- | ----------- | --------------------------------- |
+| `contact`     | SENSOR         | SensorState | Door/window contact sensor        |
+| `occupancy`   | SENSOR         | SensorState | Motion detector, occupancy sensor |
+| `motion`      | SENSOR         | SensorState | Motion sensor                     |
+| `smoke`       | SMOKE_DETECTOR | SensorState | Smoke detector                    |
+| `water_leak`  | SENSOR         | SensorState | Water leak detector               |
+| `gas`         | SENSOR         | SensorState | Gas sensor                        |
+| `temperature` | SENSOR         | SensorState | Temperature sensor                |
+| `humidity`    | SENSOR         | SensorState | Humidity sensor                   |
+| `pressure`    | SENSOR         | SensorState | Barometric pressure sensor        |
 
 ## Traits and State Mapping
 
@@ -81,11 +81,13 @@ The Capability Mapping System is the core component that translates between Home
 **Supported Exposes**: switch, outlet, relay, light, lock
 
 **Homed State Properties**:
+
 - `on` (boolean or 0/1) - Primary on/off state
 - `state` (0/1) - Alternative on/off state
 - `power` (0/1) - Alternative power state
 
 **Google State**:
+
 ```json
 {
   "on": true
@@ -93,6 +95,7 @@ The Capability Mapping System is the core component that translates between Home
 ```
 
 **Homed Command Format**:
+
 ```json
 {
   "topic": "td/{deviceId}/switch",
@@ -101,6 +104,7 @@ The Capability Mapping System is the core component that translates between Home
 ```
 
 **Example - Turn Light On**:
+
 ```typescript
 // Google command
 {
@@ -122,10 +126,12 @@ The Capability Mapping System is the core component that translates between Home
 **Supported Exposes**: brightness, dimmable_light, color_light
 
 **Homed State Properties**:
+
 - `brightness` (0-100) - Brightness level
 - `level` (0-100) - Alternative brightness level
 
 **Google State**:
+
 ```json
 {
   "brightness": 75
@@ -133,6 +139,7 @@ The Capability Mapping System is the core component that translates between Home
 ```
 
 **Homed Command Format**:
+
 ```json
 {
   "topic": "td/{deviceId}/brightness",
@@ -141,6 +148,7 @@ The Capability Mapping System is the core component that translates between Home
 ```
 
 **Example - Set Brightness to 50%**:
+
 ```typescript
 // Google command
 {
@@ -162,6 +170,7 @@ The Capability Mapping System is the core component that translates between Home
 **Supported Exposes**: color_light, color
 
 **Homed State Properties**:
+
 - `color` (object) - Color in various formats:
   - `{ r: 0-255, g: 0-255, b: 0-255 }` - RGB
   - `{ x: 0-1, y: 0-1 }` - CIE XY
@@ -169,6 +178,7 @@ The Capability Mapping System is the core component that translates between Home
 - `colorTemperature` (2000-6500) - Color temperature in Kelvin
 
 **Google State - RGB**:
+
 ```json
 {
   "color": {
@@ -178,6 +188,7 @@ The Capability Mapping System is the core component that translates between Home
 ```
 
 **Google State - Color Temperature**:
+
 ```json
 {
   "color": {
@@ -187,6 +198,7 @@ The Capability Mapping System is the core component that translates between Home
 ```
 
 **Homed Command Format**:
+
 ```json
 {
   "topic": "td/{deviceId}/color",
@@ -195,6 +207,7 @@ The Capability Mapping System is the core component that translates between Home
 ```
 
 **Example - Set Color to Red**:
+
 ```typescript
 // Google command
 {
@@ -218,10 +231,12 @@ The Capability Mapping System is the core component that translates between Home
 **Supported Exposes**: cover, blinds, curtain, shutter
 
 **Homed State Properties**:
+
 - `position` (0-100) - Position percentage (0=closed, 100=open)
 - `state` (string) - "open", "closed", or intermediate values
 
 **Google State**:
+
 ```json
 {
   "openPercent": 50
@@ -229,6 +244,7 @@ The Capability Mapping System is the core component that translates between Home
 ```
 
 **Homed Command Format**:
+
 ```json
 {
   "topic": "td/{deviceId}/position",
@@ -237,6 +253,7 @@ The Capability Mapping System is the core component that translates between Home
 ```
 
 **Example - Open Blinds to 75%**:
+
 ```typescript
 // Google command
 {
@@ -258,11 +275,13 @@ The Capability Mapping System is the core component that translates between Home
 **Supported Exposes**: thermostat, temperature_controller
 
 **Homed State Properties**:
+
 - `temperature` (float) - Current ambient temperature in Celsius
 - `setpoint` (float) - Target temperature setpoint in Celsius
 - `mode` (string) - Thermostat mode: "heat", "cool", "off", "auto"
 
 **Google State**:
+
 ```json
 {
   "thermostatTemperatureAmbient": 20,
@@ -274,6 +293,7 @@ The Capability Mapping System is the core component that translates between Home
 **Homed Command Formats**:
 
 Set Setpoint:
+
 ```json
 {
   "topic": "td/{deviceId}/setpoint",
@@ -282,6 +302,7 @@ Set Setpoint:
 ```
 
 Set Mode:
+
 ```json
 {
   "topic": "td/{deviceId}/mode",
@@ -290,6 +311,7 @@ Set Mode:
 ```
 
 **Example - Set Temperature to 22°C in Heat Mode**:
+
 ```typescript
 // Google command 1: Set temperature
 {
@@ -323,6 +345,7 @@ Set Mode:
 **Supported Exposes**: contact, occupancy, motion, smoke, water_leak, gas, temperature, humidity, pressure, CO, CO2, NO2, PM2.5, PM10
 
 **Homed State Properties** (vary by sensor type):
+
 - `occupancy` (boolean) - Binary occupancy state
 - `motion` (boolean) - Binary motion detection
 - `contact` (boolean) - Binary door/window contact
@@ -336,6 +359,7 @@ Set Mode:
 **Google State Examples**:
 
 Occupancy:
+
 ```json
 {
   "occupancy": "OCCUPIED"
@@ -343,6 +367,7 @@ Occupancy:
 ```
 
 Contact (Open/Closed):
+
 ```json
 {
   "openclose": "OPEN"
@@ -350,6 +375,7 @@ Contact (Open/Closed):
 ```
 
 Smoke:
+
 ```json
 {
   "smoke": "SMOKE"
@@ -357,6 +383,7 @@ Smoke:
 ```
 
 Water Leak:
+
 ```json
 {
   "waterleak": "LEAK"
@@ -370,6 +397,7 @@ Water Leak:
 ### Simple On/Off Light
 
 **Homed Device**:
+
 ```json
 {
   "key": "0x001234",
@@ -387,6 +415,7 @@ Water Leak:
 ```
 
 **Google Device**:
+
 ```json
 {
   "id": "client-001-0x001234",
@@ -410,6 +439,7 @@ Water Leak:
 ### Advanced RGB Light
 
 **Homed Device**:
+
 ```json
 {
   "key": "0x005678",
@@ -429,6 +459,7 @@ Water Leak:
 ```
 
 **Google Device**:
+
 ```json
 {
   "id": "client-001-0x005678",
@@ -459,6 +490,7 @@ Water Leak:
 ### Thermostat
 
 **Homed Device**:
+
 ```json
 {
   "key": "0x009999",
@@ -477,6 +509,7 @@ Water Leak:
 ```
 
 **Google Device**:
+
 ```json
 {
   "id": "client-001-0x009999",
@@ -547,8 +580,8 @@ const googleStates = await deviceService.getGoogleDeviceState(
 ```typescript
 // Receive Google command
 const googleCommand = {
-  "command": "action.devices.commands.BrightnessAbsolute",
-  "params": { "brightness": 50 }
+  command: "action.devices.commands.BrightnessAbsolute",
+  params: { brightness: 50 },
 };
 
 // Execute on device
@@ -570,18 +603,21 @@ const result = await deviceService.executeGoogleCommand(
 ### Device Not Found
 
 If a Google device ID doesn't map to any Homed device:
+
 - QUERY returns: `{ "online": false, "status": "OFFLINE" }`
 - EXECUTE returns: `{ "status": "ERROR", "errorCode": "deviceNotFound" }`
 
 ### Unsupported Command
 
 If a device doesn't support a trait or command:
+
 - EXECUTE returns: `{ "status": "ERROR", "errorCode": "hardError" }`
 - Error details included in `debugString`
 
 ### Offline/Unavailable Device
 
 If device is offline (`available: false`):
+
 - QUERY returns: `{ "online": false }`
 - EXECUTE returns: `{ "status": "ERROR", "errorCode": "deviceOffline" }`
 
@@ -596,6 +632,7 @@ The mapper is thoroughly tested with 56 unit tests covering:
 - Real-world scenarios (complex devices, multiple traits)
 
 Run tests:
+
 ```bash
 npm run test:unit -- tests/unit/mapper.test.ts
 ```

@@ -223,7 +223,11 @@ Implement TCP server that accepts connections from homed-service-cloud clients u
    ```typescript
    export class DHKeyExchange {
      // Diffie-Hellman key exchange using Node.js crypto
-     generateParameters(): { prime: number, generator: number, sharedKey: number };
+     generateParameters(): {
+       prime: number;
+       generator: number;
+       sharedKey: number;
+     };
      computePrivateKey(clientSharedKey: number): number;
    }
 
@@ -247,7 +251,7 @@ Implement TCP server that accepts connections from homed-service-cloud clients u
    }
 
    export interface ProtocolMessage {
-     action: 'subscribe' | 'publish';
+     action: "subscribe" | "publish";
      topic: string;
      message?: any;
    }
@@ -295,7 +299,10 @@ Implement TCP server that accepts connections from homed-service-cloud clients u
    export class AuthService {
      validateClientToken(token: string): Promise<User | null>;
      createUser(username: string, password: string): Promise<User>;
-     validateUserCredentials(username: string, password: string): Promise<User | null>;
+     validateUserCredentials(
+       username: string,
+       password: string
+     ): Promise<User | null>;
    }
    ```
 
@@ -322,10 +329,11 @@ Implement TCP server that accepts connections from homed-service-cloud clients u
 
 **tests/integration/test-client-setup.md**:
 
-```markdown
+````markdown
 # Testing with Real homed-service-cloud Client
 
 ## Prerequisites
+
 - homed-service-cloud built from https://github.com/u236/homed-service-cloud
 - MQTT broker running (mosquitto)
 - Test user created in database
@@ -333,6 +341,7 @@ Implement TCP server that accepts connections from homed-service-cloud clients u
 ## Configuration
 
 Create test config at `/tmp/homed-cloud-test.conf`:
+
 ```ini
 [cloud]
 uniqueid = test-client-001
@@ -344,6 +353,7 @@ port = 8042
 host = localhost
 port = 1883
 ```
+````
 
 ---
 
@@ -380,7 +390,9 @@ Implement OAuth 2.0 authorization flow and Google Smart Home fulfillment endpoin
      private handleSync(request: SyncRequest): Promise<SyncResponse>;
      private handleQuery(request: QueryRequest): Promise<QueryResponse>;
      private handleExecute(request: ExecuteRequest): Promise<ExecuteResponse>;
-     private handleDisconnect(request: DisconnectRequest): Promise<DisconnectResponse>;
+     private handleDisconnect(
+       request: DisconnectRequest
+     ): Promise<DisconnectResponse>;
    }
    ```
 
@@ -392,10 +404,17 @@ Implement OAuth 2.0 authorization flow and Google Smart Home fulfillment endpoin
      getDevicesForUser(userId: string): Promise<GoogleDevice[]>;
 
      // Query device states
-     queryDeviceStates(userId: string, deviceIds: string[]): Promise<DeviceState[]>;
+     queryDeviceStates(
+       userId: string,
+       deviceIds: string[]
+     ): Promise<DeviceState[]>;
 
      // Execute command on device
-     executeCommand(userId: string, deviceId: string, command: Command): Promise<ExecuteResult>;
+     executeCommand(
+       userId: string,
+       deviceId: string,
+       command: Command
+     ): Promise<ExecuteResult>;
    }
    ```
 
@@ -415,7 +434,7 @@ Implement OAuth 2.0 authorization flow and Google Smart Home fulfillment endpoin
    ```typescript
    export interface SyncRequest {
      requestId: string;
-     inputs: [{ intent: 'action.devices.SYNC' }];
+     inputs: [{ intent: "action.devices.SYNC" }];
    }
 
    export interface SyncResponse {
@@ -534,7 +553,10 @@ Shared library with Endpoint and Expose models: <https://github.com/u236/homed-s
 
    export class CapabilityMapper {
      // Convert Homed device to Google device
-     mapToGoogleDevice(homedDevice: HomedDevice, clientId: string): GoogleDevice;
+     mapToGoogleDevice(
+       homedDevice: HomedDevice,
+       clientId: string
+     ): GoogleDevice;
 
      // Convert Homed state to Google state
      mapToGoogleState(homedDevice: HomedDevice): Record<string, any>;
@@ -573,31 +595,31 @@ Shared library with Endpoint and Expose models: <https://github.com/u236/homed-s
 
    ```typescript
    export const DEVICE_TYPE_MAPPINGS = {
-     switch: 'action.devices.types.SWITCH',
-     outlet: 'action.devices.types.OUTLET',
-     light: 'action.devices.types.LIGHT',
-     curtain: 'action.devices.types.BLINDS',
-     thermostat: 'action.devices.types.THERMOSTAT',
-     door_lock: 'action.devices.types.LOCK',
+     switch: "action.devices.types.SWITCH",
+     outlet: "action.devices.types.OUTLET",
+     light: "action.devices.types.LIGHT",
+     curtain: "action.devices.types.BLINDS",
+     thermostat: "action.devices.types.THERMOSTAT",
+     door_lock: "action.devices.types.LOCK",
      // ... sensors
    };
    ```
 
 4. **Mapping Configuration** based on Yandex implementation:
 
-   | Homed Expose | Google Device Type | Google Traits |
-   |--------------|-------------------|---------------|
-   | `switch` | SWITCH or OUTLET | OnOff |
-   | `lock` | LOCK | LockUnlock |
-   | `light` | LIGHT | OnOff, [Brightness], [ColorSetting] |
-   | `cover` | BLINDS | OpenClose |
-   | `thermostat` | THERMOSTAT | TemperatureSetting, [ThermostatMode] |
-   | `contact` | SENSOR | SensorState (openClose) |
-   | `occupancy` | SENSOR | SensorState (occupancy) |
-   | `smoke` | SMOKE_DETECTOR | SensorState (smokeLevel) |
-   | `waterLeak` | SENSOR | SensorState (waterLeak) |
-   | `temperature` | SENSOR | TemperatureControl |
-   | `humidity` | SENSOR | HumiditySetting |
+   | Homed Expose  | Google Device Type | Google Traits                        |
+   | ------------- | ------------------ | ------------------------------------ |
+   | `switch`      | SWITCH or OUTLET   | OnOff                                |
+   | `lock`        | LOCK               | LockUnlock                           |
+   | `light`       | LIGHT              | OnOff, [Brightness], [ColorSetting]  |
+   | `cover`       | BLINDS             | OpenClose                            |
+   | `thermostat`  | THERMOSTAT         | TemperatureSetting, [ThermostatMode] |
+   | `contact`     | SENSOR             | SensorState (openClose)              |
+   | `occupancy`   | SENSOR             | SensorState (occupancy)              |
+   | `smoke`       | SMOKE_DETECTOR     | SensorState (smokeLevel)             |
+   | `waterLeak`   | SENSOR             | SensorState (waterLeak)              |
+   | `temperature` | SENSOR             | TemperatureControl                   |
+   | `humidity`    | SENSOR             | HumiditySetting                      |
 
 ### Testing Requirements
 
@@ -606,14 +628,14 @@ Shared library with Endpoint and Expose models: <https://github.com/u236/homed-s
 1. **Switch Device**:
 
    ```typescript
-   it('maps switch to SWITCH with OnOff trait', () => {
+   it("maps switch to SWITCH with OnOff trait", () => {
      const homed = {
-       exposes: ['switch'],
-       options: {}
+       exposes: ["switch"],
+       options: {},
      };
      const google = mapper.map(homed);
-     expect(google.type).toBe('action.devices.types.SWITCH');
-     expect(google.traits).toContain('action.devices.traits.OnOff');
+     expect(google.type).toBe("action.devices.types.SWITCH");
+     expect(google.traits).toContain("action.devices.traits.OnOff");
    });
    ```
 
@@ -672,10 +694,17 @@ Integrate with Google Home Graph API for reporting device state changes and requ
      constructor(serviceAccountPath: string);
 
      // Report device state to Google
-     async reportState(userId: string, deviceId: string, state: Record<string, any>): Promise<void>;
+     async reportState(
+       userId: string,
+       deviceId: string,
+       state: Record<string, any>
+     ): Promise<void>;
 
      // Report multiple device states
-     async reportStates(userId: string, states: Record<string, any>): Promise<void>;
+     async reportStates(
+       userId: string,
+       states: Record<string, any>
+     ): Promise<void>;
 
      // Request sync for user's devices
      async requestSync(userId: string): Promise<void>;
@@ -720,12 +749,12 @@ Integrate with Google Home Graph API for reporting device state changes and requ
 
    ```typescript
    export enum GoogleErrorCode {
-     DEVICE_NOT_FOUND = 'deviceNotFound',
-     DEVICE_OFFLINE = 'deviceOffline',
-     DEVICE_NOT_READY = 'deviceNotReady',
-     AUTH_FAILURE = 'authFailure',
-     TRANSIENT_ERROR = 'transientError',
-     PROTOCOL_ERROR = 'protocolError',
+     DEVICE_NOT_FOUND = "deviceNotFound",
+     DEVICE_OFFLINE = "deviceOffline",
+     DEVICE_NOT_READY = "deviceNotReady",
+     AUTH_FAILURE = "authFailure",
+     TRANSIENT_ERROR = "transientError",
+     PROTOCOL_ERROR = "protocolError",
    }
 
    export function mapToGoogleError(error: Error): GoogleErrorCode;
@@ -760,7 +789,11 @@ export class MockHomeGraphService extends HomeGraphService {
   public reportedStates: Array<{ userId: string; states: any }> = [];
   public syncRequests: string[] = [];
 
-  async reportState(userId: string, deviceId: string, state: any): Promise<void> {
+  async reportState(
+    userId: string,
+    deviceId: string,
+    state: any
+  ): Promise<void> {
     this.reportedStates.push({ userId, states: { [deviceId]: state } });
   }
 
@@ -804,7 +837,7 @@ Create a complete integration test setup allowing manual testing with real homed
 1. **tests/integration/docker-compose.yml**:
 
    ```yaml
-   version: '3.8'
+   version: "3.8"
    services:
      mqtt:
        image: eclipse-mosquitto:latest
@@ -816,8 +849,8 @@ Create a complete integration test setup allowing manual testing with real homed
      server:
        build: ../..
        ports:
-         - "8042:8042"  # TCP
-         - "3000:3000"  # HTTP
+         - "8042:8042" # TCP
+         - "3000:3000" # HTTP
        environment:
          - DATABASE_URL=file:./test.db
          - TCP_PORT=8042
@@ -837,14 +870,14 @@ Create a complete integration test setup allowing manual testing with real homed
      // Create test user
      const user = await prisma.user.create({
        data: {
-         username: 'test-user',
-         passwordHash: await bcrypt.hash('test-password', 10),
-         clientToken: 'deadbeefcafe...' // Known token for client
-       }
+         username: "test-user",
+         passwordHash: await bcrypt.hash("test-password", 10),
+         clientToken: "deadbeefcafe...", // Known token for client
+       },
      });
 
-     console.log('Test user created:', user);
-     console.log('Client token:', user.clientToken);
+     console.log("Test user created:", user);
+     console.log("Client token:", user.clientToken);
    }
    ```
 
@@ -869,7 +902,11 @@ Create a complete integration test setup allowing manual testing with real homed
    // Publishes test device data to MQTT topics
    export class DeviceSimulator {
      publishDeviceStatus(service: string, devices: Device[]): void;
-     publishDeviceExposes(service: string, device: Device, exposes: Expose[]): void;
+     publishDeviceExposes(
+       service: string,
+       device: Device,
+       exposes: Expose[]
+     ): void;
      publishDeviceState(service: string, device: Device, state: any): void;
      simulateTemperatureSensor(): void;
      simulateLightDevice(): void;
@@ -882,6 +919,7 @@ Create a complete integration test setup allowing manual testing with real homed
    # Integration Testing Guide
 
    ## Quick Start
+
    1. Start services: `docker-compose up -d`
    2. Seed test data: `npm run seed:test`
    3. Run homed-service-cloud client
@@ -890,6 +928,7 @@ Create a complete integration test setup allowing manual testing with real homed
    6. Test Google Home fulfillment with curl/Postman
 
    ## Test Scenarios
+
    - Device discovery (SYNC)
    - State query (QUERY)
    - Command execution (EXECUTE)
@@ -947,7 +986,7 @@ jobs:
       - uses: actions/checkout@v3
       - uses: actions/setup-node@v3
         with:
-          node-version: '18'
+          node-version: "18"
       - run: npm ci
       - run: npm run build
       - run: npm test

@@ -461,14 +461,14 @@ case 0x42: buffer.clear(); break;
 
 ### Vulnerability Summary
 
-| Vulnerability | Severity | Impact |
-|--------------|----------|--------|
-| 32-bit DH keyspace | HIGH | Brute-force feasible |
-| MD5 key derivation | MEDIUM | Collision attacks possible |
-| Static IV | MEDIUM | Pattern analysis |
-| No message auth | HIGH | Tampering undetected |
-| Zero-padding | LOW | Data truncation edge cases |
-| Non-prime DH parameters | HIGH | Weak key exchange |
+| Vulnerability           | Severity | Impact                     |
+| ----------------------- | -------- | -------------------------- |
+| 32-bit DH keyspace      | HIGH     | Brute-force feasible       |
+| MD5 key derivation      | MEDIUM   | Collision attacks possible |
+| Static IV               | MEDIUM   | Pattern analysis           |
+| No message auth         | HIGH     | Tampering undetected       |
+| Zero-padding            | LOW      | Data truncation edge cases |
+| Non-prime DH parameters | HIGH     | Weak key exchange          |
 
 ### Recommendations for Production
 
@@ -495,17 +495,17 @@ case 0x42: buffer.clear(); break;
 
 ### Client Implementation (github.com/u236/homed-service-cloud)
 
-| File | Lines | Purpose |
-|------|-------|---------|
-| `controller.h` | 10-15 | Handshake structure |
-| `controller.cpp` | 71-77 | Configuration loading |
-| `controller.cpp` | 183-195 | Connection, handshake send |
+| File             | Lines   | Purpose                            |
+| ---------------- | ------- | ---------------------------------- |
+| `controller.h`   | 10-15   | Handshake structure                |
+| `controller.cpp` | 71-77   | Configuration loading              |
+| `controller.cpp` | 183-195 | Connection, handshake send         |
 | `controller.cpp` | 214-225 | Handshake response, key derivation |
-| `controller.cpp` | 107-125 | Encryption, framing, sending |
-| `controller.cpp` | 228-248 | Receiving, unframing, decryption |
-| `crypto.h` | 1-39 | AES128 and DH class definitions |
-| `crypto.cpp` | 163-211 | DH implementation |
-| `crypto.cpp` | 20-59 | AES-128-CBC implementation |
+| `controller.cpp` | 107-125 | Encryption, framing, sending       |
+| `controller.cpp` | 228-248 | Receiving, unframing, decryption   |
+| `crypto.h`       | 1-39    | AES128 and DH class definitions    |
+| `crypto.cpp`     | 163-211 | DH implementation                  |
+| `crypto.cpp`     | 20-59   | AES-128-CBC implementation         |
 
 ---
 
