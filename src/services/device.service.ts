@@ -23,7 +23,7 @@ export class DeviceService {
    * Get all devices for a user by aggregating from cache and TCP clients
    * Devices are cached from MQTT expose messages received from TCP clients
    */
-  async getAllDevices(userId: string): Promise<any[]> {
+  async getAllDevices(userId: string): Promise<HomedDevice[]> {
     // First try to get devices from cache
     const cachedDevices = this.tcpServer.getCachedDevices(userId);
 
@@ -46,11 +46,11 @@ export class DeviceService {
 
     // Merge devices from all clients
     // Use a Map to handle potential duplicate device IDs from multiple clients
-    const deviceMap = new Map<string, any>();
+    const deviceMap = new Map<string, HomedDevice>();
 
     for (const devices of deviceArrays) {
       for (const device of devices) {
-        const deviceId = device.id || device.key;
+        const deviceId = device.key;
         if (deviceId && !deviceMap.has(deviceId)) {
           deviceMap.set(deviceId, device);
           // Cache the device
@@ -235,7 +235,7 @@ export class DeviceService {
   async executeGoogleCommand(
     userId: string,
     device: HomedDevice,
-    command: any
+    command: GoogleCommand
   ): Promise<{ success: boolean; error?: string }> {
     try {
       const homedCommand = this.mapper.mapToHomedCommand(device, command);
@@ -258,14 +258,16 @@ export class DeviceService {
   /**
    * Query devices from a single TCP client
    */
-  private async queryClientDevices(client: ClientConnection): Promise<any[]> {
+  private async queryClientDevices(
+    client: ClientConnection
+  ): Promise<HomedDevice[]> {
     return new Promise(resolve => {
       const timeout = setTimeout(() => {
         cleanup();
         resolve([]);
       }, 5000); // 5 second timeout
 
-      const devices: any[] = [];
+      const devices: HomedDevice[] = [];
 
       const messageHandler = (message: ProtocolMessage) => {
         // Parse device expose messages

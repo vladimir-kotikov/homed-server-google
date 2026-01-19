@@ -10,6 +10,8 @@ import oauthRoutes from "./routes/oauth.routes.ts";
 import smarthomeRoutes, { setTCPServer } from "./routes/smarthome.routes.ts";
 import userRoutes from "./routes/user.routes.ts";
 import { AuthService } from "./services/auth.service.ts";
+import { ClientConnection } from "./tcp/client-connection.ts";
+import { type ProtocolMessage } from "./tcp/protocol.ts";
 import { TCPServer } from "./tcp/server.ts";
 
 let appConfig: AppConfig;
@@ -118,7 +120,7 @@ async function initDb() {
     console.log(`TCP Server listening on port ${port}`);
   });
 
-  tcpServer.on("client-handshake", (client: any) => {
+  tcpServer.on("client-handshake", (client: ClientConnection) => {
     console.log(
       `Client ${client.getUniqueId()} completed handshake, connection established`
     );
@@ -126,7 +128,10 @@ async function initDb() {
 
   tcpServer.on(
     "client-authorization",
-    async (client: any, auth: { uniqueId: string; token: string }) => {
+    async (
+      client: ClientConnection,
+      auth: { uniqueId: string; token: string }
+    ) => {
       console.log(`Client ${auth.uniqueId} attempting authorization...`);
 
       // Validate token
@@ -147,45 +152,94 @@ async function initDb() {
     }
   );
 
-  tcpServer.on("client-authenticated", (client: any, userId: string) => {
-    console.log(
-      `Client ${client.getUniqueId()} authenticated as user ${userId}`
-    );
-  });
+  tcpServer.on(
+    "client-authenticated",
+    (client: ClientConnection, userId: string) => {
+      console.log(
+        `Client ${client.getUniqueId()} authenticated as user ${userId}`
+      );
+    }
+  );
 
-  tcpServer.on("client-message", (client: any, message: any) => {
-    const userId = client.getUserId();
-    console.log(
-      `📩 Received message from client ${client.getUniqueId()} (user: ${userId}):`
-    );
-    console.log(`   Topic: ${message.topic || "(no topic)"}`);
-    console.log(`   Action: ${message.action || "(no action)"}`);
-    console.log(
-      `   Message: ${JSON.stringify(message.message || {}).substring(0, 200)}`
-    );
+  tcpServer.on(
+    "client-message",
+    (client: ClientConnection, message: ProtocolMessage) => {
+      const userId = client.getUserId();
+      console.log(
+        `📩 Received message from client ${client.getUniqueId()} (user: ${userId}):`
+      );
+      console.log(`   Topic: ${message.topic || "(no topic)"}`);
+      console.log(`   Action: ${message.action || "(no action)"}`);
+      console.log(
+        `   Message: ${JSON.stringify(message.message || {}).substring(0, 200)}`
+      );
 
-    // Log different message types for test verification
-    // Messages are received from homed-service-cloud which subscribes to MQTT
-    if (message.topic) {
-      const topic = message.topic;
+      // Route messages based on topic for test verification
+      // Messages are received from homed-service-cloud which subscribes to MQTT
+      if (message.topic && userId) {
+        const topic = message.topic;
 
-      if (topic.startsWith("status/")) {
-        console.log(`Service status update: ${topic}`);
-      } else if (topic.startsWith("expose/")) {
-        console.log(`Device expose update: ${topic}`);
-      } else if (topic.startsWith("device/")) {
-        console.log(`Device update: ${topic}`);
-      } else if (topic.startsWith("fd/")) {
-        console.log(`Device state update: ${topic}`);
+        if (topic.startsWith("status/")) {
+          // Service status update - cache service status
+          console.log(`✅ Service status update: ${topic}`);
+          // Status messages contain service metadata
+        } else if (topic.startsWith("expose/")) {
+          // Device expose update - cache device capabilities
+          console.log(`✅ Device expose update: ${topic}`);
+
+          // Extract device info from expose message
+          // Topic format: expose/service
+          if (message.message && typeof message.message === "object") {
+            const deviceInfo = message.message;
+
+            // Cache device with unique key (endpoint name or id)
+            const deviceKey =
+              deviceInfo.key || deviceInfo.name || deviceInfo.id;
+            if (deviceKey) {
+              tcpServer.cacheDevice(userId, deviceKey, deviceInfo);
+              console.log(`   Cached device: ${deviceKey} for user ${userId}`);
+            }
+          }
+        } else if (topic.startsWith("device/")) {
+          // Device state update - cache device state
+          console.log(`✅ Device update: ${topic}`);
+
+          // Topic format: device/{deviceId}/...
+          const parts = topic.split("/");
+          if (parts.length >= 2) {
+            const deviceId = parts[1];
+            if (message.message && typeof message.message === "object") {
+              tcpServer.cacheDeviceState(userId, deviceId, message.message);
+              console.log(
+                `   Cached state for device ${deviceId}: ${JSON.stringify(message.message).substring(0, 100)}`
+              );
+            }
+          }
+        } else if (topic.startsWith("fd/")) {
+          // From-device state update - cache device state
+          console.log(`✅ Device state update: ${topic}`);
+
+          // Topic format: fd/{deviceId}/...
+          const parts = topic.split("/");
+          if (parts.length >= 2) {
+            const deviceId = parts[1];
+            if (message.message && typeof message.message === "object") {
+              tcpServer.cacheDeviceState(userId, deviceId, message.message);
+              console.log(
+                `   Cached state for device ${deviceId}: ${JSON.stringify(message.message).substring(0, 100)}`
+              );
+            }
+          }
+        }
       }
     }
-  });
+  );
 
   tcpServer.on("error", (error: Error) => {
     console.error("TCP Server error:", error);
   });
 
-  tcpServer.on("client-error", (client: any, error: Error) => {
+  tcpServer.on("client-error", (client: ClientConnection, error: Error) => {
     console.error(`Client ${client.getUniqueId()} error:`, error.message);
   });
 

@@ -1,9 +1,20 @@
 import * as crypto from "crypto";
 import type { Request, Response } from "express";
+import type { Session } from "express-session";
 import { OAuth2Client } from "google-auth-library";
 import { AuthService } from "../services/auth.service.ts";
 
 const authService = new AuthService();
+
+// Type for request with session
+type RequestWithSession = Request & {
+  session?: Session & { userId?: string };
+};
+
+// Type for session destroy callback
+interface SessionError extends Error {
+  message: string;
+}
 
 // Google OAuth client for user authentication (lazy initialized)
 let googleOAuthClient: OAuth2Client | null = null;
@@ -31,8 +42,8 @@ export class UserController {
    * GET /
    * Display login/register page or dashboard if authenticated
    */
-  async home(req: Request, res: Response): Promise<void> {
-    const userId = (req as any).session?.userId;
+  async home(req: RequestWithSession, res: Response): Promise<void> {
+    const userId = req.session?.userId;
 
     if (userId) {
       // User is logged in, show dashboard
@@ -65,7 +76,7 @@ export class UserController {
    * GET /auth/google/callback
    * Handle Google OAuth callback
    */
-  async googleCallback(req: Request, res: Response): Promise<void> {
+  async googleCallback(req: RequestWithSession, res: Response): Promise<void> {
     const { code } = req.query;
 
     if (!code || typeof code !== "string") {
@@ -100,8 +111,9 @@ export class UserController {
         );
       }
 
-      // Set session
-      (req as any).session.userId = user.id;
+      if (req.session) {
+        req.session.userId = user.id;
+      }
 
       // Redirect to home page
       res.redirect("/");
@@ -115,7 +127,7 @@ export class UserController {
    * POST /auth/login
    * Process login credentials
    */
-  async login(req: Request, res: Response): Promise<void> {
+  async login(req: RequestWithSession, res: Response): Promise<void> {
     const { username, password } = req.body;
 
     if (!username || !password) {
@@ -133,8 +145,9 @@ export class UserController {
       return;
     }
 
-    // Set session
-    (req as any).session.userId = user.id;
+    if (req.session) {
+      req.session.userId = user.id;
+    }
 
     res.json({
       success: true,
@@ -147,8 +160,8 @@ export class UserController {
    * POST /auth/logout
    * Logout user
    */
-  async logout(req: Request, res: Response): Promise<void> {
-    (req as any).session?.destroy((err: any) => {
+  async logout(req: RequestWithSession, res: Response): Promise<void> {
+    req.session?.destroy((err: SessionError | null) => {
       if (err) {
         res.status(500).json({ error: "Failed to logout" });
       } else {

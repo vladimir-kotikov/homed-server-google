@@ -1,6 +1,7 @@
 import type { Response } from "express";
 import type { AuthenticatedRequest } from "../middleware/auth.middleware.ts";
 import { DeviceService } from "../services/device.service.ts";
+import type { HomedDevice } from "../services/mapper.service.ts";
 import { TokenService } from "../services/token.service.ts";
 import type {
   DisconnectRequest,
@@ -111,12 +112,12 @@ export class SmartHomeController {
     userId: string
   ): Promise<QueryResponse> {
     const googleDeviceIds = request.inputs[0].payload.devices.map(
-      (d: any) => d.id
+      (d: { id: string }) => d.id
     );
 
     // Get all devices to build device map
     const homedDevices = await this.deviceService.getAllDevices(userId);
-    const deviceMap = new Map<string, any>();
+    const deviceMap = new Map<string, HomedDevice>();
 
     for (const device of homedDevices) {
       if (device.key) {
@@ -170,11 +171,16 @@ export class SmartHomeController {
     userId: string
   ): Promise<ExecuteResponse> {
     const commands = request.inputs[0].payload.commands;
-    const commandResults: any[] = [];
+    const commandResults: Array<{
+      ids: string[];
+      status: "SUCCESS" | "PENDING" | "OFFLINE" | "ERROR";
+      errorCode?: string;
+      debugString?: string;
+    }> = [];
 
     // Get all devices for mapping
     const homedDevices = await this.deviceService.getAllDevices(userId);
-    const deviceMap = new Map<string, any>();
+    const deviceMap = new Map<string, HomedDevice>();
 
     for (const device of homedDevices) {
       if (device.key) {
@@ -183,7 +189,7 @@ export class SmartHomeController {
     }
 
     for (const command of commands) {
-      const googleDeviceIds = command.devices.map((d: any) => d.id);
+      const googleDeviceIds = command.devices.map((d: { id: string }) => d.id);
       const execution = command.execution[0]; // Take first execution
 
       for (const googleDeviceId of googleDeviceIds) {
