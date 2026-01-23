@@ -1,28 +1,46 @@
-import type { Response } from "express";
-import type { AuthenticatedRequest } from "../middleware/auth.middleware.ts";
+import type { NextFunction, Request, Response } from "express";
+import { Router } from "express";
+import { match } from "ts-pattern";
+import type { UserRepository } from "../db/repository.ts";
+import {
+  SmartHomeRequestSchema,
+  type DisconnectRequest,
+  type ExecuteRequest,
+  type QueryRequest,
+  type SmartHomeRequest,
+  type SyncRequest,
+} from "../schemas/googleSmarthome.schema.ts";
 import { DeviceService } from "../services/device.service.ts";
 import type { HomedDevice } from "../services/mapper.service.ts";
-import { TokenService } from "../services/token.service.ts";
 import type {
-  DisconnectRequest,
   DisconnectResponse,
-  ExecuteRequest,
   ExecuteResponse,
-  QueryRequest,
   QueryResponse,
-  SmartHomeRequest,
   SmartHomeResponse,
-  SyncRequest,
   SyncResponse,
-} from "../types.ts";
+} from "../types/googleSmarthome.ts";
+import type { DeviceState } from "../types/homed.ts";
+
+/**
+ * Extend Express Request type to include user info
+ */
+export interface AuthenticatedRequest extends Request {
+  userId?: string;
+}
 
 export class SmartHomeController {
   private deviceService: DeviceService;
-  private tokenService: TokenService;
+  private userRepository: UserRepository;
+  private verifyAccessToken: (token: string) => { userId: string } | undefined;
 
-  constructor(deviceService: DeviceService, tokenService: TokenService) {
+  constructor(
+    userRepository: UserRepository,
+    verifyAccessToken: (token: string) => { userId: string } | undefined,
+    deviceService: DeviceService
+  ) {
+    this.verifyAccessToken = verifyAccessToken;
     this.deviceService = deviceService;
-    this.tokenService = tokenService;
+    this.userRepository = userRepository;
   }
 
   /**
@@ -30,53 +48,50 @@ export class SmartHomeController {
    * Main handler for all Google Smart Home intents
    */
   async handleFulfillment(
-    req: AuthenticatedRequest,
-    res: Response
+    request_: AuthenticatedRequest,
+    response: Response
   ): Promise<void> {
-    const request = req.body as SmartHomeRequest;
+    const parseResult = SmartHomeRequestSchema.safeParse(request_.body);
 
-    if (!request.requestId || !request.inputs) {
-      res.status(400).json({ error: "Invalid request format" });
+    if (!parseResult.success) {
+      response.status(400).json({
+        error: "Invalid request format",
+        details: { root: parseResult.error.message },
+      });
       return;
     }
 
-    const input = request.inputs[0];
-    const intent = input.intent;
+    const request: SmartHomeRequest = parseResult.data;
 
     try {
-      let response: SmartHomeResponse;
-
-      switch (intent) {
-        case "action.devices.SYNC":
-          response = await this.handleSync(request as SyncRequest, req.userId!);
-          break;
-        case "action.devices.QUERY":
-          response = await this.handleQuery(
-            request as QueryRequest,
-            req.userId!
-          );
-          break;
-        case "action.devices.EXECUTE":
-          response = await this.handleExecute(
-            request as ExecuteRequest,
-            req.userId!
-          );
-          break;
-        case "action.devices.DISCONNECT":
-          response = await this.handleDisconnect(
-            request as DisconnectRequest,
-            req.userId!
-          );
-          break;
-        default:
-          res.status(400).json({ error: `Unknown intent: ${intent}` });
-          return;
+      const userId = request_.userId;
+      if (!userId) {
+        response.status(401).json({
+          error: "Unauthorized",
+          details: { root: "Missing userId in request" },
+        });
+        return;
       }
 
-      res.json(response);
+      const smarthomeResponse: SmartHomeResponse = await match(request)
+        .with({ inputs: [{ intent: "action.devices.SYNC" }] }, request =>
+          this.handleSync(request, userId)
+        )
+        .with({ inputs: [{ intent: "action.devices.QUERY" }] }, request =>
+          this.handleQuery(request, userId)
+        )
+        .with({ inputs: [{ intent: "action.devices.EXECUTE" }] }, request =>
+          this.handleExecute(request, userId)
+        )
+        .with({ inputs: [{ intent: "action.devices.DISCONNECT" }] }, request =>
+          this.handleDisconnect(request, userId)
+        )
+        .exhaustive();
+
+      response.json(smarthomeResponse);
     } catch (error) {
       console.error("Fulfillment error:", error);
-      res.status(500).json({
+      response.status(500).json({
         requestId: request.requestId,
         payload: {
           errorCode: "hardError",
@@ -126,13 +141,12 @@ export class SmartHomeController {
     }
 
     // Get device states for all devices
-    const states = await this.deviceService.queryDeviceStates(
-      userId,
-      Array.from(deviceMap.keys())
-    );
+    const states = await this.deviceService.queryDeviceStates(userId, [
+      ...deviceMap.keys(),
+    ]);
 
-    // Build device states response
-    const devices: Record<string, any> = {};
+    // Build device states response using properly typed structure
+    const devices: QueryResponse["payload"]["devices"] = {};
 
     for (const googleDeviceId of googleDeviceIds) {
       // Extract device key from Google ID (format: clientId-deviceKey)
@@ -148,10 +162,10 @@ export class SmartHomeController {
         continue;
       }
 
-      const deviceState = states.get(deviceKey);
+      const deviceState: DeviceState = states.get(deviceKey) ?? {};
       devices[googleDeviceId] = this.deviceService.getGoogleDeviceState(
         homedDevice,
-        deviceState || {}
+        deviceState
       );
     }
 
@@ -257,11 +271,57 @@ export class SmartHomeController {
     userId: string
   ): Promise<DisconnectResponse> {
     // Revoke all refresh tokens for the user
-    await this.tokenService.revokeAllUserTokens(userId);
+    await this.userRepository.revokeTokens(userId);
 
     return {
       requestId: request.requestId,
       payload: {},
     };
+  }
+
+  /**
+   * Middleware to authenticate JWT access token from Authorization header
+   */
+  private authenticateToken = (
+    request: AuthenticatedRequest,
+    response: Response,
+    next: NextFunction
+  ): void => {
+    const authHeader = request.headers.authorization;
+    const token =
+      authHeader && authHeader.startsWith("Bearer ")
+        ? authHeader.slice(7)
+        : undefined;
+
+    if (!token) {
+      response.status(401).json({
+        error: "unauthorized",
+        error_description: "No token provided",
+      });
+      return;
+    }
+
+    const payload = this.verifyAccessToken(token);
+
+    if (!payload) {
+      response.status(401).json({
+        error: "invalid_token",
+        error_description: "Token is invalid or expired",
+      });
+      return;
+    }
+
+    request.userId = payload.userId;
+    next();
+  };
+
+  get routes() {
+    return (
+      Router()
+        // POST /fulfillment - Main Smart Home fulfillment endpoint
+        .post("/fulfillment", this.authenticateToken, (request, response) => {
+          this.handleFulfillment(request, response);
+        })
+    );
   }
 }

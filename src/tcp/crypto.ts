@@ -1,4 +1,4 @@
-import * as crypto from "crypto";
+import * as crypto from "node:crypto";
 
 function pow(base: bigint, exponent: bigint, modulus: bigint): bigint {
   if (modulus === 1n) return 0n;
@@ -28,16 +28,16 @@ export class AES128CBC {
     const generator = BigInt(data.readUInt32BE(4));
     const clientPublic = BigInt(data.readUInt32BE(8));
 
-    const serverSeed = BigInt(Math.floor(Math.random() * 0x7fffffff));
+    const serverSeed = BigInt(Math.floor(Math.random() * 0x7f_ff_ff_ff));
     const serverPublic = pow(generator, serverSeed, prime);
     const sharedSecret = pow(clientPublic, serverSeed, prime);
 
     const serverPublicBuf = Buffer.alloc(4);
-    serverPublicBuf.writeUInt32BE(Number(serverPublic & 0xffffffffn), 0);
+    serverPublicBuf.writeUInt32BE(Number(serverPublic & 0xff_ff_ff_ffn), 0);
 
     // Derive AES key/IV from shared secret (as 4-byte buffer)
     const sharedSecretBuf = Buffer.alloc(4);
-    sharedSecretBuf.writeUInt32BE(Number(sharedSecret & 0xffffffffn), 0);
+    sharedSecretBuf.writeUInt32BE(Number(sharedSecret & 0xff_ff_ff_ffn), 0);
 
     return [new AES128CBC(sharedSecretBuf), serverPublicBuf];
   }
@@ -60,9 +60,7 @@ export class AES128CBC {
     // Remove trailing zero padding
     const unpadded = decrypted.subarray(
       0,
-      decrypted.lastIndexOf(0x00) === -1
-        ? decrypted.length
-        : decrypted.lastIndexOf(0x00)
+      decrypted.includes(0x00) ? decrypted.lastIndexOf(0x00) : decrypted.length
     );
     return unpadded;
   }

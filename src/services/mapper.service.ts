@@ -3,11 +3,17 @@
  * Converts between Homed device capabilities and Google Smart Home format
  */
 
-import type { GoogleCommand, GoogleDevice } from "../types.ts";
-import {
-  detectDeviceType,
-  getTraitsForExposes,
-} from "./mapper/device-types.ts";
+import type {
+  GoogleCommand,
+  GoogleDevice,
+  TraitAttributes,
+} from "../types/googleSmarthome.ts";
+import type {
+  CommandMessage,
+  DeviceState,
+  EndpointOptions,
+} from "../types/homed.ts";
+import { detectDeviceType, getTraitsForExposes } from "./mapper/deviceTypes.ts";
 import { TRAIT_MAPPERS } from "./mapper/traits.ts";
 
 /**
@@ -29,14 +35,7 @@ export interface HomedEndpoint {
   id: number; // Endpoint ID
   name?: string; // Optional endpoint name
   exposes: string[]; // List of capabilities (e.g., ['switch', 'power', 'energy'])
-  options?: Record<string, any>; // Optional configuration
-}
-
-/**
- * Device state as received from TCP clients
- */
-export interface DeviceState {
-  [key: string]: any;
+  options?: EndpointOptions; // Optional configuration
 }
 
 /**
@@ -44,7 +43,7 @@ export interface DeviceState {
  */
 export interface HomedCommand {
   topic: string;
-  message: any;
+  message: CommandMessage;
 }
 
 /**
@@ -62,12 +61,13 @@ export class CapabilityMapper {
     // Flatten all exposes from all endpoints
     const allExposes = homedDevice.endpoints
       .flatMap(ep => ep.exposes)
-      .filter((e, i, arr) => arr.indexOf(e) === i); // Deduplicate
+      .filter((expose, index, array) => array.indexOf(expose) === index); // Deduplicate
 
     const deviceType = detectDeviceType(allExposes);
     const traits = getTraitsForExposes(allExposes);
 
     // Build device ID from client and device key
+    // Build the device ID from client and device key
     const googleDeviceId = `${clientId}-${homedDevice.key}`;
 
     // Build nicknames from alternative names
@@ -76,15 +76,15 @@ export class CapabilityMapper {
       nicknames.push(homedDevice.description);
     }
 
-    // Collect all trait attributes
-    const attributes: Record<string, any> = {};
+    // Collect all trait attributes using properly typed collection
+    const attributes: TraitAttributes = {};
     for (const trait of TRAIT_MAPPERS) {
       if (traits.includes(trait.trait)) {
-        const traitAttrs = trait.getAttributes(
+        const traitAttributes = trait.getAttributes(
           allExposes,
           this.mergeEndpointOptions(homedDevice.endpoints)
         );
-        Object.assign(attributes, traitAttrs);
+        Object.assign(attributes, traitAttributes);
       }
     }
 
@@ -128,18 +128,18 @@ export class CapabilityMapper {
   mapToGoogleState(
     homedDevice: HomedDevice,
     deviceState: DeviceState
-  ): Record<string, any> {
+  ): Record<string, unknown> {
     const allExposes = homedDevice.endpoints
-      .flatMap(ep => ep.exposes)
-      .filter((e, i, arr) => arr.indexOf(e) === i);
+      .flatMap(endpoint => endpoint.exposes)
+      .filter((expose, index, array) => array.indexOf(expose) === index);
 
     const traits = getTraitsForExposes(allExposes);
-    const state: Record<string, any> = {
+    const state: Record<string, unknown> = {
       online: homedDevice.available,
       status: "SUCCESS",
     };
 
-    // Get state for each supported trait
+    // Get state for each supported trait - use properly typed TraitState union
     for (const trait of TRAIT_MAPPERS) {
       if (traits.includes(trait.trait)) {
         const traitState = trait.getState(deviceState);
@@ -162,10 +162,10 @@ export class CapabilityMapper {
   mapToHomedCommand(
     homedDevice: HomedDevice,
     googleCommand: GoogleCommand
-  ): HomedCommand | null {
+  ): HomedCommand | undefined {
     const allExposes = homedDevice.endpoints
       .flatMap(ep => ep.exposes)
-      .filter((e, i, arr) => arr.indexOf(e) === i);
+      .filter((expose, index, array) => array.indexOf(expose) === index);
 
     const traits = getTraitsForExposes(allExposes);
 
@@ -179,16 +179,14 @@ export class CapabilityMapper {
       }
     }
 
-    return null;
+    return;
   }
 
   /**
    * Merge options from all endpoints
    */
-  private mergeEndpointOptions(
-    endpoints: HomedEndpoint[]
-  ): Record<string, any> {
-    const merged: Record<string, any> = {};
+  private mergeEndpointOptions(endpoints: HomedEndpoint[]): EndpointOptions {
+    const merged: EndpointOptions = {};
     for (const ep of endpoints) {
       if (ep.options) {
         Object.assign(merged, ep.options);

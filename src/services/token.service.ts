@@ -1,8 +1,5 @@
 import jwt from "jsonwebtoken";
-import {
-  AuthCodeRepository,
-  RefreshTokenRepository,
-} from "../db/repositories/index.ts";
+import { UserRepository } from "../db/repository.ts";
 
 export interface AccessTokenPayload {
   userId: string;
@@ -19,19 +16,18 @@ export class TokenService {
   private jwtSecret: string;
   private accessExpiresIn: string;
   private refreshExpiresIn: string;
-  private authCodeRepository: AuthCodeRepository;
-  private refreshTokenRepository: RefreshTokenRepository;
+  private userRepository: UserRepository;
 
   constructor(
+    userRepository: UserRepository,
     jwtSecret: string = process.env.JWT_SECRET || "default-secret",
     accessExpiresIn: string = process.env.JWT_ACCESS_EXPIRES_IN || "1h",
     refreshExpiresIn: string = process.env.JWT_REFRESH_EXPIRES_IN || "30d"
   ) {
+    this.userRepository = userRepository;
     this.jwtSecret = jwtSecret;
     this.accessExpiresIn = accessExpiresIn;
     this.refreshExpiresIn = refreshExpiresIn;
-    this.authCodeRepository = new AuthCodeRepository();
-    this.refreshTokenRepository = new RefreshTokenRepository();
   }
 
   /**
@@ -56,7 +52,7 @@ export class TokenService {
     expiresAt.setDate(expiresAt.getDate() + 30);
 
     // Create refresh token record in database
-    const refreshTokenRecord = await this.refreshTokenRepository.create(
+    const refreshTokenRecord = await this.userRepository.createToken(
       userId,
       expiresAt
     );
@@ -75,26 +71,28 @@ export class TokenService {
   /**
    * Verify and decode JWT access token
    */
-  verifyAccessToken(token: string): AccessTokenPayload | null {
+  verifyAccessToken(token: string): AccessTokenPayload | undefined {
     try {
       const decoded = jwt.verify(token, this.jwtSecret) as AccessTokenPayload;
       if (decoded.type !== "access") {
-        return null;
+        return undefined;
       }
       return decoded;
     } catch {
-      return null;
+      return undefined;
     }
   }
 
   /**
    * Verify and decode JWT refresh token
    */
-  async verifyRefreshToken(token: string): Promise<RefreshTokenPayload | null> {
+  async verifyRefreshToken(
+    token: string
+  ): Promise<RefreshTokenPayload | undefined> {
     try {
       const decoded = jwt.verify(token, this.jwtSecret) as RefreshTokenPayload;
       if (decoded.type !== "refresh") {
-        return null;
+        return undefined;
       }
 
       // Check if token still exists in database (not revoked)
@@ -103,12 +101,12 @@ export class TokenService {
       );
 
       if (!refreshTokenRecord || refreshTokenRecord.userId !== decoded.userId) {
-        return null;
+        return undefined;
       }
 
       return decoded;
     } catch {
-      return null;
+      return undefined;
     }
   }
 
@@ -130,17 +128,17 @@ export class TokenService {
     code: string,
     clientId: string,
     redirectUri: string
-  ): Promise<string | null> {
+  ): Promise<string | undefined> {
     const authCode = await this.authCodeRepository.findByCode(code);
 
     if (!authCode) {
-      return null;
+      return undefined;
     }
 
     // Check if code expired
     if (authCode.expiresAt < new Date()) {
       await this.authCodeRepository.delete(code);
-      return null;
+      return undefined;
     }
 
     // Validate client ID and redirect URI
@@ -148,20 +146,13 @@ export class TokenService {
       authCode.clientId !== clientId ||
       authCode.redirectUri !== redirectUri
     ) {
-      return null;
+      return undefined;
     }
 
     // Delete code (one-time use)
     await this.authCodeRepository.delete(code);
 
     return authCode.userId;
-  }
-
-  /**
-   * Revoke refresh token (for logout/disconnect)
-   */
-  async revokeRefreshToken(tokenId: string): Promise<void> {
-    await this.refreshTokenRepository.delete(tokenId);
   }
 
   /**

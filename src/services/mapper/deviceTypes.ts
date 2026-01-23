@@ -77,24 +77,32 @@ export function detectDeviceType(exposes: string[]): string {
   // Priority mapping for devices with multiple exposes
   // Light takes priority if present
   if (
-    exposes.some(e => ["light", "color_light", "dimmable_light"].includes(e))
+    exposes.some(expose =>
+      ["light", "color_light", "dimmable_light"].includes(expose)
+    )
   ) {
     return GOOGLE_DEVICE_TYPES.LIGHT;
   }
 
   // Thermostat
-  if (exposes.some(e => ["thermostat", "temperature_controller"].includes(e))) {
+  if (
+    exposes.some(expose =>
+      ["thermostat", "temperature_controller"].includes(expose)
+    )
+  ) {
     return GOOGLE_DEVICE_TYPES.THERMOSTAT;
   }
 
   // Lock
-  if (exposes.some(e => ["lock", "door_lock"].includes(e))) {
+  if (exposes.some(expose => ["lock", "door_lock"].includes(expose))) {
     return GOOGLE_DEVICE_TYPES.LOCK;
   }
 
   // Cover/Blinds
   if (
-    exposes.some(e => ["cover", "blinds", "curtain", "shutter"].includes(e))
+    exposes.some(expose =>
+      ["cover", "blinds", "curtain", "shutter"].includes(expose)
+    )
   ) {
     return GOOGLE_DEVICE_TYPES.BLINDS;
   }
@@ -126,40 +134,47 @@ export function getTraitsForExposes(exposes: string[]): string[] {
       case "relay":
       case "outlet":
       case "light":
-      case "lock":
+      case "lock": {
         traits.add("action.devices.traits.OnOff");
         break;
+      }
 
-      case "dimmable_light":
+      case "dimmable_light": {
         traits.add("action.devices.traits.OnOff");
         traits.add("action.devices.traits.Brightness");
         break;
+      }
 
-      case "color_light":
+      case "color_light": {
         traits.add("action.devices.traits.OnOff");
         traits.add("action.devices.traits.Brightness");
         traits.add("action.devices.traits.ColorSetting");
         break;
+      }
 
-      case "brightness":
+      case "brightness": {
         traits.add("action.devices.traits.Brightness");
         break;
+      }
 
-      case "color":
+      case "color": {
         traits.add("action.devices.traits.ColorSetting");
         break;
+      }
 
       case "cover":
       case "blinds":
       case "curtain":
-      case "shutter":
+      case "shutter": {
         traits.add("action.devices.traits.OpenClose");
         break;
+      }
 
       case "thermostat":
-      case "temperature_controller":
+      case "temperature_controller": {
         traits.add("action.devices.traits.TemperatureSetting");
         break;
+      }
 
       case "occupancy":
       case "motion":
@@ -171,11 +186,12 @@ export function getTraitsForExposes(exposes: string[]): string[] {
       case "co2":
       case "no2":
       case "pm10":
-      case "pm25":
+      case "pm25": {
         traits.add("action.devices.traits.SensorState");
         break;
+      }
     }
   }
 
-  return Array.from(traits);
+  return [...traits];
 }

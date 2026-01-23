@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Homed Server - Dashboard</title>
+    <link rel="stylesheet" href="/css/common.css">
+    <link rel="stylesheet" href="/css/dashboard.css">
+</head>
+
+<body>
+    <div class="header">
+        <h1>🏠 Homed Server</h1>
+        <div class="user-info">
+            <span class="username">{{username}}</span>
+            <button class="logout-btn" onclick="handleLogout()">Logout</button>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="card">
+            <h2>🔑 TCP Server Token</h2>
+            <p>Use this token to connect your Homed devices to the Google Smart Home integration via the TCP server.</p>
+
+            <div class="token-container">
+                <div class="token-label">Client Token</div>
+                <div class="token-value">{{clientToken}}</div>
+                <button class="copy-btn" onclick="copyToken()">Copy</button>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>📋 Connection Information</h2>
+            <div class="info-grid">
+                <div class="info-item">
+                    <div class="info-icon">🌐</div>
+                    <div class="info-content">
+                        <h3>TCP Server</h3>
+                        <p>Port: <strong>{{tcpPort}}</strong></p>
+                    </div>
+                </div>
+                <div class="info-item">
+                    <div class="info-icon">🔒</div>
+                    <div class="info-content">
+                        <h3>Encryption</h3>
+                        <p>DH handshake + AES-128-CBC</p>
+                    </div>
+                </div>
+                <div class="info-item">
+                    <div class="info-icon">📱</div>
+                    <div class="info-content">
+                        <h3>Integration</h3>
+                        <p>Google Smart Home</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>💡 Next Steps</h2>
+            <p><strong>1. Configure your homed-service-cloud client:</strong></p>
+            <p style="margin-left: 1rem;">Add your client token to the configuration file and point it to this server.
+            </p>
+
+            <p style="margin-top: 1rem;"><strong>2. Set up Google Smart Home:</strong></p>
+            <p style="margin-left: 1rem;">Link your Google account through the OAuth flow to control devices via Google
+                Assistant.</p>
+        </div>
+    </div>
+
+    <script>
+        async function handleLogout() {
+            try {
+                await fetch('/auth/logout', { method: 'POST' });
+                window.location.reload();
+            } catch (error) {
+                alert('Failed to logout');
+            }
+        }
+
+        async function copyToken() {
+            const tokenValue = document.querySelector('.token-value').textContent;
+            const btn = document.querySelector('.copy-btn');
+
+            try {
+                await navigator.clipboard.writeText(tokenValue);
+                btn.textContent = 'Copied!';
+                btn.classList.add('copied');
+
+                setTimeout(() => {
+                    btn.textContent = 'Copy';
+                    btn.classList.remove('copied');
+                }, 2000);
+            } catch (error) {
+                // Fallback for older browsers
+                const textArea = document.createElement('textarea');
+                textArea.value = tokenValue;
+                document.body.appendChild(textArea);
+                textArea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textArea);
+
+                btn.textContent = 'Copied!';
+                btn.classList.add('copied');
+                setTimeout(() => {
+                    btn.textContent = 'Copy';
+                    btn.classList.remove('copied');
+                }, 2000);
+            }
+        }
+    </script>
+</body>
+
+</html>

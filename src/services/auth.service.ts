@@ -1,20 +1,12 @@
 import * as bcrypt from "bcrypt";
-import * as crypto from "crypto";
-import { UserRepository } from "../db/repositories/index.ts";
-import type { User } from "../types.ts";
+import * as crypto from "node:crypto";
+import { type User, UserRepository } from "../db/repository.ts";
 
 export class AuthService {
   private userRepository: UserRepository;
 
   constructor() {
     this.userRepository = new UserRepository();
-  }
-
-  /**
-   * Validate a client token and return the associated user
-   */
-  async validateClientToken(token: string): Promise<User | null> {
-    return this.userRepository.findByClientToken(token);
   }
 
   /**
@@ -29,7 +21,11 @@ export class AuthService {
       // Generate random client token (hex string)
       const clientToken = this.generateClientToken();
 
-      return this.userRepository.create(username, passwordHash, clientToken);
+      return this.userRepository.createUser(
+        username,
+        passwordHash,
+        clientToken
+      );
     } catch (error) {
       console.error("Error creating user:", error);
       throw new Error("Failed to create user");
@@ -42,24 +38,24 @@ export class AuthService {
   async validateUserCredentials(
     username: string,
     password: string
-  ): Promise<User | null> {
+  ): Promise<User | undefined> {
     try {
       const user = await this.userRepository.findByUsername(username);
 
       if (!user) {
-        return null;
+        return;
       }
 
       // Verify password
       const isValid = await bcrypt.compare(password, user.passwordHash);
       if (!isValid) {
-        return null;
+        return;
       }
 
       return user;
     } catch (error) {
       console.error("Error validating user credentials:", error);
-      return null;
+      return;
     }
   }
 
@@ -67,7 +63,7 @@ export class AuthService {
    * Get user by ID
    */
   async getUserById(userId: string): Promise<User | null> {
-    return this.userRepository.findById(userId);
+    return this.userRepository.getUser(userId);
   }
 
   /**
