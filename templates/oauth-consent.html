@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Link Your Account - OAuth</title>
+    <link rel="stylesheet" href="/css/common.css">
+    <link rel="stylesheet" href="/css/oauth.css">
+</head>
+
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo">🏠</div>
+            <h1>Link Your Account</h1>
+            <p class="subtitle">
+                Google Home wants to link your <strong><%= clientId %></strong> account
+                with your Google Account.
+            </p>
+        </div>
+
+        <div class="info-box">
+            <strong>Authorization statement:</strong>
+            <p class="warning-text">By signing in, you are authorizing Google to control your devices.</p>
+        </div>
+
+        <div class="scopes">
+            <p class="scopes-title">This will allow Google to:</p>
+            <div class="scope-item">Control your smart home devices</div>
+            <% if (scopes) { %>
+            <div class="scope-item">Access: <%= scopes %></div>
+            <% } %>
+        </div>
+
+        <div class="privacy-info">
+            <strong>Your privacy is important.</strong><br>
+            <a href="https://policies.google.com/privacy" target="_blank">View Google's Privacy Policy</a> to learn how
+            Google handles your data.
+        </div>
+
+        <form id="approveForm" method="POST" action="/oauth/authorize/consent">
+            <input type="hidden" name="approve" value="yes">
+            <div class="buttons">
+                <button type="submit" class="approve">Agree and link</button>
+                <button type="button" class="deny" onclick="window.history.back()">Cancel</button>
+            </div>
+        </form>
+    </div>
+</body>
+
+</html>

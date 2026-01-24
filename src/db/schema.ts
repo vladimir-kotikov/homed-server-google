@@ -1,10 +1,9 @@
-import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
 import { relations } from "drizzle-orm";
+import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
 export const users = sqliteTable("user", {
   id: text("id").primaryKey(),
-  username: text("username").notNull().unique(),
-  passwordHash: text("password_hash").notNull(),
+  username: text("username").notNull(),
   clientToken: text("client_token").notNull().unique(),
   createdAt: integer("created_at", { mode: "timestamp" })
     .notNull()

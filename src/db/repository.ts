@@ -8,7 +8,6 @@ import { authCodes, refreshTokens, users } from "./schema.ts";
 export interface User {
   id: string;
   username: string;
-  passwordHash: string;
   clientToken: string;
   createdAt: Date;
 }
@@ -32,45 +31,6 @@ export interface RefreshToken {
   createdAt: Date;
 }
 
-function createTables(database: Database.Database) {
-  // Create tables if they don't exist
-  database.exec(`
-    CREATE TABLE IF NOT EXISTS user (
-      id TEXT PRIMARY KEY,
-      username TEXT NOT NULL UNIQUE,
-      password_hash TEXT NOT NULL,
-      client_token TEXT NOT NULL UNIQUE,
-      created_at INTEGER NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS auth_code (
-      id TEXT PRIMARY KEY,
-      code TEXT NOT NULL UNIQUE,
-      user_id TEXT NOT NULL,
-      client_id TEXT NOT NULL,
-      redirect_uri TEXT NOT NULL,
-      expires_at INTEGER NOT NULL,
-      used INTEGER NOT NULL DEFAULT 0,
-      created_at INTEGER NOT NULL,
-      FOREIGN KEY (user_id) REFERENCES user(id)
-    );
-
-    CREATE TABLE IF NOT EXISTS refresh_token (
-      id TEXT PRIMARY KEY,
-      token TEXT NOT NULL UNIQUE,
-      user_id TEXT NOT NULL,
-      expires_at INTEGER NOT NULL,
-      created_at INTEGER NOT NULL,
-      FOREIGN KEY (user_id) REFERENCES user(id)
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_auth_code_code ON auth_code(code);
-    CREATE INDEX IF NOT EXISTS idx_auth_code_user_id ON auth_code(user_id);
-    CREATE INDEX IF NOT EXISTS idx_refresh_token_token ON refresh_token(token);
-    CREATE INDEX IF NOT EXISTS idx_refresh_token_user_id ON refresh_token(user_id);
-  `);
-}
-
 export class UserRepository {
   private db: Database.Database;
   private client: BetterSQLite3Database<typeof schema>;
@@ -84,13 +44,11 @@ export class UserRepository {
     databasePath: string = ":memory:",
     { create = false }: { create: boolean }
   ): UserRepository {
-    const database = new Database(databasePath);
+    console.log(
+      `Opening database at ${databasePath} (create: ${create ? "yes" : "no"})`
+    );
+    const database = new Database(databasePath, { fileMustExist: !create });
     database.pragma("journal_mode = WAL");
-
-    if (create) {
-      createTables(database);
-    }
-
     return new UserRepository(database);
   }
 
@@ -148,43 +106,31 @@ export class UserRepository {
   /**
    * Find user by ID
    */
-  async getUser(userId: string): Promise<User | undefined> {
-    try {
-      const user = await this.client.query.users.findFirst({
-        where: eq(users.id, userId),
-      });
-      return user;
-    } catch (error) {
-      console.error("Error finding user by ID:", error);
-      return;
-    }
-  }
+  getUser = (userId: string): Promise<User | undefined> =>
+    this.client.query.users.findFirst({
+      where: eq(users.id, userId),
+    });
 
   /**
    * Create a new user
    */
-  async createUser(
+  createUser = (
+    id: string,
     username: string,
-    passwordHash: string,
-    clientToken: string
-  ): Promise<User> {
-    try {
-      const result = await this.client
-        .insert(users)
-        .values({
-          id: crypto.randomUUID(),
-          username,
-          passwordHash,
-          clientToken,
-        })
-        .returning();
+    clientToken?: string
+  ): Promise<User> =>
+    this.client
+      .insert(users)
+      .values({
+        id,
+        username,
+        clientToken: clientToken ?? crypto.randomBytes(32).toString("hex"),
+      })
+      .returning()
+      .then(result => result[0]);
 
-      return result[0];
-    } catch (error) {
-      console.error("Error creating user:", error);
-      throw new Error("Failed to create user");
-    }
-  }
+  getOrCreateUser = async (userId: string): Promise<User> =>
+    this.getUser(userId).then(user => user ?? this.createUser(userId));
 
   /**
    * Create an authorization code for OAuth flow
@@ -241,7 +187,10 @@ export class UserRepository {
     }
   }
 
-  async createToken(userId: string, expiresAt: Date): Promise<RefreshToken> {
+  async createRefreshToken(
+    userId: string,
+    expiresAt: Date
+  ): Promise<RefreshToken> {
     try {
       const token = crypto.randomBytes(32).toString("hex");
 

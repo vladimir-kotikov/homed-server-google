@@ -1,0 +1,270 @@
+/* OAuth page specific styles for login and consent flows */
+
+body {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  min-height: 100vh;
+  padding: 20px;
+}
+
+.container {
+  max-width: 500px;
+  width: 100%;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
+  padding: 40px 30px;
+}
+
+/* Header section with branding */
+.header {
+  text-align: center;
+  margin-bottom: 30px;
+}
+
+.logo {
+  width: 60px;
+  height: 60px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: bold;
+  font-size: 24px;
+  margin: 0 auto 15px;
+}
+
+.header h1 {
+  font-size: 24px;
+  margin-bottom: 8px;
+  color: var(--text-primary);
+}
+
+.subtitle {
+  color: var(--text-secondary);
+  font-size: 14px;
+  margin-bottom: 10px;
+  line-height: 1.5;
+}
+
+/* Form styling */
+.form-group {
+  margin: 18px 0;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 6px;
+  font-weight: 500;
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+.form-group input {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-size: 14px;
+  transition: all 0.3s ease;
+  font-family: inherit;
+}
+
+.form-group input:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+/* Integration info box */
+.integration-info {
+  background: var(--bg-lighter);
+  padding: 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 20px;
+  line-height: 1.6;
+}
+
+/* Info and warning boxes */
+.info-box {
+  background: var(--bg-lighter);
+  padding: 16px;
+  margin: 20px 0;
+  border-radius: 6px;
+  border-left: 4px solid var(--error-color);
+}
+
+.info-box strong {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.warning-text {
+  color: var(--error-color);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* Scopes section */
+.scopes {
+  margin: 20px 0;
+}
+
+.scopes-title {
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 12px;
+  font-size: 14px;
+}
+
+.scope-item {
+  margin: 10px 0;
+  padding: 12px;
+  background: #e8f5e9;
+  border-left: 3px solid var(--success-color);
+  border-radius: 4px;
+  font-size: 14px;
+  color: #2e7d32;
+}
+
+.scope-item::before {
+  content: "✓ ";
+  font-weight: bold;
+}
+
+/* Privacy info section */
+.privacy-info {
+  background: #e3f2fd;
+  padding: 14px;
+  margin: 20px 0;
+  border-radius: 6px;
+  border-left: 4px solid #1976d2;
+  font-size: 13px;
+  color: #0d47a1;
+  line-height: 1.6;
+}
+
+.privacy-info a {
+  color: #1565c0;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.privacy-info a:hover {
+  text-decoration: underline;
+}
+
+/* Buttons */
+button {
+  width: 100%;
+  padding: 12px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 14px;
+  transition: all 0.3s ease;
+  margin-top: 10px;
+}
+
+button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 5px 20px rgba(102, 126, 234, 0.3);
+}
+
+button:active {
+  transform: translateY(0);
+}
+
+/* Button group for dual buttons */
+.buttons {
+  display: flex;
+  gap: 12px;
+  margin-top: 30px;
+}
+
+.buttons button {
+  flex: 1;
+  margin-top: 0;
+  padding: 12px 16px;
+  font-size: 14px;
+}
+
+.approve {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
+.approve:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 5px 20px rgba(102, 126, 234, 0.3);
+}
+
+.approve:active {
+  transform: translateY(0);
+}
+
+.deny {
+  background: var(--bg-lighter);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+}
+
+.deny:hover {
+  background: #eeeeee;
+  transform: none;
+  box-shadow: none;
+}
+
+.deny:active {
+  background: var(--bg-lighter);
+}
+
+/* Footer text */
+.footer-text {
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-tertiary);
+  margin-top: 20px;
+  line-height: 1.5;
+}
+
+.footer-text p {
+  margin: 0.5rem 0;
+}
+
+.footer-text a {
+  color: var(--primary-color);
+  text-decoration: none;
+}
+
+.footer-text a:hover {
+  text-decoration: underline;
+}
+
+/* Error message */
+.error {
+  color: var(--error-color);
+  font-size: 13px;
+  margin-top: 4px;
+  display: none;
+  padding: 8px;
+  background: #fff5f5;
+  border-radius: 4px;
+  border-left: 3px solid var(--error-color);
+}
+
+.error.show {
+  display: block;
+}

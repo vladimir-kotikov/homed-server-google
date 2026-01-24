@@ -1,9 +1,9 @@
-import { Router } from "express";
-
 import type { Request, Response } from "express";
-
-import jwt from "jsonwebtoken";
-import { UserRepository } from "../db/repository.ts";
+import { Router } from "express";
+import * as jwt from "jsonwebtoken";
+import passport from "passport";
+import { UserRepository } from "../db/repository.js";
+import { AuthService } from "../services/auth.service.js";
 
 export interface AccessTokenPayload {
   userId: string;
@@ -21,23 +21,25 @@ export class OAuthController {
   private accessExpiresIn: string;
   private refreshExpiresIn: string;
   private userRepository: UserRepository;
-  verifyClientCredentials: (clientId: string, clientSecret: string) => boolean;
+  private authService: AuthService;
+  private configuredClientId: string;
+  private configuredClientSecret: string;
 
   constructor(
     userRepository: UserRepository,
     jwtSecret: string,
-    verifyClientCredentials: (
-      clientId: string,
-      clientSecret: string
-    ) => boolean,
+    configuredClientId: string,
+    configuredClientSecret: string,
     accessExpiresIn: string = "1h",
     refreshExpiresIn: string = "30d"
   ) {
     this.userRepository = userRepository;
+    this.authService = new AuthService();
     this.jwtSecret = jwtSecret;
     this.accessExpiresIn = accessExpiresIn;
     this.refreshExpiresIn = refreshExpiresIn;
-    this.verifyClientCredentials = verifyClientCredentials;
+    this.configuredClientId = configuredClientId;
+    this.configuredClientSecret = configuredClientSecret;
   }
 
   /**
@@ -162,6 +164,19 @@ export class OAuthController {
   }
 
   /**
+   * Validate client credentials
+   */
+  private verifyClientCredentials(
+    clientId: string,
+    clientSecret: string
+  ): boolean {
+    return (
+      clientId === this.configuredClientId &&
+      clientSecret === this.configuredClientSecret
+    );
+  }
+
+  /**
    * GET /oauth/authorize
    * Display login page with OAuth parameters
    */
@@ -187,7 +202,12 @@ export class OAuthController {
     }
 
     // Validate client_id
-    if (!this.verifyClientCredentials(client_id, client_secret)) {
+    if (
+      !this.verifyClientCredentials(
+        client_id as string,
+        client_secret as string
+      )
+    ) {
       response.status(400).json({
         error: "invalid_client",
         error_description: "Unknown client",
@@ -224,8 +244,7 @@ export class OAuthController {
     }
 
     // Validate client_id
-    const configuredClientId = process.env.OAUTH_CLIENT_ID;
-    if (client_id !== configuredClientId) {
+    if (client_id !== this.configuredClientId) {
       response.status(400).json({
         error: "invalid_client",
         error_description: "Unknown client",
@@ -268,31 +287,10 @@ export class OAuthController {
   /**
    * POST /oauth/token
    * Exchange authorization code or refresh token for access token
+   * Client credentials are validated by Passport middleware
    */
   async token(request: Request, response: Response): Promise<void> {
-    const {
-      grant_type,
-      code,
-      refresh_token,
-      client_id,
-      client_secret,
-      redirect_uri,
-    } = request.body;
-
-    // Validate client credentials
-    const configuredClientId = process.env.OAUTH_CLIENT_ID;
-    const configuredClientSecret = process.env.OAUTH_CLIENT_SECRET;
-
-    if (
-      client_id !== configuredClientId ||
-      client_secret !== configuredClientSecret
-    ) {
-      response.status(401).json({
-        error: "invalid_client",
-        error_description: "Invalid client credentials",
-      });
-      return;
-    }
+    const { grant_type, code, refresh_token, redirect_uri } = request.body;
 
     if (grant_type === "authorization_code") {
       // Exchange authorization code for tokens
@@ -304,7 +302,11 @@ export class OAuthController {
         return;
       }
 
-      const userId = await this.validateAuthCode(code, client_id, redirect_uri);
+      const userId = await this.validateAuthCode(
+        code,
+        this.configuredClientId,
+        redirect_uri
+      );
       if (!userId) {
         response.status(400).json({
           error: "invalid_grant",
@@ -370,8 +372,12 @@ export class OAuthController {
         .post("/authorize", (request, response) =>
           this.authorizePost(request, response)
         )
-        // POST /oauth/token - Exchange auth code or refresh token for access token
-        .post("/token", (request, response) => this.token(request, response))
+        // POST /oauth/token - Validate client credentials with Passport, then exchange tokens
+        .post(
+          "/token",
+          passport.authenticate("oauth-client", { session: false }),
+          (request, response) => this.token(request, response)
+        )
     );
   }
 }

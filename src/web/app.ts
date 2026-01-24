@@ -1,83 +1,80 @@
+import ejs from "ejs";
 import express from "express";
-import { engine } from "express-handlebars";
 import session from "express-session";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import passport from "passport";
 import appConfig from "../config.ts";
-import type { UserRepository } from "../db/repository.ts";
+import type { User, UserRepository } from "../db/repository.ts";
+import { googleOauth20Strategy, jwtStrategy } from "./authStrategies.ts";
 import { OAuthController } from "./oauth.ts";
 import { SmartHomeController } from "./smarthome.ts";
-import { UserController } from "./user.ts";
-
-const { env, cookieSecret } = appConfig;
+import userRoutes from "./user.ts";
 
 export class WebApp {
-  app: express.Application;
+  readonly app: express.Application;
+
+  private userRepository: UserRepository;
   private oauthController: OAuthController;
   private smarthomeController: SmartHomeController;
-  private userController: UserController;
 
   constructor(
     userRepository: UserRepository,
-    clientOauthParameters: {
-      clientId: string;
-      clientSecret: string;
-      redirectUri: string;
-    },
-    serverOauthParameters: {
-      clientId: string;
-      clientSecret: string;
-      jwtSecret: string;
-      accessTokenExpiresIn?: string;
-      refreshTokenExpiresIn?: string;
-    }
+    smartHomeController: SmartHomeController,
+    oauthController: OAuthController
   ) {
-    const clientVerifier = (clientId: string, clientSecret: string) => {
-      return (
-        clientId === clientOauthParameters.clientId &&
-        clientSecret === clientOauthParameters.clientSecret
-      );
-    };
+    this.userRepository = userRepository;
+    this.smarthomeController = smartHomeController;
+    this.oauthController = oauthController;
 
-    this.oauthController = new OAuthController(
-      userRepository,
-      serverOauthParameters.jwtSecret,
-      clientVerifier,
-      serverOauthParameters.accessTokenExpiresIn,
-      serverOauthParameters.refreshTokenExpiresIn
-    );
-
-    this.smarthomeController = new SmartHomeController(
-      userRepository,
-      (token: string) => this.oauthController.verifyAccessToken(token),
-      new DeviceService()
-    );
-
-    this.userController = new UserController(
-      clientOauthParameters.clientId,
-      clientOauthParameters.clientSecret,
-      clientOauthParameters.redirectUri
-    );
+    // eslint-disable-next-line unicorn/no-null
+    passport.serializeUser((user, done) => done(null, user));
+    // eslint-disable-next-line unicorn/no-null
+    passport.deserializeUser((user, done) => done(null, user as User));
 
     this.app = express()
-      .engine("handlebars", engine({ defaultLayout: false }))
-      .set("view engine", "handlebars")
-      .set("views", "./templates")
+      .set("views", "templates")
+      .set("view engine", "html")
+      .engine("html", ejs.renderFile)
+      .use(
+        passport
+          .use(
+            "jwt",
+            jwtStrategy(
+              appConfig.jwtSecret,
+              this.userRepository.verifyAccessToken
+            )
+          )
+          .use(
+            "google-oauth20",
+            googleOauth20Strategy(
+              appConfig.googleUserClientId,
+              appConfig.googleUserClientSecret,
+              appConfig.googleUserRedirectUri,
+              ({ id, emails }) =>
+                this.userRepository
+                  .getUser(id)
+                  .then(
+                    user =>
+                      user ??
+                      this.userRepository.createUser(id, emails![0].value)
+                  )
+            )
+          )
+          .initialize()
+      )
       .use(express.static("public"))
       .use(express.json())
       .use(
         session({
-          secret: cookieSecret,
+          secret: appConfig.cookieSecret,
+          name: "homed-google-server-cookie",
           resave: false,
-          saveUninitialized: false,
-          cookie: {
-            secure: env === "production",
-            httpOnly: true,
-            maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-          },
+          saveUninitialized: true,
+          rolling: true,
         })
       )
       .get("/health", (_request, response) => response.json({ status: "ok" }))
-      .use("/", this.userController.routes)
+      .use("/", passport.authenticate("session"), userRoutes)
       .use("/oauth", this.oauthController.routes)
       .use(this.smarthomeController.routes);
   }

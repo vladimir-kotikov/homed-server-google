@@ -18,7 +18,7 @@ const stringEnvironment = (value: string, fallback?: string): string => {
   );
 };
 
-const DEFAULT_DATABASE_URL = "file:./dev.db";
+const DEFAULT_DATABASE_URL = "dev.db";
 const DEV_OAUTH_CLIENT_ID = "dev-oauth-client-id";
 const DEV_OAUTH_CLIENT_SECRET = "dev-oauth-client-secret";
 const DEV_JWT_SECRET = "dev-jwt-secret";
@@ -35,7 +35,16 @@ export default {
     "OAUTH_CLIENT_SECRET",
     DEV_OAUTH_CLIENT_SECRET
   ),
+  oauthRedirectUri: stringEnvironment(
+    "OAUTH_REDIRECT_URI",
+    "http://localhost:8080/oauth/callback"
+  ),
   googleUserClientId: stringEnvironment("GOOGLE_USER_CLIENT_ID"),
   googleUserClientSecret: stringEnvironment("GOOGLE_USER_CLIENT_SECRET"),
   googleUserRedirectUri: stringEnvironment("GOOGLE_USER_REDIRECT_URI"),
+  accessTokenLifetime: intEnvironment("OAUTH_ACCESS_TOKEN_EXPIRES_IN", 3600), // 1 hour
+  refreshTokenLifetime: intEnvironment(
+    "OAUTH_REFRESH_TOKEN_EXPIRES_IN",
+    1_209_600
+  ), // 14 days
 };

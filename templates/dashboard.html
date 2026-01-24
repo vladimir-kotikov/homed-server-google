@@ -13,7 +13,7 @@
     <div class="header">
         <h1>🏠 Homed Server</h1>
         <div class="user-info">
-            <span class="username">{{username}}</span>
+            <span class="username"><%= username %></span>
             <button class="logout-btn" onclick="handleLogout()">Logout</button>
         </div>
     </div>
@@ -25,35 +25,8 @@
 
             <div class="token-container">
                 <div class="token-label">Client Token</div>
-                <div class="token-value">{{clientToken}}</div>
+                <div class="token-value"><%= clientToken %></div>
                 <button class="copy-btn" onclick="copyToken()">Copy</button>
-            </div>
-        </div>
-
-        <div class="card">
-            <h2>📋 Connection Information</h2>
-            <div class="info-grid">
-                <div class="info-item">
-                    <div class="info-icon">🌐</div>
-                    <div class="info-content">
-                        <h3>TCP Server</h3>
-                        <p>Port: <strong>{{tcpPort}}</strong></p>
-                    </div>
-                </div>
-                <div class="info-item">
-                    <div class="info-icon">🔒</div>
-                    <div class="info-content">
-                        <h3>Encryption</h3>
-                        <p>DH handshake + AES-128-CBC</p>
-                    </div>
-                </div>
-                <div class="info-item">
-                    <div class="info-icon">📱</div>
-                    <div class="info-content">
-                        <h3>Integration</h3>
-                        <p>Google Smart Home</p>
-                    </div>
-                </div>
             </div>
         </div>
 

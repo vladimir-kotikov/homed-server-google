@@ -52,7 +52,7 @@ export class TokenService {
     expiresAt.setDate(expiresAt.getDate() + 30);
 
     // Create refresh token record in database
-    const refreshTokenRecord = await this.userRepository.createToken(
+    const refreshTokenRecord = await this.userRepository.createRefreshToken(
       userId,
       expiresAt
     );
