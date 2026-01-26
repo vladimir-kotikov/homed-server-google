@@ -1,6 +1,7 @@
 /* eslint-disable unicorn/no-null */
 import bodyParser from "body-parser";
 import { ensureLoggedIn } from "connect-ensure-login";
+import type { Request, Response } from "express";
 import { Router } from "express";
 import * as oauth2orize from "oauth2orize";
 import passport from "passport";
@@ -122,6 +123,15 @@ export class OAuthController {
       ? done(null, { id: clientId, redirectUri }, redirectUri)
       : done(null, false);
 
+  private userinfoHandler = async (request: Request, response: Response) => {
+    const { user } = request as Express.AuthenticatedRequest;
+    return response.json({
+      sub: user.id,
+      email: user.username,
+      name: user.username,
+    });
+  };
+
   get routes() {
     return Router()
       .use(bodyParser.urlencoded())
@@ -147,6 +157,11 @@ export class OAuthController {
         passport.authenticate("client-password-oauth20", { session: false }),
         this.oauth2Server.token(),
         this.oauth2Server.errorHandler()
+      )
+      .get(
+        "/userinfo",
+        passport.authenticate("jwt", { session: false }),
+        this.userinfoHandler
       );
   }
 }

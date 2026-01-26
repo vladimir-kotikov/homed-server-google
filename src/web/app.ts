@@ -98,7 +98,10 @@ export class WebApp {
       .get("/health", (_request, response) => response.json({ status: "ok" }))
       .use("/", passport.authenticate("session"), userRoutes)
       .use("/oauth", this.oauthController.routes)
-      .use(this.smarthomeController.routes);
+      .use(
+        passport.authenticate("jwt", { session: false }),
+        this.smarthomeController.routes
+      );
   }
 
   handleRequest = (request: IncomingMessage, response: ServerResponse) =>

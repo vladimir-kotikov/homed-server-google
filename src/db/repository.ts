@@ -1,7 +1,7 @@
 import Database from "better-sqlite3";
 import { eq } from "drizzle-orm";
 import { BetterSQLite3Database, drizzle } from "drizzle-orm/better-sqlite3";
-import * as jwt from "jsonwebtoken";
+import jwt from "jsonwebtoken";
 import * as schema from "./schema.ts";
 import { users } from "./schema.ts";
 
@@ -59,17 +59,23 @@ export class UserRepository {
     clientId?: string,
     redirectUri?: string
   ) => {
-    const options = {};
+    const options = {} as jwt.VerifyOptions;
     if (clientId) {
-      (options as jwt.VerifyOptions).audience = redirectUri;
-      (options as jwt.VerifyOptions).issuer = clientId;
+      options.audience = redirectUri;
     }
-    const payload = jwt.verify(
-      token,
-      this.jwtSecret,
-      options
-    ) as jwt.JwtPayload;
-    return this.verifyTokenPayload(payload, expectedType);
+    if (redirectUri) {
+      options.audience = redirectUri;
+    }
+    try {
+      const payload = jwt.verify(
+        token,
+        this.jwtSecret,
+        options
+      ) as jwt.JwtPayload;
+      return this.verifyTokenPayload(payload, expectedType);
+    } catch {
+      return;
+    }
   };
 
   private issueToken = (
@@ -78,13 +84,19 @@ export class UserRepository {
     userId: string,
     clientId?: string,
     redirectUri?: string
-  ) =>
-    jwt.sign({ typ }, this.jwtSecret, {
+  ) => {
+    const options = {
       subject: userId,
-      issuer: clientId,
-      audience: redirectUri,
       expiresIn,
-    } as jwt.SignOptions);
+    } as jwt.SignOptions;
+    if (clientId) {
+      options.issuer = clientId;
+    }
+    if (redirectUri) {
+      options.audience = redirectUri;
+    }
+    return jwt.sign({ typ }, this.jwtSecret, options);
+  };
 
   issueCode = (userId: string, clientId: string, redirectUri: string) =>
     this.issueToken("code", "5m", userId, clientId, redirectUri);

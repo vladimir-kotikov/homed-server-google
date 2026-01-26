@@ -1,6 +1,5 @@
 import type { Request, Response } from "express";
 import { Router } from "express";
-import passport from "passport";
 import { match } from "ts-pattern";
 import type { UserRepository } from "../db/repository.ts";
 import {
@@ -274,12 +273,7 @@ export class SmartHomeController {
     return (
       Router()
         // POST /fulfillment - handle Smart Home fulfillment
-        .post(
-          "/fulfillment",
-          passport.authenticate("jwt", { session: false }),
-          requireLoggedIn,
-          this.handleFulfillment
-        )
+        .post("/fulfillment", requireLoggedIn, this.handleFulfillment)
     );
   }
 }
