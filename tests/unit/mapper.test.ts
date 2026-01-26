@@ -5,8 +5,8 @@
 import {
   CapabilityMapper,
   type HomedDevice,
-} from "../../src/services/mapper.service.ts";
-import type { GoogleCommand } from "../../src/types.ts";
+} from "../../src/schemas/services/mapper.service.ts";
+import type { GoogleCommand } from "../../src/types/googleSmarthome.ts";
 
 describe("CapabilityMapper", () => {
   let mapper: CapabilityMapper;
@@ -759,7 +759,7 @@ describe("CapabilityMapper", () => {
 
       const command: GoogleCommand = {
         command: "action.devices.commands.ColorAbsolute",
-        params: { color: { spectrumRgb: 0xff0000 } },
+        params: { color: { spectrumRgb: 0xff_00_00 } },
       };
 
       const homedCmd = mapper.mapToHomedCommand(device, command);
@@ -889,7 +889,7 @@ describe("CapabilityMapper", () => {
       };
 
       const homedCmd = mapper.mapToHomedCommand(device, command);
-      expect(homedCmd).toBeNull();
+      expect(homedCmd).toBeUndefined();
     });
 
     it("should handle command without params", () => {
@@ -905,7 +905,7 @@ describe("CapabilityMapper", () => {
       };
 
       const homedCmd = mapper.mapToHomedCommand(device, command);
-      expect(homedCmd).toBeNull();
+      expect(homedCmd).toBeUndefined();
     });
 
     it("should handle state with no recognized properties", () => {
@@ -936,7 +936,7 @@ describe("CapabilityMapper", () => {
       };
 
       const homedCmd = mapper.mapToHomedCommand(device, command);
-      expect(homedCmd).toBeNull(); // Sensors don't support commands
+      expect(homedCmd).toBeUndefined(); // Sensors don't support commands
     });
   });
 

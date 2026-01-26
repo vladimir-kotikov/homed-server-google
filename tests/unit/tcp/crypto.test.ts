@@ -1,4 +1,4 @@
-import { AES128CBC } from "../../src/tcp/crypto.ts";
+import { AES128CBC } from "../../../src/tcp/crypto.ts";
 
 describe("AES128CBC", () => {
   describe("constructor", () => {
@@ -100,9 +100,9 @@ describe("AES128CBC", () => {
     it("should create AES from DH handshake data", () => {
       // Client sends: [prime(4), generator(4), clientPublic(4)]
       const handshake = Buffer.allocUnsafe(12);
-      handshake.writeUInt32BE(0xfffffffb, 0); // prime
+      handshake.writeUInt32BE(0xff_ff_ff_fb, 0); // prime
       handshake.writeUInt32BE(2, 4); // generator
-      handshake.writeUInt32BE(12345, 8); // clientPublic
+      handshake.writeUInt32BE(12_345, 8); // clientPublic
 
       const [aes, serverPublic] = AES128CBC.fromHandshake(handshake);
 
@@ -114,12 +114,12 @@ describe("AES128CBC", () => {
     it("should derive different keys from different client public keys", () => {
       // Different client public keys should lead to different shared secrets
       const handshake1 = Buffer.allocUnsafe(12);
-      handshake1.writeUInt32BE(0xfffffffb, 0);
+      handshake1.writeUInt32BE(0xff_ff_ff_fb, 0);
       handshake1.writeUInt32BE(2, 4);
       handshake1.writeUInt32BE(100, 8);
 
       const handshake2 = Buffer.allocUnsafe(12);
-      handshake2.writeUInt32BE(0xfffffffb, 0);
+      handshake2.writeUInt32BE(0xff_ff_ff_fb, 0);
       handshake2.writeUInt32BE(2, 4);
       handshake2.writeUInt32BE(200, 8);
 
@@ -136,9 +136,9 @@ describe("AES128CBC", () => {
 
     it("should produce 4-byte server public key in big-endian format", () => {
       const handshake = Buffer.allocUnsafe(12);
-      handshake.writeUInt32BE(0xfffffffb, 0);
+      handshake.writeUInt32BE(0xff_ff_ff_fb, 0);
       handshake.writeUInt32BE(2, 4);
-      handshake.writeUInt32BE(12345, 8);
+      handshake.writeUInt32BE(12_345, 8);
 
       const result = AES128CBC.fromHandshake(handshake);
       const serverPublic = result[1];
@@ -151,14 +151,14 @@ describe("AES128CBC", () => {
 
     it("should handle different prime and generator values", () => {
       const handshake1 = Buffer.allocUnsafe(12);
-      handshake1.writeUInt32BE(0xffffffc5, 0);
+      handshake1.writeUInt32BE(0xff_ff_ff_c5, 0);
       handshake1.writeUInt32BE(5, 4);
-      handshake1.writeUInt32BE(54321, 8);
+      handshake1.writeUInt32BE(54_321, 8);
 
       const handshake2 = Buffer.allocUnsafe(12);
-      handshake2.writeUInt32BE(0xfffffffb, 0);
+      handshake2.writeUInt32BE(0xff_ff_ff_fb, 0);
       handshake2.writeUInt32BE(2, 4);
-      handshake2.writeUInt32BE(54321, 8);
+      handshake2.writeUInt32BE(54_321, 8);
 
       const [aes1] = AES128CBC.fromHandshake(handshake1);
       const [aes2] = AES128CBC.fromHandshake(handshake2);
@@ -202,11 +202,11 @@ describe("AES128CBC", () => {
       const decrypted = aes2.decrypt(encrypted);
 
       // Remove padding: find first run of zeros at end and trim
-      let unpadLen = decrypted.length;
-      while (unpadLen > 0 && decrypted[unpadLen - 1] === 0x00) {
-        unpadLen--;
+      let unpadLength = decrypted.length;
+      while (unpadLength > 0 && decrypted[unpadLength - 1] === 0x00) {
+        unpadLength--;
       }
-      const unpadded = decrypted.subarray(0, unpadLen);
+      const unpadded = decrypted.subarray(0, unpadLength);
 
       const recoveredMessage = JSON.parse(unpadded.toString());
       expect(recoveredMessage).toEqual(message);

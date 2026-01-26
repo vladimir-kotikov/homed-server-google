@@ -2,8 +2,7 @@ import {
   escapePacket,
   readPacket,
   unescapePacket,
-  type ProtocolMessage,
-} from "../../src/tcp/protocol.ts";
+} from "../../../src/tcp/protocol.ts";
 
 describe("Protocol Packet Handling", () => {
   describe("readPacket", () => {
@@ -15,27 +14,27 @@ describe("Protocol Packet Handling", () => {
       expect(remainder).toEqual(Buffer.from([]));
     });
 
-    it("should return null if no start marker", () => {
+    it("should return undefined if no start marker", () => {
       const data = Buffer.from([0x01, 0x02, 0x43]);
       const [packet, remainder] = readPacket(data);
 
-      expect(packet).toBeNull();
+      expect(packet).toBeUndefined();
       expect(remainder).toEqual(data);
     });
 
-    it("should return null if no end marker", () => {
+    it("should return undefined if no end marker", () => {
       const data = Buffer.from([0x42, 0x01, 0x02]);
       const [packet, remainder] = readPacket(data);
 
-      expect(packet).toBeNull();
+      expect(packet).toBeUndefined();
       expect(remainder).toEqual(data);
     });
 
-    it("should return null if end marker before start marker", () => {
+    it("should return undefined if end marker before start marker", () => {
       const data = Buffer.from([0x43, 0x42, 0x01]);
       const [packet, remainder] = readPacket(data);
 
-      expect(packet).toBeNull();
+      expect(packet).toBeUndefined();
       expect(remainder).toEqual(data);
     });
 
@@ -201,8 +200,8 @@ describe("Protocol Packet Handling", () => {
 
     it("should handle large data", () => {
       const original = Buffer.alloc(1000);
-      for (let i = 0; i < original.length; i++) {
-        original[i] = i % 256;
+      for (let index = 0; index < original.length; index++) {
+        original[index] = index % 256;
       }
 
       const escaped = escapePacket(original);
@@ -257,11 +256,11 @@ describe("Protocol Packet Handling", () => {
     });
 
     it("should handle multiple framed messages", () => {
-      const msg1 = Buffer.from("message1");
-      const msg2 = Buffer.from("message2");
+      const message1 = Buffer.from("message1");
+      const message2 = Buffer.from("message2");
 
-      const escaped1 = escapePacket(msg1);
-      const escaped2 = escapePacket(msg2);
+      const escaped1 = escapePacket(message1);
+      const escaped2 = escapePacket(message2);
 
       const framed1 = Buffer.concat([
         Buffer.from([0x42]),
@@ -286,8 +285,8 @@ describe("Protocol Packet Handling", () => {
       expect(remainder2).toEqual(Buffer.from([]));
 
       // Verify unescaping
-      expect(unescapePacket(packet1!)).toEqual(msg1);
-      expect(unescapePacket(packet2!)).toEqual(msg2);
+      expect(unescapePacket(packet1!)).toEqual(message1);
+      expect(unescapePacket(packet2!)).toEqual(message2);
     });
 
     it("should handle partial messages in buffer", () => {
@@ -304,9 +303,9 @@ describe("Protocol Packet Handling", () => {
       const part1 = framed.slice(0, half);
       const part2 = framed.slice(half);
 
-      // First read should return null (incomplete)
+      // First read should return undefined (incomplete)
       const [packet1] = readPacket(part1);
-      expect(packet1).toBeNull();
+      expect(packet1).toBeUndefined();
 
       // Combine and read again
       const combined = Buffer.concat([part1, part2]);
