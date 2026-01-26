@@ -12,7 +12,7 @@ import {
 } from "../schemas/googleSmarthome.schema.ts";
 // import { DeviceService } from "../services/device.service.ts";
 import type { User as HomedUser } from "../db/repository.ts";
-import type { HomedDevice } from "../services/mapper.service.ts";
+import type { HomedDevice } from "../schemas/services/mapper.service.ts";
 import type {
   DisconnectResponse,
   ExecuteResponse,

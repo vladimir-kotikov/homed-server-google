@@ -1,24 +1,11 @@
 import http from "node:http";
 import net from "node:net";
 import { UserRepository } from "./db/repository.ts";
-import { CapabilityMapper } from "./services/mapper.service.ts";
+import { CapabilityMapper } from "./schemas/services/mapper.service.ts";
 import { ClientConnection } from "./tcp/client.ts";
 import type { GoogleCommand, GoogleDevice } from "./types/googleSmarthome.ts";
 import type { DeviceState } from "./types/homed.ts";
 import { WebApp } from "./web/app.ts";
-
-// export class GoogleClient {
-//   async updateDevices(
-//     userId: string | undefined,
-//     devices: Array<Record<string, unknown>> | undefined
-//   ) {
-//     // Implement Google device update logic here
-//   }
-
-//   async updateData(userId: string | undefined, data: Record<string, unknown>) {
-//     // Implement Google data update logic here
-//   }
-// }
 
 /**
  * A main controller that wires up HTTP and TCP servers and manages clients and

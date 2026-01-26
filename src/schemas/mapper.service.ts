@@ -7,14 +7,17 @@ import type {
   GoogleCommand,
   GoogleDevice,
   TraitAttributes,
-} from "../types/googleSmarthome.ts";
+} from "../../types/googleSmarthome.ts";
 import type {
   CommandMessage,
   DeviceState,
   EndpointOptions,
-} from "../types/homed.ts";
-import { detectDeviceType, getTraitsForExposes } from "./mapper/deviceTypes.ts";
-import { TRAIT_MAPPERS } from "./mapper/traits.ts";
+} from "../../types/homed.ts";
+import {
+  detectDeviceType,
+  getTraitsForExposes,
+} from "../mapper/deviceTypes.ts";
+import { TRAIT_MAPPERS } from "../mapper/traits.ts";
 
 /**
  * Homed device structure as received from TCP clients
