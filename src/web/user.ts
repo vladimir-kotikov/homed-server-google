@@ -28,7 +28,7 @@ const login = (_request: Request, response: Response) =>
  * Logout user
  */
 const logout = (request: Request, response: Response) => {
-  delete request.session;
+  request.session.destroy(() => {});
   response.json({ success: true });
 };
 

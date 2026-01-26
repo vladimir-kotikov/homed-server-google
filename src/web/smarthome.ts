@@ -1,4 +1,4 @@
-import type { Response } from "express";
+import type { Request, Response } from "express";
 import { Router } from "express";
 import passport from "passport";
 import { match } from "ts-pattern";
@@ -8,10 +8,10 @@ import {
   type DisconnectRequest,
   type ExecuteRequest,
   type QueryRequest,
-  type SmartHomeRequest,
   type SyncRequest,
 } from "../schemas/googleSmarthome.schema.ts";
-import { DeviceService } from "../services/device.service.ts";
+// import { DeviceService } from "../services/device.service.ts";
+import type { User as HomedUser } from "../db/repository.ts";
 import type { HomedDevice } from "../services/mapper.service.ts";
 import type {
   DisconnectResponse,
@@ -22,6 +22,14 @@ import type {
 } from "../types/googleSmarthome.ts";
 import type { DeviceState } from "../types/homed.ts";
 import { requireLoggedIn } from "./authStrategies.ts";
+
+declare global {
+  // eslint-disable-next-line @typescript-eslint/no-namespace
+  namespace Express {
+    // eslint-disable-next-line @typescript-eslint/no-empty-object-type
+    interface User extends HomedUser {}
+  }
+}
 
 export class SmartHomeController {
   private deviceService: DeviceService;
@@ -40,29 +48,19 @@ export class SmartHomeController {
     request: Request,
     response: Response
   ): Promise<void> => {
-    const parseResult = SmartHomeRequestSchema.safeParse(request.body);
+    const userId = (request as Express.AuthenticatedRequest).user.id;
 
-    if (!parseResult.success) {
+    const { data, error } = SmartHomeRequestSchema.safeParse(request.body);
+    if (error) {
       response.status(400).json({
         error: "Invalid request format",
-        details: { root: parseResult.error.message },
+        details: { root: error.message },
       });
       return;
     }
 
-    const smarthomeRequest: SmartHomeRequest = parseResult.data;
-
     try {
-      const userId = request.user.userId;
-      if (!userId) {
-        response.status(401).json({
-          error: "Unauthorized",
-          details: { root: "Missing userId in request" },
-        });
-        return;
-      }
-
-      const smarthomeResponse: SmartHomeResponse = await match(smarthomeRequest)
+      const smarthomeResponse: SmartHomeResponse = await match(data)
         .with(
           { inputs: [{ intent: "action.devices.SYNC" }] },
           smarthomeRequest => this.handleSync(smarthomeRequest, userId)
@@ -85,7 +83,7 @@ export class SmartHomeController {
     } catch (error) {
       console.error("Fulfillment error:", error);
       response.status(500).json({
-        requestId: smarthomeRequest.requestId,
+        requestId: data.requestId,
         payload: {
           errorCode: "hardError",
           debugString: error instanceof Error ? error.message : "Unknown error",

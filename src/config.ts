@@ -19,8 +19,8 @@ const stringEnvironment = (value: string, fallback?: string): string => {
 };
 
 const DEFAULT_DATABASE_URL = "dev.db";
-const DEV_OAUTH_CLIENT_ID = "dev-oauth-client-id";
-const DEV_OAUTH_CLIENT_SECRET = "dev-oauth-client-secret";
+const DEV_GOOGLE_HOME_CLIENT_ID = "dev-oauth-client-id";
+const DEV_GOOGLE_HOME_CLIENT_SECRET = "dev-oauth-client-secret";
 const DEV_JWT_SECRET = "dev-jwt-secret";
 
 export default {
@@ -30,18 +30,21 @@ export default {
   databaseUrl: stringEnvironment("DATABASE_URL", DEFAULT_DATABASE_URL),
   jwtSecret: stringEnvironment("JWT_SECRET", DEV_JWT_SECRET),
   cookieSecret: stringEnvironment("COOKIE_SECRET", DEV_JWT_SECRET),
-  oauthClientId: stringEnvironment("OAUTH_CLIENT_ID", DEV_OAUTH_CLIENT_ID),
-  oauthClientSecret: stringEnvironment(
-    "OAUTH_CLIENT_SECRET",
-    DEV_OAUTH_CLIENT_SECRET
+  googleHomeOAuthClientId: stringEnvironment(
+    "GOOGLE_HOME_CLIENT_ID",
+    DEV_GOOGLE_HOME_CLIENT_ID
   ),
-  oauthRedirectUri: stringEnvironment(
-    "OAUTH_REDIRECT_URI",
+  googleHomeOAuthClientSecret: stringEnvironment(
+    "GOOGLE_HOME_CLIENT_SECRET",
+    DEV_GOOGLE_HOME_CLIENT_SECRET
+  ),
+  googleHomeOAuthRedirectUri: stringEnvironment(
+    "GOOGLE_HOME_REDIRECT_URI",
     "http://localhost:8080/oauth/callback"
   ),
-  googleUserClientId: stringEnvironment("GOOGLE_USER_CLIENT_ID"),
-  googleUserClientSecret: stringEnvironment("GOOGLE_USER_CLIENT_SECRET"),
-  googleUserRedirectUri: stringEnvironment("GOOGLE_USER_REDIRECT_URI"),
+  googleSsoClientId: stringEnvironment("GOOGLE_SSO_CLIENT_ID"),
+  googleSsoClientSecret: stringEnvironment("GOOGLE_SSO_CLIENT_SECRET"),
+  googleSsoRedirectUri: stringEnvironment("GOOGLE_SSO_REDIRECT_URI"),
   accessTokenLifetime: intEnvironment("OAUTH_ACCESS_TOKEN_EXPIRES_IN", 3600), // 1 hour
   refreshTokenLifetime: intEnvironment(
     "OAUTH_REFRESH_TOKEN_EXPIRES_IN",

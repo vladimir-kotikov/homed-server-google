@@ -22,6 +22,7 @@
   },
   "dependencies": {
     "better-sqlite3": "^12.6.2",
+    "body-parser": "^2.2.2",
     "connect-ensure-login": "^0.1.1",
     "drizzle-orm": "^0.45.1",
     "ejs": "^4.0.1",
@@ -33,6 +34,7 @@
     "passport": "^0.7.0",
     "passport-google-oauth20": "^2.0.0",
     "passport-jwt": "^4.0.1",
+    "passport-oauth2-client-password": "^0.1.2",
     "ts-pattern": "^5.9.0",
     "zod": "^4.3.5"
   },
@@ -48,6 +50,7 @@
     "@types/passport": "^1.0.17",
     "@types/passport-google-oauth20": "^2.0.17",
     "@types/passport-jwt": "^4.0.1",
+    "@types/passport-oauth2-client-password": "^0.1.6",
     "@types/supertest": "^6.0.3",
     "drizzle-kit": "^0.31.8",
     "eslint": "^9.39.2",

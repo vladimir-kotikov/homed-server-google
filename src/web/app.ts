@@ -5,7 +5,11 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import passport from "passport";
 import appConfig from "../config.ts";
 import type { User, UserRepository } from "../db/repository.ts";
-import { googleOauth20Strategy, jwtStrategy } from "./authStrategies.ts";
+import {
+  clientPasswordOauth20Strategy,
+  googleOauth20Strategy,
+  jwtStrategy,
+} from "./authStrategies.ts";
 import { OAuthController } from "./oauth.ts";
 import { SmartHomeController } from "./smarthome.ts";
 import userRoutes from "./user.ts";
@@ -41,23 +45,24 @@ export class WebApp {
             "jwt",
             jwtStrategy(
               appConfig.jwtSecret,
-              this.userRepository.verifyAccessToken
+              this.userRepository.verifyAccessTokenPayload
             )
           )
           .use(
             "google-oauth20",
             googleOauth20Strategy(
-              appConfig.googleUserClientId,
-              appConfig.googleUserClientSecret,
-              appConfig.googleUserRedirectUri,
+              appConfig.googleSsoClientId,
+              appConfig.googleSsoClientSecret,
+              appConfig.googleSsoRedirectUri,
               ({ id, emails }) =>
-                this.userRepository
-                  .getUser(id)
-                  .then(
-                    user =>
-                      user ??
-                      this.userRepository.createUser(id, emails![0].value)
-                  )
+                this.userRepository.getOrCreate(id, emails![0].value)
+            )
+          )
+          .use(
+            "client-password-oauth20",
+            clientPasswordOauth20Strategy(
+              appConfig.googleHomeOAuthClientId,
+              appConfig.googleHomeOAuthClientSecret
             )
           )
           .initialize()

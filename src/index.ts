@@ -8,15 +8,13 @@ import { SmartHomeController } from "./web/smarthome.ts";
 const { databaseUrl, tcpPort, httpPort } = appConfig;
 
 // Initialize database before starting servers
-const usersRepository = UserRepository.open(databaseUrl, { create: true });
+const usersRepository = UserRepository.open(databaseUrl, appConfig.jwtSecret, {
+  create: true,
+});
 const oauthController = new OAuthController(
   usersRepository,
-  appConfig.jwtSecret,
-  appConfig.oauthClientId,
-  appConfig.oauthClientSecret,
-  appConfig.oauthRedirectUri,
-  appConfig.accessTokenLifetime,
-  appConfig.refreshTokenLifetime
+  appConfig.googleHomeOAuthClientId,
+  appConfig.googleHomeOAuthRedirectUri
 );
 
 const smarthomeController = new SmartHomeController(usersRepository);

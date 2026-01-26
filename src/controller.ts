@@ -118,7 +118,7 @@ export class HomedServerController {
       return;
     }
 
-    this.userDb.findByClientToken(token).then(user => {
+    this.userDb.getByToken(token).then(user => {
       if (!user) {
         client.close();
         console.warn(`Client ${uniqueId} unauthorized: user not found`);

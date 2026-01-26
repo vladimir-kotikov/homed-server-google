@@ -1,9 +1,11 @@
 import Database from "better-sqlite3";
 import { eq } from "drizzle-orm";
 import { BetterSQLite3Database, drizzle } from "drizzle-orm/better-sqlite3";
-import * as crypto from "node:crypto";
+import * as jwt from "jsonwebtoken";
 import * as schema from "./schema.ts";
-import { authCodes, refreshTokens, users } from "./schema.ts";
+import { users } from "./schema.ts";
+
+import crypto from "node:crypto";
 
 export interface User {
   id: string;
@@ -12,36 +14,20 @@ export interface User {
   createdAt: Date;
 }
 
-export interface AuthCode {
-  id: string;
-  code: string;
-  userId: string;
-  clientId: string;
-  redirectUri: string;
-  expiresAt: Date;
-  used: boolean;
-  createdAt: Date;
-}
-
-export interface RefreshToken {
-  id: string;
-  token: string;
-  userId: string;
-  expiresAt: Date;
-  createdAt: Date;
-}
-
 export class UserRepository {
   private db: Database.Database;
   private client: BetterSQLite3Database<typeof schema>;
+  private jwtSecret: string;
 
-  constructor(database: Database.Database) {
+  constructor(database: Database.Database, jwtSecret: string) {
     this.db = database;
     this.client = drizzle(database, { schema });
+    this.jwtSecret = jwtSecret;
   }
 
   static open(
     databasePath: string = ":memory:",
+    jwtSecret: string,
     { create = false }: { create: boolean }
   ): UserRepository {
     console.log(
@@ -49,208 +35,98 @@ export class UserRepository {
     );
     const database = new Database(databasePath, { fileMustExist: !create });
     database.pragma("journal_mode = WAL");
-    return new UserRepository(database);
+    return new UserRepository(database, jwtSecret);
   }
 
   close() {
     this.db.close();
   }
 
-  /**
-   * Find user by client token with timing-safe comparison
-   */
-  async findByClientToken(token: string): Promise<User | undefined> {
-    try {
-      const user = await this.client.query.users.findFirst({
-        where: eq(schema.users.clientToken, token),
-      });
-
-      if (!user) {
-        return;
-      }
-
-      // Use constant-time comparison to prevent timing attacks
-      const tokenBuffer = Buffer.from(token);
-      const storedBuffer = Buffer.from(user.clientToken);
-
-      if (tokenBuffer.length !== storedBuffer.length) {
-        return;
-      }
-
-      if (!crypto.timingSafeEqual(tokenBuffer, storedBuffer)) {
-        return;
-      }
-
-      return user;
-    } catch (error) {
-      console.error("Error finding user by client token:", error);
+  private verifyTokenPayload = (
+    { typ, sub }: jwt.JwtPayload,
+    expectedType: string
+  ) => {
+    if (typ !== expectedType || !sub) {
       return;
     }
-  }
 
-  /**
-   * Find user by username
-   */
-  async findByUsername(username: string): Promise<User | undefined> {
-    try {
-      const user = await this.client.query.users.findFirst({
-        where: eq(users.username, username),
-      });
-      return user;
-    } catch (error) {
-      console.error("Error finding user by username:", error);
-      return;
+    return this.client.query.users.findFirst({ where: eq(users.id, sub) });
+  };
+
+  private verifyToken = async (
+    token: string,
+    expectedType: string,
+    clientId?: string,
+    redirectUri?: string
+  ) => {
+    const options = {};
+    if (clientId) {
+      (options as jwt.VerifyOptions).audience = redirectUri;
+      (options as jwt.VerifyOptions).issuer = clientId;
     }
-  }
+    const payload = jwt.verify(
+      token,
+      this.jwtSecret,
+      options
+    ) as jwt.JwtPayload;
+    return this.verifyTokenPayload(payload, expectedType);
+  };
 
-  /**
-   * Find user by ID
-   */
-  getUser = (userId: string): Promise<User | undefined> =>
-    this.client.query.users.findFirst({
-      where: eq(users.id, userId),
-    });
-
-  /**
-   * Create a new user
-   */
-  createUser = (
-    id: string,
-    username: string,
-    clientToken?: string
-  ): Promise<User> =>
-    this.client
-      .insert(users)
-      .values({
-        id,
-        username,
-        clientToken: clientToken ?? crypto.randomBytes(32).toString("hex"),
-      })
-      .returning()
-      .then(result => result[0]);
-
-  getOrCreateUser = async (userId: string): Promise<User> =>
-    this.getUser(userId).then(user => user ?? this.createUser(userId));
-
-  /**
-   * Create an authorization code for OAuth flow
-   */
-  async createCode(
+  private issueToken = (
+    typ: "code" | "access" | "refresh",
+    expiresIn: string,
     userId: string,
-    clientId: string,
-    redirectUri: string
-  ): Promise<string> {
-    const code = crypto.randomBytes(32).toString("hex");
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+    clientId?: string,
+    redirectUri?: string
+  ) =>
+    jwt.sign({ typ }, this.jwtSecret, {
+      subject: userId,
+      issuer: clientId,
+      audience: redirectUri,
+      expiresIn,
+    } as jwt.SignOptions);
 
-    try {
-      await this.client.insert(authCodes).values({
-        id: crypto.randomUUID(),
-        code,
-        userId,
-        clientId,
-        redirectUri,
-        expiresAt,
-      });
+  issueCode = (userId: string, clientId: string, redirectUri: string) =>
+    this.issueToken("code", "5m", userId, clientId, redirectUri);
 
-      return code;
-    } catch (error) {
-      console.error("Error creating auth code:", error);
-      throw new Error("Failed to create auth code");
-    }
-  }
+  exchangeCode = async (code: string, clientId: string, redirectUri: string) =>
+    this.verifyToken(code, "code", clientId, redirectUri).then(user =>
+      user
+        ? [
+            this.issueToken("access", "1h", user.id),
+            this.issueToken("refresh", "7d", user.id),
+          ]
+        : undefined
+    );
 
-  /**
-   * Find and validate authorization code
-   */
-  async getCode(code: string): Promise<AuthCode | undefined> {
-    try {
-      const authCode = await this.client.query.authCodes.findFirst({
-        where: eq(authCodes.code, code),
-      });
-      return authCode;
-    } catch (error) {
-      console.error("Error finding auth code:", error);
-      return;
-    }
-  }
+  exchangeRefreshToken = async (token: string) =>
+    this.verifyToken(token, "refresh").then(user =>
+      user
+        ? [
+            this.issueToken("access", "1h", user.id),
+            this.issueToken("refresh", "7d", user.id),
+          ]
+        : undefined
+    );
 
-  /**
-   * Delete an authorization code (one-time use)
-   */
-  async deleteCode(code: string): Promise<void> {
-    try {
-      await this.client.delete(authCodes).where(eq(authCodes.code, code));
-    } catch (error) {
-      console.error("Error deleting auth code:", error);
-      throw new Error("Failed to delete auth code");
-    }
-  }
+  verifyAccessTokenPayload = (payload: jwt.JwtPayload) =>
+    this.verifyTokenPayload(payload, "access");
 
-  async createRefreshToken(
-    userId: string,
-    expiresAt: Date
-  ): Promise<RefreshToken> {
-    try {
-      const token = crypto.randomBytes(32).toString("hex");
+  getOrCreate = (id: string, username: string): Promise<User> =>
+    this.client.query.users.findFirst({ where: eq(users.id, id) }).then(
+      user =>
+        user ??
+        this.client
+          .insert(users)
+          .values({
+            id,
+            username,
+            clientToken: crypto.randomBytes(32).toString("hex"),
+          })
+          .returning()
+          .then(result => result[0])
+    );
 
-      const result = await this.client
-        .insert(refreshTokens)
-        .values({
-          id: crypto.randomUUID(),
-          userId,
-          token,
-          expiresAt,
-        })
-        .returning();
-
-      return result[0];
-    } catch (error) {
-      console.error("Error creating refresh token:", error);
-      throw new Error("Failed to create refresh token");
-    }
-  }
-
-  /**
-   * Find refresh token by ID
-   */
-  async getRefreshToken(tokenId: string): Promise<RefreshToken | undefined> {
-    try {
-      const token = await this.client.query.refreshTokens.findFirst({
-        where: eq(refreshTokens.id, tokenId),
-      });
-      return token;
-    } catch (error) {
-      console.error("Error finding refresh token by ID:", error);
-      return;
-    }
-  }
-
-  /**
-   * Delete a refresh token (revoke)
-   */
-  async deleteToken(tokenId: string): Promise<void> {
-    try {
-      await this.client
-        .delete(refreshTokens)
-        .where(eq(refreshTokens.id, tokenId));
-    } catch (error) {
-      console.error("Error deleting refresh token:", error);
-      // Ignore if token doesn't exist
-    }
-  }
-
-  /**
-   * Delete all refresh tokens for a user (revoke all)
-   */
-  async revokeTokens(userId: string): Promise<void> {
-    try {
-      await this.client
-        .delete(refreshTokens)
-        .where(eq(refreshTokens.userId, userId));
-    } catch (error) {
-      console.error("Error deleting refresh tokens for user:", error);
-      throw new Error("Failed to delete refresh tokens");
-    }
-  }
+  getByToken = (token: string) =>
+    this.client.query.users.findFirst({ where: eq(users.clientToken, token) });
 }
