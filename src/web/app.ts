@@ -1,3 +1,4 @@
+import SqliteStore from "better-sqlite3-session-store";
 import ejs from "ejs";
 import express from "express";
 import session from "express-session";
@@ -35,10 +36,36 @@ export class WebApp {
     // eslint-disable-next-line unicorn/no-null
     passport.deserializeUser((user, done) => done(null, user as User));
 
+    const SessionStore = SqliteStore(session);
+
     this.app = express()
       .set("views", "templates")
       .set("view engine", "html")
       .engine("html", ejs.renderFile)
+      .use(express.static("public"))
+      .use(express.json())
+      .use(
+        session({
+          secret: appConfig.cookieSecret,
+          name: "homed-google-server-cookie",
+          resave: false,
+          saveUninitialized: false,
+          rolling: true,
+          store: new SessionStore({
+            client: this.userRepository.database,
+            expired: {
+              clear: true,
+              intervalMs: 900_000, // Clear expired sessions every 15 minutes
+            },
+          }),
+          cookie: {
+            maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+            httpOnly: true,
+            secure: appConfig.env === "production",
+            sameSite: "lax",
+          },
+        })
+      )
       .use(
         passport
           .use(
@@ -67,17 +94,7 @@ export class WebApp {
           )
           .initialize()
       )
-      .use(express.static("public"))
-      .use(express.json())
-      .use(
-        session({
-          secret: appConfig.cookieSecret,
-          name: "homed-google-server-cookie",
-          resave: false,
-          saveUninitialized: true,
-          rolling: true,
-        })
-      )
+      .use(passport.session())
       .get("/health", (_request, response) => response.json({ status: "ok" }))
       .use("/", passport.authenticate("session"), userRoutes)
       .use("/oauth", this.oauthController.routes)

@@ -1,13 +1,20 @@
+/* eslint-disable @typescript-eslint/no-namespace */
 import { ensureLoggedIn, ensureLoggedOut } from "connect-ensure-login";
 import { Router, type Request, type Response } from "express";
+import "express-session";
 import passport from "passport";
 import type { User as HomedUser } from "../db/repository.ts";
 
 declare global {
-  // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace Express {
     // eslint-disable-next-line @typescript-eslint/no-empty-object-type
     interface User extends HomedUser {}
+  }
+}
+
+declare module "express-session" {
+  interface SessionData {
+    returnTo?: string;
   }
 }
 
@@ -41,7 +48,11 @@ export default Router()
   )
   .get(
     "/auth/google/callback",
-    passport.authenticate("google-oauth20"),
-    (request, response) => response.redirect("/")
+    passport.authenticate("google-oauth20", { keepSessionInfo: true }),
+    (request, response) => {
+      const redirectUrl = request.session.returnTo ?? "/";
+      delete request.session.returnTo;
+      response.redirect(redirectUrl);
+    }
   )
   .post("/logout", logout);

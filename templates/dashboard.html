@@ -45,7 +45,7 @@
     <script>
         async function handleLogout() {
             try {
-                await fetch('/auth/logout', { method: 'POST' });
+                await fetch('/logout', { method: 'POST' });
                 window.location.reload();
             } catch (error) {
                 alert('Failed to logout');

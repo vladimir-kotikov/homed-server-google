@@ -15,12 +15,12 @@ export interface User {
 }
 
 export class UserRepository {
-  private db: Database.Database;
-  private client: BetterSQLite3Database<typeof schema>;
-  private jwtSecret: string;
+  readonly database: Database.Database;
+  private readonly client: BetterSQLite3Database<typeof schema>;
+  private readonly jwtSecret: string;
 
   constructor(database: Database.Database, jwtSecret: string) {
-    this.db = database;
+    this.database = database;
     this.client = drizzle(database, { schema });
     this.jwtSecret = jwtSecret;
   }
@@ -39,7 +39,7 @@ export class UserRepository {
   }
 
   close() {
-    this.db.close();
+    this.database.close();
   }
 
   private verifyTokenPayload = (
