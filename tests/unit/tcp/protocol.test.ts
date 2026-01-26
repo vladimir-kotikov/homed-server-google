@@ -1,3 +1,4 @@
+import type { ServerMessage } from "../../../src/schemas/homed.schema.ts";
 import {
   escapePacket,
   readPacket,
@@ -250,7 +251,7 @@ describe("Protocol Packet Handling", () => {
       expect(unescaped).toEqual(messageData);
 
       // Parse JSON
-      const message: ProtocolMessage = JSON.parse(unescaped.toString());
+      const message: ServerMessage = JSON.parse(unescaped.toString());
       expect(message.action).toBe("publish");
       expect(message.topic).toBe("test/topic");
     });

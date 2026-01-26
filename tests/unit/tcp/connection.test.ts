@@ -1,12 +1,9 @@
 import { EventEmitter } from "node:events";
 import { Socket } from "node:net";
 import { beforeEach, describe, expect, it } from "vitest";
+import type { ServerMessage } from "../../../src/schemas/homed.schema.ts";
 import { ClientConnection } from "../../../src/tcp/client.ts";
-import {
-  readPacket,
-  unescapePacket,
-  type ProtocolMessage,
-} from "../../../src/tcp/protocol.ts";
+import { readPacket, unescapePacket } from "../../../src/tcp/protocol.ts";
 
 // Mock Socket
 class MockSocket extends EventEmitter {
@@ -57,7 +54,7 @@ describe("ClientConnection", () => {
       mockSocket.emit("data", handshake);
 
       // After handshake, trying to send message should not throw
-      const message: ProtocolMessage = {
+      const message: ServerMessage = {
         action: "publish",
         topic: "test/topic",
         message: { test: true },
@@ -69,7 +66,7 @@ describe("ClientConnection", () => {
 
   describe("message sending", () => {
     it("should throw error if AES not initialized", () => {
-      const message: ProtocolMessage = {
+      const message: ServerMessage = {
         action: "publish",
         topic: "test/topic",
         message: { test: true },
@@ -90,7 +87,7 @@ describe("ClientConnection", () => {
       mockSocket.emit("data", handshake);
 
       // Send message
-      const message: ProtocolMessage = {
+      const message: ServerMessage = {
         action: "publish",
         topic: "test/topic",
         message: { data: "hello" },
@@ -101,8 +98,8 @@ describe("ClientConnection", () => {
       // Verify something was written
       expect(mockSocket.writtenData.length).toBeGreaterThan(1);
       const lastWrite = mockSocket.writtenData.at(-1);
-      expect(lastWrite[0]).toBe(0x42);
-      expect(lastWrite.at(-1)).toBe(0x43);
+      expect(lastWrite?.at(0)).toBe(0x42);
+      expect(lastWrite?.at(-1)).toBe(0x43);
     });
 
     it("should properly frame and escape message", () => {
@@ -113,7 +110,7 @@ describe("ClientConnection", () => {
 
       mockSocket.emit("data", handshake);
 
-      const message: ProtocolMessage = {
+      const message: ServerMessage = {
         action: "publish",
         topic: "test/topic",
         message: { test: true },
@@ -219,7 +216,7 @@ describe("ClientConnection", () => {
       handshake.writeUInt32BE(12_345, 8);
       mockSocket.emit("data", handshake);
 
-      const message: ProtocolMessage = {
+      const message: ServerMessage = {
         action: "publish",
         topic: "test/topic",
         message: { test: true },
