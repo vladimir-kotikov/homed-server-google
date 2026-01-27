@@ -27,7 +27,7 @@ jobs:
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
         with:
-          workload_identity_provider: GitHub
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
 
       - name: Deploy to Cloud Run
@@ -40,8 +40,7 @@ jobs:
             --memory 512Mi \
             --cpu 1 \
             --timeout 3600 \
-            --set-env-vars NODE_ENV=production \
-            --update-env-vars PORT=8080,TCP_PORT=8042
+            --set-env-vars NODE_ENV=production,PORT=8080,TCP_PORT=8042
 
       - name: Display Cloud Run service URL
         run: |
