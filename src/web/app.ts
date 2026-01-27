@@ -1,5 +1,6 @@
 import { logger } from "@tinyhttp/logger";
 import SqliteStore from "better-sqlite3-session-store";
+import debug from "debug";
 import ejs from "ejs";
 import express from "express";
 import sessionMiddleware from "express-session";
@@ -15,6 +16,8 @@ import {
 import { OAuthController } from "./oauth.ts";
 import { SmartHomeController } from "./smarthome.ts";
 import userRoutes from "./user.ts";
+
+const log = debug("homed:web");
 
 export class WebApp {
   readonly app: express.Application;
@@ -39,7 +42,7 @@ export class WebApp {
 
     const logging = logger({
       timestamp: { format: "HH:mm:ss" },
-      output: { callback: console.log, color: false },
+      output: { callback: (message: string) => log(message), color: false },
     });
 
     const SessionStore = SqliteStore(sessionMiddleware);

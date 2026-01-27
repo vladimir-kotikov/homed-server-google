@@ -1,3 +1,4 @@
+import debug from "debug";
 import http from "node:http";
 import net from "node:net";
 import { UserRepository } from "./db/repository.ts";
@@ -6,6 +7,9 @@ import { ClientConnection } from "./tcp/client.ts";
 import type { GoogleCommand, GoogleDevice } from "./types/googleSmarthome.ts";
 import type { DeviceState } from "./types/homed.ts";
 import { WebApp } from "./web/app.ts";
+
+const log = debug("homed:controller");
+const logError = debug("homed:controller:error");
 
 /**
  * A main controller that wires up HTTP and TCP servers and manages clients and
@@ -50,16 +54,16 @@ export class HomedServerController {
 
     this.httpServer = http
       .createServer(this.httpHandler.handleRequest)
-      .on("error", error => {
-        console.error("HTTP Server error:", error);
+      .on("error", error_ => {
+        logError("HTTP Server error:", error_);
         this.stop();
       });
 
     this.tcpServer = net
       .createServer({ keepAlive: true })
       .on("connection", socket => this.clientConnected(socket))
-      .on("error", error => {
-        console.error("TCP Server error:", error);
+      .on("error", error_ => {
+        logError("TCP Server error:", error_);
         this.stop();
       });
   }
@@ -68,8 +72,8 @@ export class HomedServerController {
     this.httpServer.listen(httpPort);
     this.tcpServer.listen(tcpPort);
 
-    console.log(`HTTP Server listening on port http://0.0.0.0:${httpPort}`);
-    console.log(`TCP Server listening on port tcp://0.0.0.0:${tcpPort}`);
+    log(`HTTP Server listening on port http://0.0.0.0:${httpPort}`);
+    log(`TCP Server listening on port tcp://0.0.0.0:${tcpPort}`);
   }
 
   stop() {
@@ -87,20 +91,20 @@ export class HomedServerController {
       )
       .on("dataUpdated", data => this.deviceDataUpdated(client, data));
 
-    console.log(`Client connected: ${client.uniqueId}`);
+    log(`Client connected: ${client.uniqueId}`);
   }
 
   clientDisconnected(client: ClientConnection) {
     if (client.uniqueId) {
       this.clients.delete(client.uniqueId);
-      console.log(`Client disconnected: ${client.uniqueId}`);
+      log(`Client disconnected: ${client.uniqueId}`);
     }
   }
 
   clientTokenReceived(client: ClientConnection, token: string) {
     const uniqueId = client.uniqueId;
     if (!uniqueId) {
-      console.warn(`Client has no unique ID, cannot authorize`);
+      logError(`Client has no unique ID, cannot authorize`);
       client.close();
       return;
     }
@@ -108,13 +112,13 @@ export class HomedServerController {
     this.userDb.getByToken(token).then(user => {
       if (!user) {
         client.close();
-        console.warn(`Client ${uniqueId} unauthorized: user not found`);
+        logError(`Client ${uniqueId} unauthorized: user not found`);
         return;
       }
 
       client.authorize();
       this.clients.set(uniqueId, client);
-      console.log(`Client ${uniqueId} authorized for ${user.username}`);
+      log(`Client ${uniqueId} authorized for ${user.username}`);
     });
   }
 

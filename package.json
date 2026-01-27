@@ -9,6 +9,7 @@
   "engines": {
     "node": "25.x"
   },
+  "private": true,
   "scripts": {
     "dev": "node --watch src/index.ts",
     "start": "node src/index.ts",
@@ -26,6 +27,7 @@
     "better-sqlite3-session-store": "^0.1.0",
     "body-parser": "^2.2.2",
     "connect-ensure-login": "^0.1.1",
+    "debug": "^4.4.3",
     "drizzle-orm": "^0.45.1",
     "ejs": "^4.0.1",
     "express": "^5.2.1",
@@ -43,6 +45,7 @@
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
     "@types/connect-ensure-login": "^0.1.9",
+    "@types/debug": "^4.1.12",
     "@types/ejs": "^3.1.5",
     "@types/express": "^5.0.6",
     "@types/express-session": "^1.18.2",

@@ -1,4 +1,5 @@
 import Database from "better-sqlite3";
+import debug from "debug";
 import { eq } from "drizzle-orm";
 import { BetterSQLite3Database, drizzle } from "drizzle-orm/better-sqlite3";
 import jwt from "jsonwebtoken";
@@ -6,6 +7,8 @@ import * as schema from "./schema.ts";
 import { users } from "./schema.ts";
 
 import crypto from "node:crypto";
+
+const log = debug("homed:user");
 
 export interface User {
   id: string;
@@ -30,7 +33,7 @@ export class UserRepository {
     jwtSecret: string,
     { create = false }: { create: boolean }
   ): UserRepository {
-    console.log(
+    log(
       `Opening database at ${databasePath} (create: ${create ? "yes" : "no"})`
     );
     const database = new Database(databasePath, { fileMustExist: !create });

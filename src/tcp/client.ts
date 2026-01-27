@@ -1,3 +1,4 @@
+import debug from "debug";
 import { EventEmitter } from "node:events";
 import { Socket } from "node:net";
 import { match, P } from "ts-pattern";
@@ -11,6 +12,8 @@ import {
 } from "../schemas/homed.schema.ts";
 import { AES128CBC } from "./crypto.ts";
 import { escapePacket, readPacket, unescapePacket } from "./protocol.ts";
+
+const logError = debug("homed:client:error");
 
 /**
  * Represents a single TCP client connection. Encapsulates the socket,
@@ -46,12 +49,12 @@ export class ClientConnection extends EventEmitter<{
 
     this.timeout = setTimeout(() => {
       if (!this.cipher) {
-        console.error("Handshake timeout: no data received");
+        logError("Handshake timeout: no data received");
         this.socket.end();
       }
 
       if (!this.clientAuthorized) {
-        console.error("Authorization timeout: client not authorized");
+        logError("Authorization timeout: client not authorized");
         this.socket.end();
       }
     }, timeout);
@@ -78,8 +81,8 @@ export class ClientConnection extends EventEmitter<{
       this.buf = this.buf.subarray(12); // Remove handshake data from buffer
       this.socket.write(publicKey);
       return true;
-    } catch (error) {
-      console.error(`Handshake failed: ${error}`);
+    } catch (error_) {
+      logError(`Handshake failed: ${error_}`);
     }
 
     return false;
@@ -142,50 +145,60 @@ export class ClientConnection extends EventEmitter<{
       .with(
         { topic: P.string.startsWith("status/"), message: P.select() },
         message_ => {
-          const { data, success, error } =
-            DeviceListMessageSchema.safeParse(message_);
+          const {
+            data,
+            success,
+            error: error_,
+          } = DeviceListMessageSchema.safeParse(message_);
           if (success) {
             return this.emit("devices", data);
           }
-          console.warn("Invalid device list message received:", error);
+          logError("Invalid device list message received:", error_);
         }
       )
       .with(
         { topic: P.string.startsWith("expose/"), message: P.select() },
         message_ => {
-          const { data, success, error } =
-            DeviceExposesMessageSchema.safeParse(message_);
+          const {
+            data,
+            success,
+            error: error_,
+          } = DeviceExposesMessageSchema.safeParse(message_);
           if (success) {
             return this.emit("exposes", data);
           }
-          console.warn("Invalid expose message received:", error);
+          logError("Invalid expose message received:", error_);
         }
       )
       .with(
         { topic: P.string.startsWith("device/"), message: P.select() },
         message_ => {
-          const { data, success, error } =
-            DeviceStatusMessageSchema.safeParse(message_);
+          const {
+            data,
+            success,
+            error: error_,
+          } = DeviceStatusMessageSchema.safeParse(message_);
           if (success) {
             return this.emit("status", data);
           }
-          console.warn("Invalid device status message received:", error);
+          logError("Invalid device status message received:", error_);
         }
       )
       .with(
         { topic: P.string.startsWith("fd/"), message: P.select() },
         message_ => {
-          const { data, success, error } =
-            DeviceStateMessageSchema.safeParse(message_);
+          const {
+            data,
+            success,
+            error: error_,
+          } = DeviceStateMessageSchema.safeParse(message_);
           if (success) {
             return this.emit("state", data);
           }
-          console.warn("Invalid device readings message received:", error);
+          logError("Invalid device readings message received:", error_);
         }
       )
-      .otherwise(() =>
-        console.warn("Unknown message topic received:", data.topic)
-      );
+      .otherwise(() => logError("Unknown message topic received:", data.topic));
   }
 
   /**

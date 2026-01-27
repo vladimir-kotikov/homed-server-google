@@ -1,3 +1,4 @@
+import debug from "debug";
 import appConfig from "./config.ts";
 import { HomedServerController } from "./controller.ts";
 import { UserRepository } from "./db/repository.ts";
@@ -5,6 +6,7 @@ import { WebApp } from "./web/app.ts";
 import { OAuthController } from "./web/oauth.ts";
 import { SmartHomeController } from "./web/smarthome.ts";
 
+const log = debug("homed:main");
 const { databaseUrl, tcpPort, httpPort } = appConfig;
 
 // Initialize database before starting servers
@@ -28,7 +30,7 @@ const httpHandler = new WebApp(
 const controller = new HomedServerController(usersRepository, httpHandler);
 
 const shutdown = async () => {
-  console.log("Shutting down...");
+  log("Shutting down...");
   controller.stop();
   usersRepository.close();
   // eslint-disable-next-line unicorn/no-process-exit

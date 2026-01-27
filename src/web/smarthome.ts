@@ -1,3 +1,4 @@
+import debug from "debug";
 import type { Request, Response } from "express";
 import { Router } from "express";
 import { match } from "ts-pattern";
@@ -21,6 +22,8 @@ import type {
 } from "../types/googleSmarthome.ts";
 import type { DeviceState } from "../types/homed.ts";
 import { requireLoggedIn } from "./authStrategies.ts";
+
+const logError = debug("homed:web:smarthome:error");
 
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
@@ -80,7 +83,7 @@ export class SmartHomeController {
 
       response.json(smarthomeResponse);
     } catch (error) {
-      console.error("Fulfillment error:", error);
+      logError("Fulfillment error:", error);
       response.status(500).json({
         requestId: data.requestId,
         payload: {
