@@ -27,6 +27,17 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v1
 
+      - name: Debug - Validate secrets
+        run: |
+          echo "Project ID length: ${#PROJECT_ID}"
+          echo "WIP length: ${#GCP_WORKLOAD_IDENTITY_PROVIDER}"
+          echo "Service Account length: ${#GCP_SERVICE_ACCOUNT}"
+          echo "WIP format check (first 20 chars): ${GCP_WORKLOAD_IDENTITY_PROVIDER:0:20}"
+          echo "All secrets are set: PROJECT_ID=$([[ -z $PROJECT_ID ]] && echo 'EMPTY' || echo 'SET')"
+        env:
+          GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          GCP_SERVICE_ACCOUNT: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
         with:
