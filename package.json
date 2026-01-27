@@ -31,6 +31,7 @@
     "drizzle-orm": "^0.45.1",
     "ejs": "^4.0.1",
     "express": "^5.2.1",
+    "express-https-redirect": "^1.0.0",
     "express-session": "^1.19.0",
     "jsonwebtoken": "^9.0.3",
     "mqtt": "^5.14.1",
