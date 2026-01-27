@@ -34,74 +34,12 @@
             Sign in with Google
         </a>
 
-        <% if (isTest) { %>
-        <div class="divider">
-            <span>OR (Test Only)</span>
-        </div>
-
-        <div class="test-login">
-            <form onsubmit="handleTestLogin(event)">
-                <div class="form-group">
-                    <label for="username">Username</label>
-                    <input type="text" id="username" name="username" value="test" required autocomplete="username">
-                </div>
-                <div class="form-group">
-                    <label for="password">Password</label>
-                    <input type="password" id="password" name="password" value="test" required
-                        autocomplete="current-password">
-                </div>
-                <button type="submit" id="loginBtn">Test Login</button>
-                <div id="loginError" class="error"></div>
-            </form>
-        </div>
-        <% } else { %>
         <div class="info">
             You need a confirmed email address to use this service.<br>
             Sign in with your Google account to continue.
         </div>
-        <% } %>
     </div>
 
-    <% if (isTest) { %>
-    <script>
-        async function handleTestLogin(e) {
-            e.preventDefault();
-            const btn = document.getElementById('loginBtn');
-            const errorDiv = document.getElementById('loginError');
-
-            btn.disabled = true;
-            btn.textContent = 'Signing in...';
-            errorDiv.classList.remove('show');
-
-            const username = document.getElementById('username').value;
-            const password = document.getElementById('password').value;
-
-            try {
-                const response = await fetch('/auth/login', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username, password }),
-                });
-
-                const data = await response.json();
-
-                if (response.ok) {
-                    window.location.reload();
-                } else {
-                    errorDiv.textContent = data.error || 'Login failed';
-                    errorDiv.classList.add('show');
-                    btn.disabled = false;
-                    btn.textContent = 'Test Login';
-                }
-            } catch (error) {
-                errorDiv.textContent = 'Network error. Please try again.';
-                errorDiv.classList.add('show');
-                btn.disabled = false;
-                btn.textContent = 'Test Login';
-            }
-        }
-    </script>
-    <% } %>
 </body>
 
 </html>

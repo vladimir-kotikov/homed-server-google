@@ -140,7 +140,7 @@ export class OAuthController {
         ensureLoggedIn(),
         this.oauth2Server.authorize(this.authorizeClient),
         (request, response) =>
-          response.render("oauth-consent", {
+          response.render("consent", {
             // TODO: Pass client name and proper scopes
             clientId: request.oauth2.client.id,
             scopes: request.oauth2.req.scope,
