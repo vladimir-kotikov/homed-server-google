@@ -60,17 +60,17 @@ These must be set for the server to start:
 
 Used for signing users into the web UI:
 
-- **`GOOGLE_USER_CLIENT_ID`** - OAuth 2.0 Client ID from Google Cloud Console
-- **`GOOGLE_USER_CLIENT_SECRET`** - OAuth 2.0 Client Secret from Google Cloud Console
-- **`GOOGLE_USER_REDIRECT_URI`** - OAuth callback URL (e.g., `http://localhost:8080/auth/google/callback`)
+- **`GOOGLE_SSO_CLIENT_ID`** - OAuth 2.0 Client ID from Google Cloud Console
+- **`GOOGLE_SSO_CLIENT_SECRET`** - OAuth 2.0 Client Secret from Google Cloud Console
+- **`GOOGLE_SSO_REDIRECT_URI`** - OAuth callback URL (e.g., `http://localhost:8080/auth/google/callback`)
 
 #### Production-Only Required Variables
 
 When `NODE_ENV=production`, these additional variables are required:
 
 - **`DATABASE_URL`** - SQLite database file path (e.g., `file:./prod.db`)
-- **`OAUTH_CLIENT_ID`** - Google Smart Home OAuth Client ID
-- **`OAUTH_CLIENT_SECRET`** - Google Smart Home OAuth Client Secret
+- **`GOOGLE_HOME_CLIENT_ID`** - Google Smart Home OAuth Client ID
+- **`GOOGLE_HOME_CLIENT_SECRET`** - Google Smart Home OAuth Client Secret
 - **`JWT_SECRET`** - Secret for signing JWT tokens (min 32 characters recommended)
 - **`SESSION_SECRET`** - Secret for Express sessions (min 32 characters recommended)
 
@@ -82,8 +82,8 @@ These have sensible defaults for development:
 - **`PORT`** - HTTP server port (default: `8080`)
 - **`TCP_PORT`** - TCP server port for homed-service-cloud connections (default: `8042`)
 - **`DATABASE_URL`** - SQLite database path (default: `file:./prisma/dev.db` in dev/test)
-- **`OAUTH_CLIENT_ID`** - Smart Home OAuth Client ID (default: `dev-oauth-client-id` in dev/test)
-- **`OAUTH_CLIENT_SECRET`** - Smart Home OAuth Client Secret (default: `dev-oauth-client-secret` in dev/test)
+- **`GOOGLE_HOME_CLIENT_ID`** - Smart Home OAuth Client ID (default: `dev-oauth-client-id` in dev/test)
+- **`GOOGLE_HOME_CLIENT_SECRET`** - Smart Home OAuth Client Secret (default: `dev-oauth-client-secret` in dev/test)
 - **`JWT_SECRET`** - JWT signing secret (default: `dev-jwt-secret` in dev/test)
 - **`JWT_ACCESS_EXPIRES_IN`** - JWT access token lifetime (default: `1h`)
 - **`JWT_REFRESH_EXPIRES_IN`** - JWT refresh token lifetime (default: `30d`)
@@ -111,9 +111,9 @@ To obtain Google OAuth credentials for user authentication:
    - Application type: Web application
    - Authorized redirect URIs: `http://localhost:8080/auth/google/callback`
 7. Set the Client ID, Client Secret, and Redirect URI as environment variables:
-   - `GOOGLE_USER_CLIENT_ID`
-   - `GOOGLE_USER_CLIENT_SECRET`
-   - `GOOGLE_USER_REDIRECT_URI`
+   - `GOOGLE_SSO_CLIENT_ID`
+   - `GOOGLE_SSO_CLIENT_SECRET`
+   - `GOOGLE_SSO_REDIRECT_URI`
 
 ### Development Server
 
