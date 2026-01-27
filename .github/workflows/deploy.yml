@@ -35,8 +35,10 @@ jobs:
 
       - name: Deploy to Cloud Run
         run: |
+          IMAGE_PATH="docker.io/${{ secrets.DOCKERHUB_USERNAME }}/homed-server-google:${{ github.sha }}"
+
           gcloud run deploy ${{ env.SERVICE_NAME }} \
-            --image ghcr.io/${{ env.IMAGE_NAME }}:${{ github.sha }} \
+            --image $IMAGE_PATH \
             --region ${{ env.REGION }} \
             --platform managed \
             --allow-unauthenticated \
