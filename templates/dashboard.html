@@ -14,7 +14,7 @@
         <h1>🏠 Homed Server</h1>
         <div class="user-info">
             <span class="username"><%= username %></span>
-            <button class="logout-btn" onclick="handleLogout()">Logout</button>
+            <a href="/logout" class="logout-btn">Logout</a>
         </div>
     </div>
 
@@ -43,15 +43,6 @@
     </div>
 
     <script>
-        async function handleLogout() {
-            try {
-                await fetch('/logout', { method: 'POST' });
-                window.location.reload();
-            } catch (error) {
-                alert('Failed to logout');
-            }
-        }
-
         async function copyToken() {
             const tokenValue = document.querySelector('.token-value').textContent;
             const btn = document.querySelector('.copy-btn');
@@ -65,22 +56,7 @@
                     btn.textContent = 'Copy';
                     btn.classList.remove('copied');
                 }, 2000);
-            } catch (error) {
-                // Fallback for older browsers
-                const textArea = document.createElement('textarea');
-                textArea.value = tokenValue;
-                document.body.appendChild(textArea);
-                textArea.select();
-                document.execCommand('copy');
-                document.body.removeChild(textArea);
-
-                btn.textContent = 'Copied!';
-                btn.classList.add('copied');
-                setTimeout(() => {
-                    btn.textContent = 'Copy';
-                    btn.classList.remove('copied');
-                }, 2000);
-            }
+            } catch (error) { }
         }
     </script>
 </body>

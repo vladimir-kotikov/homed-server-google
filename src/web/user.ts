@@ -30,14 +30,8 @@ const login = (_request: Request, response: Response) =>
     isTest: process.env.NODE_ENV === "test",
   });
 
-/**
- * POST /auth/logout
- * Logout user
- */
-const logout = (request: Request, response: Response) => {
-  request.session.destroy(() => {});
-  response.json({ success: true });
-};
+const logout = (request: Request, response: Response) =>
+  request.session.destroy(() => response.redirect("/"));
 
 export default Router()
   .get("/", ensureLoggedIn("/login"), home)
@@ -55,4 +49,4 @@ export default Router()
       response.redirect(redirectUrl);
     }
   )
-  .post("/logout", logout);
+  .get("/logout", logout);

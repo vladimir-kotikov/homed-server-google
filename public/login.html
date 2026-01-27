@@ -1,34 +1,20 @@
 <!doctype html>
 <html>
+
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Sign in to Homed</title>
     <link rel="stylesheet" href="/login.css" />
-    </head>
-    
-    <body>
-        <div class="container">
-            <h1>Sign in to Homed</h1>
-            <p class="info">Google Smart Home wants to access your Homed account.</p>
+</head>
 
-    <form id="loginForm">
-        <div class="form-group">
-            <label for="username">Username</label>
-        <input type="text" id="username" name="username" required autocomplete="username" />
-        </div>
+<body>
+    <div class="container">
+        <h1>Sign in to Homed</h1>
+        <p class="info">Google Smart Home wants to access your Homed account.</p>
 
-        <div class="form-group">
-            <label for="password">Password</label>
-        <input type="password" id="password" name="password" required autocomplete="current-password" />
-        </div>
+        <a href="/auth/google" class="signin-button">Sign in with Google</a>
+    </div>
+</body>
 
-        <button type="submit" id="submitBtn">Sign In</button>
-
-        <div id="error" class="error" style="display: none"></div>
-        </form>
-        </div>
-
-    <script src="/login.js"></script>
-    </body>
 </html>
