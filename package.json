@@ -11,15 +11,17 @@
   },
   "private": true,
   "scripts": {
-    "dev": "node --watch src/index.ts",
+    "prestart": "npm run migrations",
     "start": "node src/index.ts",
+    "dev": "node --watch src/index.ts",
     "lint": "eslint src tests && tsc",
     "format": "prettier --write src tests; eslint src tests --fix",
     "test": "vitest run --globals tests/unit",
     "test:all": "npx npm-run-all --parallel test test:integration",
     "test:integration": "vitest run --no-file-parallelism --globals tests/integration",
-    "prepare": "husky",
-    "migrations": "drizzle-kit push --dialect sqlite --schema src/db/schema.ts --url dev.db"
+    "prepare": "husky || true",
+    "migrations": "drizzle-kit push --dialect sqlite --schema src/db/schema.ts --url ${DATABASE_URL}",
+    "node": "node"
   },
   "dependencies": {
     "@tinyhttp/logger": "^2.1.0",
@@ -29,6 +31,7 @@
     "connect-ensure-login": "^0.1.1",
     "debug": "^4.4.3",
     "drizzle-orm": "^0.45.1",
+    "drizzle-kit": "^0.31.8",
     "ejs": "^4.0.1",
     "express": "^5.2.1",
     "express-https-redirect": "^1.0.0",
@@ -59,7 +62,6 @@
     "@types/passport-oauth2-client-password": "^0.1.6",
     "@types/supertest": "^6.0.3",
     "@vitest/coverage-v8": "^4.0.18",
-    "drizzle-kit": "^0.31.8",
     "eslint": "^9.39.2",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-unicorn": "^62.0.0",
