@@ -1,7 +1,8 @@
+import { logger } from "@tinyhttp/logger";
 import SqliteStore from "better-sqlite3-session-store";
 import ejs from "ejs";
 import express from "express";
-import session from "express-session";
+import sessionMiddleware from "express-session";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import passport from "passport";
 import appConfig from "../config.ts";
@@ -36,64 +37,71 @@ export class WebApp {
     // eslint-disable-next-line unicorn/no-null
     passport.deserializeUser((user, done) => done(null, user as User));
 
-    const SessionStore = SqliteStore(session);
+    const logging = logger({
+      timestamp: { format: "HH:mm:ss" },
+      output: { callback: console.log, color: false },
+    });
+
+    const SessionStore = SqliteStore(sessionMiddleware);
+
+    const session = sessionMiddleware({
+      secret: appConfig.cookieSecret,
+      name: "homed-google-server-cookie",
+      resave: false,
+      saveUninitialized: false,
+      rolling: true,
+      store: new SessionStore({
+        client: this.userRepository.database,
+        expired: {
+          clear: true,
+          intervalMs: 900_000, // Clear expired sessions every 15 minutes
+        },
+      }),
+      cookie: {
+        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+        httpOnly: true,
+        secure: appConfig.env === "production",
+        sameSite: "lax",
+      },
+    });
+
+    const authentication = passport
+      .use(
+        "jwt",
+        jwtStrategy(
+          appConfig.jwtSecret,
+          this.userRepository.verifyAccessTokenPayload
+        )
+      )
+      .use(
+        "google-oauth20",
+        googleOauth20Strategy(
+          appConfig.googleSsoClientId,
+          appConfig.googleSsoClientSecret,
+          appConfig.googleSsoRedirectUri,
+          ({ id, emails }) =>
+            this.userRepository.getOrCreate(id, emails![0].value)
+        )
+      )
+      .use(
+        "client-password-oauth20",
+        clientPasswordOauth20Strategy(
+          appConfig.googleHomeOAuthClientId,
+          appConfig.googleHomeOAuthClientSecret
+        )
+      )
+      .initialize();
 
     this.app = express()
+      .use(logging)
+      .disable("x-powered-by")
       .set("views", "templates")
       .set("view engine", "html")
       .engine("html", ejs.renderFile)
       .use(express.static("public"))
       .use(express.json())
-      .use(
-        session({
-          secret: appConfig.cookieSecret,
-          name: "homed-google-server-cookie",
-          resave: false,
-          saveUninitialized: false,
-          rolling: true,
-          store: new SessionStore({
-            client: this.userRepository.database,
-            expired: {
-              clear: true,
-              intervalMs: 900_000, // Clear expired sessions every 15 minutes
-            },
-          }),
-          cookie: {
-            maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-            httpOnly: true,
-            secure: appConfig.env === "production",
-            sameSite: "lax",
-          },
-        })
-      )
-      .use(
-        passport
-          .use(
-            "jwt",
-            jwtStrategy(
-              appConfig.jwtSecret,
-              this.userRepository.verifyAccessTokenPayload
-            )
-          )
-          .use(
-            "google-oauth20",
-            googleOauth20Strategy(
-              appConfig.googleSsoClientId,
-              appConfig.googleSsoClientSecret,
-              appConfig.googleSsoRedirectUri,
-              ({ id, emails }) =>
-                this.userRepository.getOrCreate(id, emails![0].value)
-            )
-          )
-          .use(
-            "client-password-oauth20",
-            clientPasswordOauth20Strategy(
-              appConfig.googleHomeOAuthClientId,
-              appConfig.googleHomeOAuthClientSecret
-            )
-          )
-          .initialize()
-      )
+      .use(session)
+      .use(authentication)
       .use(passport.session())
       .get("/health", (_request, response) => response.json({ status: "ok" }))
       .use("/", passport.authenticate("session"), userRoutes)

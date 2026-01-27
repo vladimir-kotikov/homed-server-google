@@ -21,6 +21,7 @@
     "migrations": "drizzle-kit push --dialect sqlite --schema src/db/schema.ts --url dev.db"
   },
   "dependencies": {
+    "@tinyhttp/logger": "^2.1.0",
     "better-sqlite3": "^12.6.2",
     "better-sqlite3-session-store": "^0.1.0",
     "body-parser": "^2.2.2",
