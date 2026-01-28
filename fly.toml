@@ -1,0 +1,43 @@
+app = 'homed-server-google'
+primary_region = 'cdg'
+
+[env]
+  DATABASE_URL = '/data/user.db'
+  DEBUG = '*'
+  NODE_ENV = 'production'
+
+[[mounts]]
+  source = 'data'
+  destination = '/data'
+  initial_size = '1gb'
+  auto_extend_size_threshold = 80
+  auto_extend_size_increment = '1GB'
+  auto_extend_size_limit = '5GB'
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+
+  [[http_service.checks]]
+    interval = '30s'
+    timeout = '5s'
+    grace_period = '5s'
+    path = '/health'
+
+[[services]]
+  protocol = 'tcp'
+  internal_port = 8042
+
+  [[services.ports]]
+    port = 8042
+
+  [[services.tcp_checks]]
+    interval = '15s'
+    timeout = '2s'
+    grace_period = '5s'
+
+[[vm]]
+  size = 'shared-cpu-1x'
+  memory = '512mb'
+  cpus = 1
+  memory_mb = 512
