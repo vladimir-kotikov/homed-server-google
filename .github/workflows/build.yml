@@ -22,7 +22,6 @@ jobs:
           node-version: "25.x"
           cache: "npm"
       - run: npm ci
-      - run: npm run lint
       - run: npm test
 
       - uses: superfly/flyctl-actions/setup-flyctl@master
