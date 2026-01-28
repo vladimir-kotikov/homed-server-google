@@ -3,7 +3,6 @@ import SqliteStore from "better-sqlite3-session-store";
 import debug from "debug";
 import ejs from "ejs";
 import express from "express";
-import httpsRedirect from "express-https-redirect";
 import sessionMiddleware from "express-session";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import passport from "passport";
@@ -17,8 +16,6 @@ import {
 import { OAuthController } from "./oauth.ts";
 import { SmartHomeController } from "./smarthome.ts";
 import userRoutes from "./user.ts";
-
-const log = debug("homed:web");
 
 export class WebApp {
   readonly app: express.Application;
@@ -42,12 +39,10 @@ export class WebApp {
     passport.deserializeUser((user, done) => done(null, user as User));
 
     const logging = logger({
-      timestamp: { format: "HH:mm:ss" },
-      output: { callback: (message: string) => log(message), color: false },
+      ignore: ["/health"],
+      output: { callback: debug("homed:request"), color: false },
     });
-
     const SessionStore = SqliteStore(sessionMiddleware);
-
     const session = sessionMiddleware({
       secret: appConfig.cookieSecret,
       name: "homed-google-server-cookie",
@@ -98,7 +93,6 @@ export class WebApp {
 
     this.app = express()
       .use(logging)
-      .use(httpsRedirect())
       .disable("x-powered-by")
       .set("views", "templates")
       .set("view engine", "html")

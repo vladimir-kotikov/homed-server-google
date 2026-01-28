@@ -3,7 +3,8 @@ primary_region = 'cdg'
 
 [env]
   DATABASE_URL = '/data/user.db'
-  DEBUG = '*'
+  DEBUG = '*,-router'
+  DEBUG_HIDE_DATE = "1"
   NODE_ENV = 'production'
 
 [[mounts]]
@@ -30,11 +31,6 @@ primary_region = 'cdg'
 
   [[services.ports]]
     port = 8042
-
-  [[services.tcp_checks]]
-    interval = '15s'
-    timeout = '2s'
-    grace_period = '5s'
 
 [[vm]]
   size = 'shared-cpu-1x'
