@@ -60,7 +60,7 @@ export class WebApp {
         maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
         httpOnly: true,
         secure: appConfig.env === "production",
-        sameSite: "lax",
+        sameSite: "none",
       },
     });
 
@@ -94,6 +94,7 @@ export class WebApp {
     this.app = express()
       .use(logging)
       .disable("x-powered-by")
+      .set("trust proxy", true)
       .set("views", "templates")
       .set("view engine", "html")
       .engine("html", ejs.renderFile)
