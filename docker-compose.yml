@@ -1,70 +1,24 @@
 services:
-  # MQTT Broker
-  mqtt:
-    image: eclipse-mosquitto:2.0
-    container_name: homed-test-mqtt
-    ports:
-      - "1883:1883"
-    volumes:
-      - ./resources/mosquitto.conf:/mosquitto/config/mosquitto.conf
-    networks:
-      - homed-test
-    healthcheck:
-      test: ["CMD", "mosquitto_sub", "-t", "$$SYS/#", "-C", "1", "-i", "healthcheck", "-W", "2"]
-      interval: 2s
-      timeout: 2s
-      retries: 3
-
-  # TCP Server (our Node.js application)
-  tcp-server:
+  homed-server-google:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: homed-test-tcp-server
     ports:
       - "8042:8042"
       - "8080:8080"
+    env_file: dev.env
     environment:
-      - DATABASE_URL=file:/app/test.db
-      - TCP_PORT=8042
-      - PORT=8080
-      - NODE_ENV=test
-      - JWT_SECRET=test-jwt-secret-for-integration-tests
-      - OAUTH_CLIENT_ID=test-client-id
-      - OAUTH_CLIENT_SECRET=test-client-secret
-      - OAUTH_REDIRECT_URI=https://oauth-redirect.googleusercontent.com/r/test-project
-      - TEST_USERNAME=test-user
-      - TEST_PASSWORD=test-password
+      DATABASE_URL: /app/db/dev.db
+    command: dev
     volumes:
-      - ./tests/integration/test.db:/app/test.db
-      - ./prisma:/app/prisma
       - ./src:/app/src
-    networks:
-      - homed-test
-    depends_on:
-      mqtt:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "nc", "-z", "localhost", "8042"]
-      interval: 2s
-      timeout: 2s
-      retries: 5
+      - db:/app/db
 
-  # Homed Service Cloud Client
-  homed-client:
-    build:
-      context: .
-      dockerfile: Dockerfile.homed-client
-    container_name: homed-test-homed-client
-    networks:
-      - homed-test
-    depends_on:
-      tcp-server:
-        condition: service_healthy
-      mqtt:
-        condition: service_healthy
+  homed-service-cloud:
+    image: docker.u236.org/homed-cloud
+    volumes:
+      - ./homed.conf:/etc/homed/homed-cloud.conf
     restart: unless-stopped
 
-networks:
-  homed-test:
-    driver: bridge
+volumes:
+  db:
