@@ -1,4 +1,5 @@
 import debug from "debug";
+import assert from "node:assert";
 import http from "node:http";
 import net from "node:net";
 import { UserRepository, type User } from "./db/repository.ts";
@@ -8,6 +9,7 @@ import type {
   ClientStatusMessage,
   DeviceExposesMessage,
   DeviceStatusMessage,
+  EndpointOptions,
 } from "./homed/schema.ts";
 import { WebApp } from "./web/app.ts";
 
@@ -34,10 +36,7 @@ export class HomedServerController {
   private httpHandler: WebApp;
   private deviceCache: DeviceRepository;
 
-  // uniqueId to ClientConnection cache
   private clients: Map<string, ClientConnection<User>> = new Map();
-  // userId to ClientConnection[] cache
-  private userClients: Map<string, ClientConnection<User>[]> = new Map();
 
   constructor(
     userDatabase: UserRepository,
@@ -56,10 +55,10 @@ export class HomedServerController {
       });
 
     this.tcpServer = net
-      .createServer({ keepAlive: true })
-      .on("connection", socket => this.clientConnected(socket))
-      .on("error", error_ => {
-        logError("TCP Server error:", error_);
+      .createServer({ keepAlive: true, allowHalfOpen: false })
+      .on("connection", this.clientConnected)
+      .on("error", error => {
+        logError("TCP Server error:", error);
         this.stop();
       });
   }
@@ -78,7 +77,7 @@ export class HomedServerController {
     this.tcpServer.close();
   }
 
-  clientConnected(socket: net.Socket) {
+  clientConnected = (socket: net.Socket) => {
     const client = new ClientConnection<User>(socket)
       .on("close", () => this.clientDisconnected(client))
       .on("token", token => this.clientTokenReceived(client, token))
@@ -94,18 +93,18 @@ export class HomedServerController {
       )
       .on("fd", (topic, data) => this.deviceDataUpdated(client, topic, data));
 
-    log(`Client connected: ${client.uniqueId}`);
-  }
+    log(`New connection from ${socket.remoteAddress}:${socket.remotePort}`);
+  };
 
-  clientDisconnected(client: ClientConnection<User>) {
+  clientDisconnected = (client: ClientConnection<User>) => {
     if (client.uniqueId) {
       this.clients.delete(client.uniqueId);
       this.deviceCache.removeClientDevices(client.uniqueId);
       log(`Client disconnected: ${client.uniqueId}`);
     }
-  }
+  };
 
-  clientTokenReceived(client: ClientConnection<User>, token: string) {
+  clientTokenReceived = (client: ClientConnection<User>, token: string) => {
     const uniqueId = client.uniqueId;
     if (!uniqueId) {
       logError(`Client has no unique ID, cannot authorize`);
@@ -124,7 +123,7 @@ export class HomedServerController {
       this.clients.set(uniqueId, client);
       log(`Client ${uniqueId} authorized for ${user.username}`);
     });
-  }
+  };
 
   clientStatusUpdated = (
     client: ClientConnection<User>,
@@ -132,6 +131,8 @@ export class HomedServerController {
     _topic: string,
     message: ClientStatusMessage
   ) => {
+    assert(client.user, "Client must be authorized before updating status");
+
     // TODO: This method only concerned with zigbee devices, as others are not
     // yet supported in the Homed server. Once other device types are supported,
     // this method should be updated accordingly.
@@ -155,8 +156,8 @@ export class HomedServerController {
           }) as HomedDevice
       );
 
-    const [added, removed] = this.deviceCache.setClientDevices(
-      client,
+    const [added, removed] = this.deviceCache.syncClientDevices(
+      client.uniqueId,
       homedDevices
     );
 
@@ -192,7 +193,7 @@ export class HomedServerController {
           id: isNaN(parseInt(rawId, 10)) ? 0 : parseInt(rawId, 10),
           device,
           exposes,
-          options,
+          options: options as EndpointOptions,
         }) satisfies HomedEndpoint
     );
 

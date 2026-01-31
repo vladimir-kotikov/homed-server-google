@@ -49,6 +49,28 @@ export class DeviceRepository {
     });
   };
 
+  syncClientDevices = (
+    clientId: string,
+    newDevices: HomedDevice[]
+  ): [HomedDevice[], HomedDevice[]] => {
+    const existingDevices = this.devices.get(clientId) ?? [];
+    const addedDevices = newDevices.filter(
+      nd => !existingDevices.some(ed => ed.key === nd.key)
+    );
+    const removedDevices = existingDevices.filter(
+      ed => !newDevices.some(nd => nd.key === ed.key)
+    );
+
+    this.devices.set(
+      clientId,
+      existingDevices
+        .filter(ed => !removedDevices.includes(ed))
+        .concat(addedDevices)
+    );
+
+    return [addedDevices, removedDevices];
+  };
+
   setDeviceStatus = (
     client: ClientConnection<User>,
     deviceId: string,

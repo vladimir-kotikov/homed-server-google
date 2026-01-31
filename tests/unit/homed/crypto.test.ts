@@ -49,10 +49,12 @@ describe("AES128CBC", () => {
 
       // Should be padded to 16 bytes
       expect(encrypted.length % 16).toBe(0);
+      expect(encrypted.length).toBe(16);
 
       const decrypted = aes2.decrypt(encrypted);
-      // After decryption, should have trailing zeros (padding)
-      expect(decrypted.subarray(0, 6)).toEqual(plaintext);
+      // After decryption, padding should be stripped to get exact original
+      expect(decrypted).toEqual(plaintext);
+      expect(decrypted.length).toBe(6);
     });
 
     it("should produce different ciphertext from plaintext", () => {
@@ -189,27 +191,49 @@ describe("AES128CBC", () => {
       };
 
       const plaintext = Buffer.from(JSON.stringify(message));
-      // Pad to 16-byte boundary
-      const padded =
-        plaintext.length % 16 === 0
-          ? plaintext
-          : Buffer.concat([
-              plaintext,
-              Buffer.alloc(16 - (plaintext.length % 16)),
-            ]);
 
-      const encrypted = aes1.encrypt(padded);
+      // Encrypt automatically pads to 16-byte boundary
+      const encrypted = aes1.encrypt(plaintext);
+      expect(encrypted.length % 16).toBe(0);
+
+      // Decrypt automatically strips padding
+      const decrypted = aes2.decrypt(encrypted);
+      expect(decrypted).toEqual(plaintext);
+
+      const recoveredMessage = JSON.parse(decrypted.toString());
+      expect(recoveredMessage).toEqual(message);
+    });
+
+    it("should handle various unaligned data sizes", () => {
+      const sharedSecret = Buffer.from("test-secret-key!");
+      const aes1 = new AES128CBC(sharedSecret);
+      const aes2 = new AES128CBC(sharedSecret);
+
+      // Test different sizes that require padding
+      const testSizes = [1, 5, 7, 10, 13, 15, 17, 20, 25, 31, 33, 42];
+
+      testSizes.forEach(size => {
+        const plaintext = Buffer.alloc(size, "A");
+        const encrypted = aes1.encrypt(plaintext);
+        const decrypted = aes2.decrypt(encrypted);
+
+        expect(decrypted).toEqual(plaintext);
+        expect(decrypted.length).toBe(size);
+      });
+    });
+
+    it("should handle JSON with null bytes in the middle", () => {
+      const sharedSecret = Buffer.from("test-secret-key!");
+      const aes1 = new AES128CBC(sharedSecret);
+      const aes2 = new AES128CBC(sharedSecret);
+
+      // Create data that has null bytes in the middle but not at the end
+      const plaintext = Buffer.from("data\u0000with\u0000nulls");
+      const encrypted = aes1.encrypt(plaintext);
       const decrypted = aes2.decrypt(encrypted);
 
-      // Remove padding: find first run of zeros at end and trim
-      let unpadLength = decrypted.length;
-      while (unpadLength > 0 && decrypted[unpadLength - 1] === 0x00) {
-        unpadLength--;
-      }
-      const unpadded = decrypted.subarray(0, unpadLength);
-
-      const recoveredMessage = JSON.parse(unpadded.toString());
-      expect(recoveredMessage).toEqual(message);
+      // Should preserve null bytes in the middle, only strip trailing padding
+      expect(decrypted).toEqual(plaintext);
     });
   });
 });

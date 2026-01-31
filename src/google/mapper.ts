@@ -3,11 +3,9 @@
  * Converts between Homed device capabilities and Google Smart Home format
  */
 
-import type {
-  CommandMessage,
-  DeviceState,
-  EndpointOptions,
-} from "../homed/types.ts";
+import type { HomedDevice, HomedEndpoint } from "../device.ts";
+import type { EndpointOptions } from "../homed/schema.ts";
+import type { CommandMessage, DeviceState } from "../homed/types.ts";
 import type { GoogleCommand } from "./schema.ts";
 import { TRAIT_MAPPERS } from "./traits.ts";
 import type {

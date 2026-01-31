@@ -74,6 +74,15 @@ const TriggerOptionsSchema = z.object({
   ...BaseExposeOptionsSchema.shape,
 });
 
+const KnownEndpointOptionsSchema = z.union([
+  BinarySensorOptionsSchema,
+  SensorOptionsSchema,
+  ToggleOptionsSchema,
+  NumberOptionsSchema,
+  SelectOptionsSchema,
+  TriggerOptionsSchema,
+]);
+
 // Special expose schemas - their options are not keyed under
 // the expose name but are merged into the options object
 const SwitchOptionsSchema = z.object({ switch: z.literal("outlet") }).partial();
@@ -145,27 +154,40 @@ const ThermostatOptionsSchema = z
  *    TriggerOptions;
  * }
  */
-const EndpointOptionsSchema = z.object({
+const SpecialEndpointOptionsSchema = z.object({
   ...SwitchOptionsSchema.shape,
   ...LockOptionsSchema.shape,
   ...LightOptionsSchema.shape,
   ...CoverOptionsSchema.shape,
   ...ThermostatOptionsSchema.shape,
-  ...z.record(
-    z.string(),
-    z.union([
-      BinarySensorOptionsSchema,
-      SensorOptionsSchema,
-      ToggleOptionsSchema,
-      NumberOptionsSchema,
-      SelectOptionsSchema,
-      TriggerOptionsSchema,
-    ])
-  ),
 });
 
-export type EndpointOptions = z.infer<typeof EndpointOptionsSchema>;
+export const EndpointOptionsSchema = SpecialEndpointOptionsSchema.superRefine(
+  (data, context) => {
+    const specialProperties = new Set(
+      Object.keys(SpecialEndpointOptionsSchema.shape)
+    );
 
+    for (const [key, value] of Object.entries(data)) {
+      if (specialProperties.has(key)) {
+        continue;
+      }
+
+      const result = KnownEndpointOptionsSchema.safeParse(value);
+      if (!result.success) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [key],
+          message: `Invalid expose property: ${result.error.message}`,
+        });
+      }
+    }
+  }
+);
+
+export type EndpointOptions = z.infer<typeof SpecialEndpointOptionsSchema> & {
+  [key: string]: z.infer<typeof KnownEndpointOptionsSchema>;
+};
 export const DeviceExposesMessageSchema = z.record(
   z.string(),
   z.object({
@@ -186,7 +208,7 @@ export const ZigbeeDeviceInfoSchema = z
     name: z.string().optional(),
     description: z.string().optional(),
     discovery: z.boolean().optional(),
-    cloud: z.boolean(),
+    cloud: z.boolean().optional(),
     active: z.boolean().optional(),
     manufacturerCode: z.number().optional(),
     manufacturerName: z.string().optional(),
@@ -206,7 +228,7 @@ export const ClientStatusMessageSchema = z
     names: z.boolean().optional(),
     timestamp: z.number().optional(),
   })
-  .strict();
+  .loose(); // Allow additional unknown fields
 
 export const AuthorizationMessageSchema = z
   .object({

@@ -57,11 +57,11 @@ export class AES128CBC {
     const decipher = crypto.createDecipheriv("aes-128-cbc", this.key, this.iv);
     decipher.setAutoPadding(false); // Manual padding required
     const decrypted = Buffer.concat([decipher.update(data), decipher.final()]);
-    // Remove trailing zero padding
-    const unpadded = decrypted.subarray(
-      0,
-      decrypted.includes(0x00) ? decrypted.lastIndexOf(0x00) : decrypted.length
-    );
-    return unpadded;
+    // Remove trailing zero padding added for AES block alignment
+    let end = decrypted.length;
+    while (end > 0 && decrypted[end - 1] === 0x00) {
+      end--;
+    }
+    return decrypted.subarray(0, end);
   }
 }

@@ -2,11 +2,8 @@
  * Trait mappers for converting Homed device data to/from Google Smart Home traits
  */
 
-import type {
-  CommandMessage,
-  DeviceState,
-  EndpointOptions,
-} from "../homed/types.ts";
+import type { EndpointOptions } from "../homed/schema.ts";
+import type { CommandMessage, DeviceState } from "../homed/types.ts";
 import {
   type BrightnessParameters,
   type ColorSettingParameters,
@@ -73,7 +70,7 @@ export interface GenericTraitMapper<
   /**
    * Get current state for this trait from device data
    */
-  getState(deviceData: DeviceState): TState | null;
+  getState(deviceData: DeviceState): TState | undefined;
 
   /**
    * Convert Google command to Homed topic/message
@@ -82,7 +79,7 @@ export interface GenericTraitMapper<
   mapCommand(
     deviceId: string,
     command: GoogleCommand
-  ): { topic: string; message: CommandMessage } | null;
+  ): { topic: string; message: CommandMessage } | undefined;
 }
 
 /**
@@ -235,7 +232,7 @@ export const ColorSettingTrait: GenericTraitMapper<
     return attributes;
   },
 
-  getState(deviceData: DeviceState): ColorSettingState | null {
+  getState(deviceData: DeviceState): ColorSettingState | undefined {
     // RGB color format
     if (deviceData.color !== undefined) {
       const color = deviceData.color;
@@ -332,7 +329,7 @@ export const OpenCloseTrait: GenericTraitMapper<
     };
   },
 
-  getState(deviceData: DeviceState): OpenCloseState | null {
+  getState(deviceData: DeviceState): OpenCloseState | undefined {
     if (deviceData.position !== undefined) {
       const position = Math.max(0, Math.min(100, Number(deviceData.position)));
       return {
@@ -418,7 +415,7 @@ export const TemperatureSettingTrait: GenericTraitMapper<
     };
   },
 
-  getState(deviceData: DeviceState): TemperatureSettingState | null {
+  getState(deviceData: DeviceState): TemperatureSettingState | undefined {
     const state: TemperatureSettingState = {};
 
     if (deviceData.temperature !== undefined) {
@@ -559,7 +556,7 @@ export const SensorStateTrait: GenericTraitMapper<
     return;
   },
 
-  mapCommand() {
+  mapCommand(): undefined {
     // Sensors are read-only
     return;
   },
