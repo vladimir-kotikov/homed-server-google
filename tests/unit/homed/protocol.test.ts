@@ -1,9 +1,9 @@
-import type { ServerMessage } from "../../../src/schemas/homed.schema.ts";
 import {
   escapePacket,
   readPacket,
   unescapePacket,
-} from "../../../src/tcp/protocol.ts";
+} from "../../../src/homed/protocol.ts";
+import type { ServerMessage } from "../../../src/homed/schema.ts";
 
 describe("Protocol Packet Handling", () => {
   describe("readPacket", () => {

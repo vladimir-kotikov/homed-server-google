@@ -1,11 +1,14 @@
 import debug from "debug";
 import http from "node:http";
 import net from "node:net";
-import { UserRepository } from "./db/repository.ts";
-import { CapabilityMapper } from "./schemas/services/mapper.service.ts";
-import { ClientConnection } from "./tcp/client.ts";
-import type { GoogleCommand, GoogleDevice } from "./types/googleSmarthome.ts";
-import type { DeviceState } from "./types/homed.ts";
+import { UserRepository, type User } from "./db/repository.ts";
+import type { DeviceRepository, HomedDevice, HomedEndpoint } from "./device.ts";
+import { ClientConnection } from "./homed/client.ts";
+import type {
+  ClientStatusMessage,
+  DeviceExposesMessage,
+  DeviceStatusMessage,
+} from "./homed/schema.ts";
 import { WebApp } from "./web/app.ts";
 
 const log = debug("homed:controller");
@@ -24,33 +27,26 @@ const logError = debug("homed:controller:error");
  * Client 1---N Device
  */
 
-const zip = <T, U>(a: T[], b: U[]): Array<[T, U]> => {
-  if (a.length !== b.length) {
-    throw new Error("Arrays must be of the same length to zip");
-  }
-  return a.map((k, index) => [k, b[index]]);
-};
-
 export class HomedServerController {
   private httpServer: http.Server;
   private tcpServer: net.Server;
   private userDb: UserRepository;
   private httpHandler: WebApp;
-  private mapper: CapabilityMapper;
+  private deviceCache: DeviceRepository;
 
   // uniqueId to ClientConnection cache
-  private clients: Map<string, ClientConnection> = new Map();
+  private clients: Map<string, ClientConnection<User>> = new Map();
   // userId to ClientConnection[] cache
-  private userClients: Map<string, ClientConnection[]> = new Map();
-  // userId to GoogleDevice[] cache
-  private deviceCache: Map<string, GoogleDevice[]> = new Map();
-  // deviceId to DeviceState cache
-  private stateCache: Map<string, DeviceState> = new Map();
+  private userClients: Map<string, ClientConnection<User>[]> = new Map();
 
-  constructor(userDatabase: UserRepository, httpHandler: WebApp) {
+  constructor(
+    userDatabase: UserRepository,
+    deviceCache: DeviceRepository,
+    httpHandler: WebApp
+  ) {
     this.userDb = userDatabase;
     this.httpHandler = httpHandler;
-    this.mapper = new CapabilityMapper();
+    this.deviceCache = deviceCache;
 
     this.httpServer = http
       .createServer(this.httpHandler.handleRequest)
@@ -83,25 +79,33 @@ export class HomedServerController {
   }
 
   clientConnected(socket: net.Socket) {
-    const client = new ClientConnection(socket)
+    const client = new ClientConnection<User>(socket)
       .on("close", () => this.clientDisconnected(client))
-      .on("tokenReceived", token => this.clientTokenReceived(client, token))
-      .on("devicesUpdated", devices =>
-        this.clientDevicesUpdated(client, devices)
+      .on("token", token => this.clientTokenReceived(client, token))
+      // status/# subscription
+      .on("status", (topic, message) =>
+        this.clientStatusUpdated(client, topic, message)
       )
-      .on("dataUpdated", data => this.deviceDataUpdated(client, data));
+      .on("device", (deviceId, message) =>
+        this.deviceStatusUpdated(client, deviceId, message)
+      )
+      .on("expose", (type_, devices) =>
+        this.clientDeviceUpdated(client, type_, devices)
+      )
+      .on("fd", (topic, data) => this.deviceDataUpdated(client, topic, data));
 
     log(`Client connected: ${client.uniqueId}`);
   }
 
-  clientDisconnected(client: ClientConnection) {
+  clientDisconnected(client: ClientConnection<User>) {
     if (client.uniqueId) {
       this.clients.delete(client.uniqueId);
+      this.deviceCache.removeClientDevices(client.uniqueId);
       log(`Client disconnected: ${client.uniqueId}`);
     }
   }
 
-  clientTokenReceived(client: ClientConnection, token: string) {
+  clientTokenReceived(client: ClientConnection<User>, token: string) {
     const uniqueId = client.uniqueId;
     if (!uniqueId) {
       logError(`Client has no unique ID, cannot authorize`);
@@ -116,102 +120,104 @@ export class HomedServerController {
         return;
       }
 
-      client.authorize();
+      client.authorize(user);
       this.clients.set(uniqueId, client);
       log(`Client ${uniqueId} authorized for ${user.username}`);
     });
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  async clientDevicesUpdated(_client: ClientConnection, _devices: unknown) {
-    // const userId = this.userClient.get(client.uniqueId);
-    // this.googleClient.updateDevices(userId, devices);
-  }
+  clientStatusUpdated = (
+    client: ClientConnection<User>,
+    // unused for now, since we only support zigbee devices
+    _topic: string,
+    message: ClientStatusMessage
+  ) => {
+    // TODO: This method only concerned with zigbee devices, as others are not
+    // yet supported in the Homed server. Once other device types are supported,
+    // this method should be updated accordingly.
+    const { devices, names: byName } = message;
+    if (!client.uniqueId) return;
+    if (!devices) return;
 
-  async deviceDataUpdated(
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    _client: ClientConnection,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    _data: Record<string, unknown>
-  ) {
-    // const userId = this.userClient.get(client.uniqueId);
-    // this.googleClient.updateData(userId, data);
-  }
+    const homedDevices = devices
+      .filter(
+        ({ name, removed, cloud }) =>
+          name && name !== "HOMEd Coordinator" && cloud && !removed
+      )
+      .map(
+        ({ ieeeAddress, name, description }) =>
+          ({
+            key: `zigbee/${ieeeAddress}`,
+            topic: `zigbee/${byName ? name : ieeeAddress}`,
+            name,
+            description,
+            available: false,
+          }) as HomedDevice
+      );
 
-  /**
-   * SYNC intent handler
-   *
-   * Get Google Smart Home devices for SYNC intent. Relies on cache which is
-   * populated/invalidated on TCP device connection and updates from device data.
-   */
-  getGoogleDevices(userId: string): GoogleDevice[] {
-    return this.deviceCache.get(userId) ?? [];
-  }
-
-  /**
-   * QUERY intent handler
-   *
-   * Get Google state for devices (QUERY intent) and converts Homed device
-   * states to Google format. As opposed to SYNC this is done on-demand as the
-   * states change frequently and mapping each change is not efficient.
-   */
-  getGoogleDeviceStates(
-    userId: string,
-    deviceIds: string[]
-  ): Promise<Record<string, unknown>> {
-    const devices = deviceIds.flatMap(
-      deviceId =>
-        this.deviceCache
-          .get(userId)
-          ?.filter(device => device.id === deviceId) ?? ([] as GoogleDevice[])
+    const [added, removed] = this.deviceCache.setClientDevices(
+      client,
+      homedDevices
     );
 
-    const states = devices.map(device => this.stateCache.get(device.id) ?? {});
+    if (added.length > 0) {
+      added.forEach(({ topic }) => {
+        client.subscribe(`expose/${topic}`);
+        client.subscribe(`device/${topic}`);
+      });
+    }
 
-    const deviceStates = Object.fromEntries(
-      zip(devices, states).map(([device, state]) => {
-        const deviceState = this.mapper.mapToGoogleState(device, state);
-        return [device.id, deviceState];
-      })
-    );
+    if (added.length > 0 || removed.length > 0) {
+      this.googleHomeGraph.updateDevices(
+        client.user,
+        this.deviceCache.getClientDevices(client.uniqueId)
+      );
+    }
+  };
 
-    // TODO: Return empty/error state for devices not found
-    return deviceStates;
-  }
-
-  /**
-   * ACTION intent handler
-   *
-   * Executes Google command on a Homed device, converts Google command to Homed
-   * topic/message
-   */
-  async executeGoogleCommand(
-    userId: string,
+  clientDeviceUpdated = (
+    client: ClientConnection<User>,
     deviceId: string,
-    command: GoogleCommand
-  ): Promise<{ success: boolean; error?: string }> {
-    const device = this.deviceCache.get(userId)?.find(d => d.id === deviceId);
-    if (!device) {
-      return { success: false, error: "Device not found" };
-    }
+    message: DeviceExposesMessage
+  ) => {
+    if (!client.uniqueId) return;
+    const device = this.deviceCache.getClientDevice(client.uniqueId, deviceId);
+    if (!device) return;
 
-    const homedCommand = this.mapper.mapToHomedCommand(device, command);
-    if (!homedCommand) {
-      return {
-        success: false,
-        error: `Command '${command.command}' not supported for this device`,
-      };
-    }
+    device.endpoints = Object.entries(message).map(
+      ([rawId, { items: exposes, options }]) =>
+        ({
+          // id can be either "1", "2", ... or some string (usually "common")
+          // meaning the device exposes some of the capabilities "directly"
+          id: isNaN(parseInt(rawId, 10)) ? 0 : parseInt(rawId, 10),
+          device,
+          exposes,
+          options,
+        }) satisfies HomedEndpoint
+    );
 
-    const client = this.userClients
-      .get(userId)
-      ?.find(client => client.uniqueId === device.clientId);
+    device.endpoints.forEach(endpoint =>
+      client.subscribe(
+        endpoint.id ? `status/${deviceId}/${endpoint.id}` : `status/${deviceId}`
+      )
+    );
 
-    if (!client) {
-      return { success: false, error: "Device client not connected" };
-    }
+    client.publish(`command/${device.topic}`, {
+      action: "getProperties",
+      device: deviceId,
+      service: "cloud",
+    });
+  };
 
-    client.sendMessage(homedCommand);
-    return { success: true };
-  }
+  deviceStatusUpdated = (
+    client: ClientConnection<User>,
+    deviceId: string,
+    { status }: DeviceStatusMessage
+  ) => this.deviceCache.setDeviceStatus(client, deviceId, status === "online");
+
+  deviceDataUpdated = (
+    client: ClientConnection<User>,
+    deviceId: string,
+    data: Record<string, unknown>
+  ) => this.deviceCache.setDeviceData(client, deviceId, data);
 }

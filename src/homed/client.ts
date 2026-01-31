@@ -2,16 +2,20 @@ import debug from "debug";
 import { EventEmitter } from "node:events";
 import { Socket } from "node:net";
 import { match, P } from "ts-pattern";
-import {
-  ClientMessageSchema,
-  DeviceExposesMessageSchema,
-  DeviceListMessageSchema,
-  DeviceStateMessageSchema,
-  DeviceStatusMessageSchema,
-  type ServerMessage,
-} from "../schemas/homed.schema.ts";
+import { safeParse } from "../utility.ts";
 import { AES128CBC } from "./crypto.ts";
 import { escapePacket, readPacket, unescapePacket } from "./protocol.ts";
+import {
+  ClientMessageSchema,
+  ClientStatusMessageSchema,
+  DeviceExposesMessageSchema,
+  DeviceStateMessageSchema,
+  DeviceStatusMessageSchema,
+  type ClientStatusMessage,
+  type DeviceExposesMessage,
+  type DeviceStatusMessage,
+  type ServerMessage,
+} from "./schema.ts";
 
 const logError = debug("homed:client:error");
 
@@ -20,19 +24,21 @@ const logError = debug("homed:client:error");
  * handles the DH handshake, encryption/decryption, and message parsing.
  */
 
-export class ClientConnection extends EventEmitter<{
+export class ClientConnection<U> extends EventEmitter<{
   error: [Error];
   close: [];
-  tokenReceived: [string];
-  devicesUpdated: [Array<Record<string, unknown>> | undefined];
-  dataUpdated: [Record<string, unknown>];
+  token: [string];
+  device: [string, DeviceStatusMessage];
+  expose: [string, DeviceExposesMessage];
+  status: [string, ClientStatusMessage];
+  fd: [string, Record<string, unknown>];
 }> {
+  private buf: Buffer = Buffer.alloc(0);
   private socket: Socket;
   private cipher?: AES128CBC;
-  private clientAuthorized = false;
-  private buf: Buffer = Buffer.alloc(0);
   private timeout: NodeJS.Timeout;
   uniqueId?: string;
+  user?: U;
 
   constructor(socket: Socket, timeout: number = 10_000) {
     super();
@@ -48,15 +54,12 @@ export class ClientConnection extends EventEmitter<{
       });
 
     this.timeout = setTimeout(() => {
-      if (!this.cipher) {
-        logError("Handshake timeout: no data received");
-        this.socket.end();
-      }
+      const message = this.cipher
+        ? "Authorization timeout: client not authorized"
+        : "Handshake timeout: no data received";
 
-      if (!this.clientAuthorized) {
-        logError("Authorization timeout: client not authorized");
-        this.socket.end();
-      }
+      logError(message);
+      this.close();
     }, timeout);
   }
 
@@ -89,7 +92,7 @@ export class ClientConnection extends EventEmitter<{
   }
 
   private ensureAuthenticated(): boolean {
-    if (this.clientAuthorized) {
+    if (this.user) {
       return true;
     }
 
@@ -104,8 +107,8 @@ export class ClientConnection extends EventEmitter<{
       const decrypted = this.cipher!.decrypt(unescapePacket(packet));
       const message = JSON.parse(decrypted.toString("utf8"));
       if (message && message.token && message.uniqueId) {
-        this.emit("tokenReceived", message.token);
         this.uniqueId = message.uniqueId;
+        this.emit("token", message.token);
         this.buf = remainder;
       }
     }
@@ -132,78 +135,44 @@ export class ClientConnection extends EventEmitter<{
     }
   }
 
-  /**
-   * Handle a parsed protocol message
-   */
-  private handleMessage(message: unknown): void {
-    const { data, success } = ClientMessageSchema.safeParse(message);
+  private handleMessage(rawMessage: unknown): void {
+    const { data, success } = ClientMessageSchema.safeParse(rawMessage);
     if (!success) {
       return;
     }
 
-    match(data)
-      .with(
-        { topic: P.string.startsWith("status/"), message: P.select() },
-        message_ => {
-          const {
-            data,
-            success,
-            error: error_,
-          } = DeviceListMessageSchema.safeParse(message_);
-          if (success) {
-            return this.emit("devices", data);
-          }
-          logError("Invalid device list message received:", error_);
-        }
+    const { topic, message } = data;
+    match(topic)
+      .with(P.string.startsWith("status/"), () =>
+        safeParse(message, ClientStatusMessageSchema)
+          .then(data => this.emit("status", topic, data))
+          .catch(error =>
+            logError("Invalid client status message received:", error)
+          )
       )
-      .with(
-        { topic: P.string.startsWith("expose/"), message: P.select() },
-        message_ => {
-          const {
-            data,
-            success,
-            error: error_,
-          } = DeviceExposesMessageSchema.safeParse(message_);
-          if (success) {
-            return this.emit("exposes", data);
-          }
-          logError("Invalid expose message received:", error_);
-        }
+      .with(P.string.startsWith("expose/"), () =>
+        safeParse(message, DeviceExposesMessageSchema)
+          .then(data => this.emit("expose", topic, data))
+          .catch(error => logError("Invalid expose message received:", error))
       )
-      .with(
-        { topic: P.string.startsWith("device/"), message: P.select() },
-        message_ => {
-          const {
-            data,
-            success,
-            error: error_,
-          } = DeviceStatusMessageSchema.safeParse(message_);
-          if (success) {
-            return this.emit("status", data);
-          }
-          logError("Invalid device status message received:", error_);
-        }
+      .with(P.string.startsWith("device/"), () =>
+        safeParse(message, DeviceStatusMessageSchema)
+          .then(data => this.emit("device", topic, data))
+          .catch(error =>
+            logError("Invalid device status message received:", error)
+          )
       )
-      .with(
-        { topic: P.string.startsWith("fd/"), message: P.select() },
-        message_ => {
-          const {
-            data,
-            success,
-            error: error_,
-          } = DeviceStateMessageSchema.safeParse(message_);
-          if (success) {
-            return this.emit("state", data);
-          }
-          logError("Invalid device readings message received:", error_);
-        }
-      )
+      .with(P.string.startsWith("fd/"), () => {
+        safeParse(message, DeviceStateMessageSchema)
+          .then(data => this.emit("fd", topic, data))
+          .catch(error =>
+            logError("Invalid device state message received:", error)
+          );
+      })
       .otherwise(() => logError("Unknown message topic received:", data.topic));
   }
 
-  /**
-   * Send a message to the client
-   */
+  // Public solely for testing purposes
   sendMessage(message: ServerMessage): void {
     if (!this.cipher) {
       throw new Error("Cannot send message: AES not initialized");
@@ -221,13 +190,20 @@ export class ClientConnection extends EventEmitter<{
     }
   }
 
-  authorize(): void {
-    this.clientAuthorized = true;
+  subscribe = (topic: string): void =>
+    this.sendMessage({ action: "subscribe", topic });
+
+  publish = (topic: string, message: Record<string, unknown>): void =>
+    this.sendMessage({ action: "publish", topic, message });
+
+  authorize(user: U): void {
+    this.user = user;
+    this.sendMessage({ action: "subscribe", topic: "status/#" });
     clearTimeout(this.timeout);
   }
 
   close(): void {
-    this.socket.end();
     clearTimeout(this.timeout);
+    this.socket.end();
   }
 }

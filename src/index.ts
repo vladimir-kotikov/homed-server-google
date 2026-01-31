@@ -2,42 +2,48 @@ import debug from "debug";
 import appConfig from "./config.ts";
 import { HomedServerController } from "./controller.ts";
 import { UserRepository } from "./db/repository.ts";
+import { DeviceRepository } from "./device.ts";
+import { FulfillmentController } from "./google/fulfillment.ts";
 import { WebApp } from "./web/app.ts";
 import { OAuthController } from "./web/oauth.ts";
-import { SmartHomeController } from "./web/smarthome.ts";
 
 const log = debug("homed:main");
 const { databaseUrl, tcpPort, httpPort } = appConfig;
 
-// Initialize database before starting servers
+const deviceRepository = new DeviceRepository();
 const usersRepository = UserRepository.open(databaseUrl, appConfig.jwtSecret, {
   create: true,
 });
+
 const oauthController = new OAuthController(
   usersRepository,
   appConfig.googleHomeOAuthClientId,
   appConfig.googleHomeOAuthRedirectUri
 );
-
-const smarthomeController = new SmartHomeController(usersRepository);
-
+const fulfillmentController = new FulfillmentController(
+  usersRepository,
+  deviceRepository
+);
 const httpHandler = new WebApp(
   usersRepository,
-  smarthomeController,
+  fulfillmentController,
   oauthController
 );
 
-const controller = new HomedServerController(usersRepository, httpHandler);
+const mainController = new HomedServerController(
+  usersRepository,
+  deviceRepository,
+  httpHandler
+);
 
 const shutdown = async () => {
   log("Shutting down...");
-  controller.stop();
+  mainController.stop();
   usersRepository.close();
-  // eslint-disable-next-line unicorn/no-process-exit
   process.exit(0);
 };
 
 process.on("SIGTERM", shutdown);
 process.on("SIGINT", shutdown);
 
-controller.start(httpPort, tcpPort);
+mainController.start(httpPort, tcpPort);

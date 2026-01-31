@@ -1,4 +1,30 @@
 /**
+ * Capability Mapper Service
+ * Converts between Homed device capabilities and Google Smart Home format
+ */
+
+import type {
+  CommandMessage,
+  DeviceState,
+  EndpointOptions,
+} from "../homed/types.ts";
+import type { GoogleCommand } from "./schema.ts";
+import { TRAIT_MAPPERS } from "./traits.ts";
+import type {
+  GoogleDevice,
+  GoogleDeviceState,
+  TraitAttributes,
+} from "./types.ts";
+
+/**
+ * Command structure for execution
+ */
+export interface HomedCommand {
+  topic: string;
+  message: CommandMessage;
+}
+
+/**
  * Device type mapping from Homed expose types to Google Smart Home device types
  */
 
@@ -20,7 +46,7 @@ export const GOOGLE_DEVICE_TYPES = {
  * Maps Homed expose types to Google device types
  * Priority order is important - some exposes can match multiple types
  */
-export const DEVICE_TYPE_MAPPINGS: Record<string, string> = {
+const DEVICE_TYPE_MAPPINGS: Record<string, string> = {
   // Simple switches and outlets
   switch: GOOGLE_DEVICE_TYPES.SWITCH,
   outlet: GOOGLE_DEVICE_TYPES.OUTLET,
@@ -69,7 +95,7 @@ export const DEVICE_TYPE_MAPPINGS: Record<string, string> = {
  * Detect device type from exposes
  * Returns the most specific device type based on available exposes
  */
-export function detectDeviceType(exposes: string[]): string {
+const detectDeviceType = (exposes: string[]): string => {
   if (!exposes || exposes.length === 0) {
     return GOOGLE_DEVICE_TYPES.SWITCH; // Default fallback
   }
@@ -115,13 +141,13 @@ export function detectDeviceType(exposes: string[]): string {
   // Map first expose type
   const firstExpose = exposes[0];
   return DEVICE_TYPE_MAPPINGS[firstExpose] || GOOGLE_DEVICE_TYPES.SWITCH;
-}
+};
 
 /**
  * Get device type traits based on exposes
  * Different traits work with different device types
  */
-export function getTraitsForExposes(exposes: string[]): string[] {
+const getTraitsForExposes = (exposes: string[]): string[] => {
   const traits = new Set<string>();
 
   if (!exposes) {
@@ -194,4 +220,149 @@ export function getTraitsForExposes(exposes: string[]): string[] {
   }
 
   return [...traits];
-}
+};
+
+const mergeEndpointOptions = (endpoints: HomedEndpoint[]): EndpointOptions => {
+  const merged: EndpointOptions = {};
+  for (const ep of endpoints) {
+    if (ep.options) {
+      Object.assign(merged, ep.options);
+    }
+  }
+  return merged;
+};
+
+/**
+ * Convert a Homed device to Google Smart Home device format
+ *
+ * @param homedDevice - Homed device data
+ * @param clientId - Unique client/service identifier
+ * @returns Google device ready for SYNC intent
+ */
+export const mapToGoogleDevice = (
+  homedDevice: HomedDevice,
+  clientId: string
+): GoogleDevice => {
+  // Flatten all exposes from all endpoints
+  const allExposes = homedDevice.endpoints
+    .flatMap(ep => ep.exposes)
+    .filter((expose, index, array) => array.indexOf(expose) === index); // Deduplicate
+
+  const deviceType = detectDeviceType(allExposes);
+  const traits = getTraitsForExposes(allExposes);
+
+  // Build device ID from client and device key
+  // Build the device ID from client and device key
+  const googleDeviceId = `${clientId}-${homedDevice.key}`;
+
+  // Build nicknames from alternative names
+  const nicknames: string[] = [];
+  if (homedDevice.description) {
+    nicknames.push(homedDevice.description);
+  }
+
+  // Collect all trait attributes using properly typed collection
+  const attributes: TraitAttributes = {};
+  for (const trait of TRAIT_MAPPERS) {
+    if (traits.includes(trait.trait)) {
+      const traitAttributes = trait.getAttributes(
+        allExposes,
+        mergeEndpointOptions(homedDevice.endpoints)
+      );
+      Object.assign(attributes, traitAttributes);
+    }
+  }
+
+  const googleDevice: GoogleDevice = {
+    id: googleDeviceId,
+    type: deviceType,
+    traits,
+    name: {
+      defaultNames: [homedDevice.name],
+      name: homedDevice.name,
+      nicknames,
+    },
+    willReportState: true,
+    attributes: Object.keys(attributes).length > 0 ? attributes : undefined,
+    deviceInfo: {
+      manufacturer: "Homed",
+      model: homedDevice.type || "device",
+      hwVersion: "1.0",
+      swVersion: "1.0",
+    },
+    customData: {
+      homedKey: homedDevice.key,
+      clientId,
+      endpoints: homedDevice.endpoints.map(ep => ({
+        id: ep.id,
+        exposes: ep.exposes,
+      })),
+    },
+  };
+
+  return googleDevice;
+};
+
+/**
+ * Convert Homed device state to Google state
+ *
+ * @param homedDevice - Homed device (for trait info)
+ * @param deviceState - Current device state
+ * @returns Google state object ready for QUERY intent
+ */
+export const mapToGoogleState = (
+  homedDevice: HomedDevice,
+  deviceState: DeviceState
+): GoogleDeviceState => {
+  const allExposes = homedDevice.endpoints
+    .flatMap(endpoint => endpoint.exposes)
+    .filter((expose, index, array) => array.indexOf(expose) === index);
+
+  const traits = getTraitsForExposes(allExposes);
+  const state: Record<string, unknown> = {
+    online: homedDevice.available,
+    status: "SUCCESS",
+  };
+
+  // Get state for each supported trait - use properly typed TraitState union
+  for (const trait of TRAIT_MAPPERS) {
+    if (traits.includes(trait.trait)) {
+      const traitState = trait.getState(deviceState);
+      if (traitState) {
+        Object.assign(state, traitState);
+      }
+    }
+  }
+
+  return state;
+};
+
+/**
+ * Convert Google command to Homed topic/message
+ *
+ * @param homedDevice - Homed device (for routing)
+ * @param googleCommand - Google command to execute
+ * @returns Command with topic and message, or null if not supported
+ */
+export const mapToHomedCommand = (
+  homedDevice: HomedDevice,
+  googleCommand: GoogleCommand
+): HomedCommand | undefined => {
+  const allExposes = homedDevice.endpoints
+    .flatMap(ep => ep.exposes)
+    .filter((expose, index, array) => array.indexOf(expose) === index);
+
+  const traits = getTraitsForExposes(allExposes);
+
+  // Find matching trait mapper
+  for (const trait of TRAIT_MAPPERS) {
+    if (traits.includes(trait.trait)) {
+      const command = trait.mapCommand(homedDevice.key, googleCommand);
+      if (command) {
+        return command;
+      }
+    }
+  }
+
+  return;
+};

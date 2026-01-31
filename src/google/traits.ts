@@ -3,46 +3,45 @@
  */
 
 import type {
-  BrightnessAttributes,
-  BrightnessParams as BrightnessParameters,
-  BrightnessState,
-  ColorSettingAttributes,
-  ColorSettingParams as ColorSettingParameters,
-  ColorSettingState,
-  ColorValue,
-  GoogleCommand,
-  OnOffAttributes,
-  OnOffParams as OnOffParameters,
-  OnOffState,
-  OpenCloseAttributes,
-  OpenCloseParams as OpenCloseParameters,
-  OpenCloseState,
-  SensorStateAttributes,
-  SensorStateFlat,
-  TemperatureModeParams as TemperatureModeParameters,
-  TemperatureSetpointParams as TemperatureSetpointParameters,
-  TemperatureSettingAttributes,
-  TemperatureSettingState,
-  ThermostatMode,
-  TraitAttributes,
-} from "../../types/googleSmarthome.ts";
+  CommandMessage,
+  DeviceState,
+  EndpointOptions,
+} from "../homed/types.ts";
 import {
+  type BrightnessParameters,
+  type ColorSettingParameters,
+  type GoogleCommand,
+  type OnOffParameters,
+  type OpenCloseParameters,
+  type TemperatureModeParameters,
+  type TemperatureSetpointParameters,
   isBrightnessParameters,
   isColorSettingParameters,
   isOnOffParameters,
   isOpenCloseParameters,
+  isTemperatureModeParameters,
+  isTemperatureSetpointParameters,
+} from "./schema.ts";
+import {
+  type BrightnessAttributes,
+  type BrightnessState,
+  type ColorSettingAttributes,
+  type ColorSettingState,
+  type ColorValue,
+  type OnOffAttributes,
+  type OnOffState,
+  type OpenCloseAttributes,
+  type OpenCloseState,
+  type SensorStateAttributes,
+  type SensorStateFlat,
+  type TemperatureSettingAttributes,
+  type TemperatureSettingState,
+  type ThermostatMode,
   isSpectrumHsvColor,
   isSpectrumRgbColor,
   isTemperatureKColor,
-  isTemperatureModeParameters,
-  isTemperatureSetpointParameters,
   isThermostatMode,
-} from "../../types/googleSmarthome.ts";
-import type {
-  CommandMessage,
-  DeviceState,
-  EndpointOptions,
-} from "../../types/homed.ts";
+} from "./types.ts";
 
 /**
  * Generic trait mapper interface with type parameters for better type inference
@@ -79,40 +78,6 @@ export interface GenericTraitMapper<
   /**
    * Convert Google command to Homed topic/message
    * Command params must match the generic TParams type
-   */
-  mapCommand(
-    deviceId: string,
-    command: GoogleCommand
-  ): { topic: string; message: CommandMessage } | null;
-}
-
-/**
- * Union type for all trait mappers - used for backwards compatibility
- * and flexible handling of different trait types
- */
-export interface TraitMapper {
-  /**
-   * Trait identifier (e.g., 'action.devices.traits.OnOff')
-   */
-  readonly trait: string;
-
-  /**
-   * Check if device/endpoint supports this trait
-   */
-  supports(exposes: string[], options?: EndpointOptions): boolean;
-
-  /**
-   * Get trait attributes for SYNC intent
-   */
-  getAttributes(exposes: string[], options?: EndpointOptions): TraitAttributes;
-
-  /**
-   * Get current state for this trait from device data
-   */
-  getState(deviceData: DeviceState): Record<string, unknown> | null;
-
-  /**
-   * Convert Google command to Homed topic/message
    */
   mapCommand(
     deviceId: string,
@@ -601,9 +566,21 @@ export const SensorStateTrait: GenericTraitMapper<
 };
 
 /**
+ * Google Smart Home trait names
+ */
+export const GOOGLE_TRAITS = {
+  ON_OFF: "action.devices.traits.OnOff",
+  BRIGHTNESS: "action.devices.traits.Brightness",
+  COLOR_SETTING: "action.devices.traits.ColorSetting",
+  OPEN_CLOSE: "action.devices.traits.OpenClose",
+  TEMPERATURE_SETTING: "action.devices.traits.TemperatureSetting",
+  SENSOR_STATE: "action.devices.traits.SensorState",
+} as const;
+
+/**
  * All available trait mappers
  */
-export const TRAIT_MAPPERS: TraitMapper[] = [
+export const TRAIT_MAPPERS = [
   OnOffTrait,
   BrightnessTrait,
   ColorSettingTrait,

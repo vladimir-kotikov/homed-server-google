@@ -1,9 +1,10 @@
 import { EventEmitter } from "node:events";
 import { Socket } from "node:net";
 import { beforeEach, describe, expect, it } from "vitest";
-import type { ServerMessage } from "../../../src/schemas/homed.schema.ts";
-import { ClientConnection } from "../../../src/tcp/client.ts";
-import { readPacket, unescapePacket } from "../../../src/tcp/protocol.ts";
+import type { User } from "../../../src/db/repository.ts";
+import { ClientConnection } from "../../../src/homed/client.ts";
+import { readPacket, unescapePacket } from "../../../src/homed/protocol.ts";
+import type { ServerMessage } from "../../../src/homed/schema.ts";
 
 // Mock Socket
 class MockSocket extends EventEmitter {
@@ -22,12 +23,12 @@ class MockSocket extends EventEmitter {
 
 describe("ClientConnection", () => {
   let mockSocket: MockSocket;
-  let client: ClientConnection;
+  let client: ClientConnection<User>;
 
   beforeEach(() => {
     mockSocket = new MockSocket();
 
-    client = new ClientConnection(mockSocket as any as Socket);
+    client = new ClientConnection<User>(mockSocket as any as Socket);
   });
 
   describe("handshake", () => {
@@ -243,11 +244,17 @@ describe("ClientConnection", () => {
 
   describe("authorization and timeout", () => {
     it("should call authorize to set authorized state", () => {
-      expect((client as any).clientAuthorized).toBe(false);
+      expect(client.user).toBeUndefined();
 
-      client.authorize();
+      const user = {
+        id: "user1",
+        username: "Test User",
+        clientToken: "token123",
+        createdAt: new Date(),
+      } as User;
 
-      expect((client as any).clientAuthorized).toBe(true);
+      client.authorize(user);
+      expect((client as any).user).toBe(user);
     });
 
     it("should not process messages before handshake", () => {

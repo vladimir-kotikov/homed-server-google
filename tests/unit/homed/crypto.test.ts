@@ -1,4 +1,4 @@
-import { AES128CBC } from "../../../src/tcp/crypto.ts";
+import { AES128CBC } from "../../../src/homed/crypto.ts";
 
 describe("AES128CBC", () => {
   describe("constructor", () => {

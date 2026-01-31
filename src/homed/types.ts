@@ -261,34 +261,8 @@ export type DeviceState =
   | TriggerSensorState;
 
 /**
- * Combined device status and state message
- * Can include both status and state properties
- */
-export type DeviceStatusMessage = StatusMessage & Partial<DeviceState>;
-
-/**
- * Device state message
- * Reports current device state
- * Topics: device/{deviceId}/*, fd/{serviceId}/{deviceId}/*
- */
-export type DeviceStateMessage = DeviceState;
-
-/**
  * Device command message
  * Commands to control devices
  * Topics: td/{deviceId}/*
  */
 export type CommandMessage = Partial<DeviceState>;
-
-/**
- * Union of all possible protocol message payloads
- * This represents the `message` field in ProtocolMessage
- */
-export type ProtocolMessageData =
-  | DeviceStatusMessage
-  | DeviceStateMessage
-  | CommandMessage;
-
-/**
- * Type guards for protocol messages
- */

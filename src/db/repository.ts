@@ -81,7 +81,8 @@ export class UserRepository {
     }
   };
 
-  private issueToken = (
+  // This can be made private and is public only for testing purposes
+  issueToken = (
     typ: "code" | "access" | "refresh",
     expiresIn: string,
     userId: string,
@@ -144,4 +145,7 @@ export class UserRepository {
 
   getByToken = (token: string) =>
     this.client.query.users.findFirst({ where: eq(users.clientToken, token) });
+
+  delete = async (id: string) =>
+    this.client.delete(users).where(eq(users.id, id)).run();
 }

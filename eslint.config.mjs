@@ -7,14 +7,13 @@ import tseslint from "typescript-eslint";
 export default defineConfig(
   eslint.configs.recommended,
   tseslint.configs.recommended,
-  unicorn.configs.recommended,
   prettierCompat,
   [
     {
+      plugins: { unicorn },
       rules: {
         "@typescript-eslint/no-explicit-any": "error",
-        "unicorn/prefer-event-target": "off",
-        "unicorn/no-nested-ternary": "off",
+        "unicorn/no-null": "error",
         "unicorn/filename-case": [
           "warn",
           {

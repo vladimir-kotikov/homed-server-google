@@ -8,13 +8,14 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import passport from "passport";
 import appConfig from "../config.ts";
 import type { User, UserRepository } from "../db/repository.ts";
+import { FulfillmentController } from "../google/fulfillment.ts";
 import {
   clientPasswordOauth20Strategy,
   googleOauth20Strategy,
   jwtStrategy,
-} from "./authStrategies.ts";
+  requireLoggedIn,
+} from "./middleware.ts";
 import { OAuthController } from "./oauth.ts";
-import { SmartHomeController } from "./smarthome.ts";
 import userRoutes from "./user.ts";
 
 export class WebApp {
@@ -22,15 +23,15 @@ export class WebApp {
 
   private userRepository: UserRepository;
   private oauthController: OAuthController;
-  private smarthomeController: SmartHomeController;
+  private fulfillmentController: FulfillmentController;
 
   constructor(
     userRepository: UserRepository,
-    smartHomeController: SmartHomeController,
+    fulfillmentController: FulfillmentController,
     oauthController: OAuthController
   ) {
     this.userRepository = userRepository;
-    this.smarthomeController = smartHomeController;
+    this.fulfillmentController = fulfillmentController;
     this.oauthController = oauthController;
 
     // eslint-disable-next-line unicorn/no-null
@@ -103,13 +104,19 @@ export class WebApp {
       .use(session)
       .use(authentication)
       .use(passport.session())
-      .get("/health", (_request, response) => response.json({ status: "ok" }))
       .use("/", passport.authenticate("session"), userRoutes)
-      .use("/oauth", this.oauthController.routes)
-      .use(
+      .get("/health", (_request, response) => response.json({ status: "ok" }))
+      .post(
+        "/fulfillment",
         passport.authenticate("jwt", { session: false }),
-        this.smarthomeController.routes
-      );
+        requireLoggedIn,
+        (request, response) =>
+          this.fulfillmentController
+            .handleFulfillment(request.user!, request.body)
+            .then(response.json)
+            .catch(error => response.status(500).json({ error: error.message }))
+      )
+      .use("/oauth", this.oauthController.routes);
   }
 
   handleRequest = (request: IncomingMessage, response: ServerResponse) =>
