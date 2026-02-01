@@ -8,3 +8,10 @@ export const users = sqliteTable("user", {
     .notNull()
     .$defaultFn(() => new Date()),
 });
+
+// Sessions table, created by session store
+export const sessions = sqliteTable("sessions", {
+  sid: text("sid").primaryKey(),
+  sess: text("sess").notNull(),
+  expire: text("expire").notNull(),
+});
