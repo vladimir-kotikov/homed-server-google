@@ -1,3 +1,4 @@
+import Sentry from "@sentry/node";
 import { logger } from "@tinyhttp/logger";
 import SqliteStore from "better-sqlite3-session-store";
 import debug from "debug";
@@ -117,6 +118,8 @@ export class WebApp {
             .catch(error => response.status(500).json({ error: error.message }))
       )
       .use("/oauth", this.oauthController.routes);
+
+    Sentry.setupExpressErrorHandler(this.app);
   }
 
   handleRequest = (request: IncomingMessage, response: ServerResponse) =>

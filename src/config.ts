@@ -20,6 +20,7 @@ const stringEnvironment = (value: string, fallback?: string): string => {
 
 export default {
   env: (process.env.NODE_ENV || "production").toLowerCase(),
+  sentryDsn: stringEnvironment("SENTRY_DSN", ""),
   tcpPort: intEnvironment("TCP_PORT", 8042),
   httpPort: intEnvironment("HTTP_PORT", 8080),
   databaseUrl: stringEnvironment("DATABASE_URL"),

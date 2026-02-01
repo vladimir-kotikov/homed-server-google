@@ -1,3 +1,4 @@
+import Sentry from "@sentry/node";
 import debug from "debug";
 import appConfig from "./config.ts";
 import { HomedServerController } from "./controller.ts";
@@ -8,7 +9,14 @@ import { WebApp } from "./web/app.ts";
 import { OAuthController } from "./web/oauth.ts";
 
 const log = debug("homed:main");
-const { databaseUrl, tcpPort, httpPort } = appConfig;
+const { databaseUrl, tcpPort, httpPort, sentryDsn, env } = appConfig;
+
+Sentry.init({
+  dsn: sentryDsn,
+  environment: env,
+  enableLogs: true,
+  tracesSampleRate: 1.0,
+});
 
 const deviceRepository = new DeviceRepository();
 const usersRepository = UserRepository.open(databaseUrl, appConfig.jwtSecret, {
