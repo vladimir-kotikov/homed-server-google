@@ -12,8 +12,8 @@
   "private": true,
   "scripts": {
     "prestart": "npm run migrations",
-    "start": "node src/index.ts",
-    "dev": "node src/db/seed.ts && node --watch src/index.ts",
+    "start": "node --import ./src/instrument.ts src/index.ts",
+    "dev": "npm run migrations && node src/db/seed.ts && node --watch src/index.ts",
     "lint": "eslint src tests && tsc",
     "format": "prettier --write src tests; eslint src tests --fix",
     "test": "vitest run --globals tests/unit",
