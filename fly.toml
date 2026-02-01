@@ -3,7 +3,7 @@ primary_region = 'cdg'
 
 [env]
   DATABASE_URL = '/data/user.db'
-  DEBUG = '*,-router'
+  DEBUG = 'homed:*'
   DEBUG_HIDE_DATE = "1"
   NODE_ENV = 'production'
 
