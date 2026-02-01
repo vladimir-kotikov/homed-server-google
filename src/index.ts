@@ -1,4 +1,4 @@
-import Sentry from "@sentry/node";
+import * as Sentry from "@sentry/node";
 import debug from "debug";
 import appConfig from "./config.ts";
 import { HomedServerController } from "./controller.ts";

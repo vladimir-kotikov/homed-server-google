@@ -1,4 +1,4 @@
-import Sentry from "@sentry/node";
+import * as Sentry from "@sentry/node";
 import { logger } from "@tinyhttp/logger";
 import SqliteStore from "better-sqlite3-session-store";
 import debug from "debug";
