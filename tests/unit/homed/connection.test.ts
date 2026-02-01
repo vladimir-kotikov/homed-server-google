@@ -246,6 +246,13 @@ describe("ClientConnection", () => {
     it("should call authorize to set authorized state", () => {
       expect(client.user).toBeUndefined();
 
+      // Complete handshake first to initialize cipher
+      const handshake = Buffer.allocUnsafe(12);
+      handshake.writeUInt32BE(0xff_ff_ff_fb, 0);
+      handshake.writeUInt32BE(2, 4);
+      handshake.writeUInt32BE(12_345, 8);
+      mockSocket.emit("data", handshake);
+
       const user = {
         id: "user1",
         username: "Test User",
