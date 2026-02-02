@@ -13,6 +13,10 @@ export default defineConfig(
       plugins: { unicorn },
       rules: {
         "@typescript-eslint/no-explicit-any": "error",
+        "@typescript-eslint/no-unused-vars": [
+          "error",
+          { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
+        ],
         "unicorn/no-null": "error",
         "unicorn/filename-case": [
           "warn",

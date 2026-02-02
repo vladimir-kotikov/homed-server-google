@@ -151,6 +151,7 @@ export class HomedServerController {
     message: ClientStatusMessage
   ) => {
     assert(client.user, "Client must be authorized before updating status");
+    log(`Client status update from ${client.uniqueId}`, message.devices);
 
     // TODO: This method only concerned with zigbee devices, as others are not
     // yet supported in the Homed server. Once other device types are supported,
@@ -205,6 +206,8 @@ export class HomedServerController {
     deviceId: string,
     message: DeviceExposesMessage
   ) => {
+    log(`Device exposes update from ${client.uniqueId}`, message);
+
     if (!client.uniqueId || !client.user) return;
     const device = this.deviceCache.getClientDevice(
       client.user.id,

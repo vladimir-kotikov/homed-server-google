@@ -15,15 +15,24 @@ primary_region = 'cdg'
   auto_extend_size_increment = '1GB'
   auto_extend_size_limit = '5GB'
 
-[http_service]
+[[services]]
+  protocol = 'tcp'
   internal_port = 8080
-  force_https = true
 
-  [[http_service.checks]]
+  [[services.ports]]
+    port = 80
+    handlers = ['http']
+
+  [[services.ports]]
+    port = 443
+    handlers = ['http']
+
+  [[services.http_checks]]
     interval = '30s'
     timeout = '5s'
     grace_period = '5s'
     path = '/health'
+
 
 [[services]]
   protocol = 'tcp'
@@ -31,6 +40,12 @@ primary_region = 'cdg'
 
   [[services.ports]]
     port = 8042
+    internal_port = 8042
+
+  [[services.tcp_checks]]
+    interval = '30s'
+    timeout = '5s'
+    grace_period = '5s'
 
 [[vm]]
   size = 'shared-cpu-1x'

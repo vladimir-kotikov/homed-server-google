@@ -18,6 +18,7 @@ import {
   type ServerMessage,
 } from "./schema.ts";
 
+const log = debug("homed:client");
 const logError = debug("homed:client:error");
 
 export type ClientId = string & { readonly __uniqueId: unique symbol };
@@ -150,26 +151,44 @@ export class ClientConnection<U> extends EventEmitter<{
         safeParse(message, ClientStatusMessageSchema)
           .then(data => this.emit("status", topic, data))
           .catch(error =>
-            logError("Invalid client status message received:", error)
+            logError(
+              "Invalid client status message received:",
+              error,
+              JSON.stringify(message, undefined, 0)
+            )
           )
       )
       .with(P.string.startsWith("expose/"), () =>
         safeParse(message, DeviceExposesMessageSchema)
           .then(data => this.emit("expose", topic, data))
-          .catch(error => logError("Invalid expose message received:", error))
+          .catch(error =>
+            logError(
+              "Invalid expose message received:",
+              error,
+              JSON.stringify(message, undefined, 0)
+            )
+          )
       )
       .with(P.string.startsWith("device/"), () =>
         safeParse(message, DeviceStatusMessageSchema)
           .then(data => this.emit("device", topic, data))
           .catch(error =>
-            logError("Invalid device status message received:", error)
+            logError(
+              "Invalid device status message received:",
+              error,
+              JSON.stringify(message, undefined, 0)
+            )
           )
       )
       .with(P.string.startsWith("fd/"), () => {
         safeParse(message, DeviceStateMessageSchema)
           .then(data => this.emit("fd", topic, data))
           .catch(error =>
-            logError("Invalid device state message received:", error)
+            logError(
+              "Invalid device state message received:",
+              error,
+              JSON.stringify(message, undefined, 0)
+            )
           );
       })
       .otherwise(() => logError("Unknown message topic received:", data.topic));
@@ -188,6 +207,7 @@ export class ClientConnection<U> extends EventEmitter<{
       this.socket.write(
         Buffer.concat([Buffer.from([0x42]), packet, Buffer.from([0x43])])
       );
+      log(`Sent message to ${this.uniqueId ?? "unknown client"}:`, message);
     } catch (error) {
       this.emit("error", new Error(`Failed to send message: ${error}`));
     }
