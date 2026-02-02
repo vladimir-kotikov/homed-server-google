@@ -13,8 +13,9 @@ import { OAuthController } from "../../src/web/oauth.ts";
 const JWT_SECRET = "test-oauth-secret";
 const CLIENT_ID = "dev-oauth-client-id";
 const CLIENT_SECRET = "dev-oauth-client-secret";
-const REDIRECT_URI =
-  "https://oauth-redirect.googleusercontent.com/r/project-id";
+const PROJECT_ID = "project-id";
+const REDIRECT_URI = `https://oauth-redirect.googleusercontent.com/r/${PROJECT_ID}`;
+const SANDBOX_REDIRECT_URI = `https://oauth-redirect-sandbox.googleusercontent.com/r/${PROJECT_ID}`;
 
 const EXCHANGE_CODE_PAYLOAD = {
   client_id: CLIENT_ID,
@@ -99,7 +100,7 @@ describe("OAuth Integration Tests", () => {
     const oauthController = new OAuthController(
       userRepository,
       CLIENT_ID,
-      REDIRECT_URI
+      PROJECT_ID
     );
 
     // Create mock SmartHomeController that just returns a router (not used in OAuth tests)
@@ -114,6 +115,86 @@ describe("OAuth Integration Tests", () => {
       mockSmartHomeController as any,
       oauthController
     );
+  });
+
+  describe("Authorization endpoint - client validation", () => {
+    it("should accept both production and sandbox redirect URIs for the same project", () => {
+      const controller = new OAuthController(
+        userRepository,
+        CLIENT_ID,
+        PROJECT_ID
+      );
+
+      // Both production and sandbox should be valid
+      const productionValid = (controller as any).isValidClient(
+        CLIENT_ID,
+        REDIRECT_URI
+      );
+      const sandboxValid = (controller as any).isValidClient(
+        CLIENT_ID,
+        SANDBOX_REDIRECT_URI
+      );
+
+      expect(productionValid).toBe(true);
+      expect(sandboxValid).toBe(true);
+    });
+
+    it("should reject redirect URI for different project ID", () => {
+      const controller = new OAuthController(
+        userRepository,
+        CLIENT_ID,
+        PROJECT_ID
+      );
+
+      const isValid = (controller as any).isValidClient(
+        CLIENT_ID,
+        "https://oauth-redirect.googleusercontent.com/r/different-project"
+      );
+
+      expect(isValid).toBe(false);
+    });
+
+    it("should reject redirect URI with wrong domain", () => {
+      const controller = new OAuthController(
+        userRepository,
+        CLIENT_ID,
+        PROJECT_ID
+      );
+
+      const isValid = (controller as any).isValidClient(
+        CLIENT_ID,
+        "https://malicious-site.com/r/project-id"
+      );
+
+      expect(isValid).toBe(false);
+    });
+
+    it("should reject client with wrong client_id regardless of redirect_uri", () => {
+      const controller = new OAuthController(
+        userRepository,
+        CLIENT_ID,
+        PROJECT_ID
+      );
+
+      const isValid = (controller as any).isValidClient(
+        "wrong-client-id",
+        REDIRECT_URI
+      );
+
+      expect(isValid).toBe(false);
+    });
+
+    it("should accept valid client when redirect_uri is not provided", () => {
+      const controller = new OAuthController(
+        userRepository,
+        CLIENT_ID,
+        PROJECT_ID
+      );
+
+      const isValid = (controller as any).isValidClient(CLIENT_ID);
+
+      expect(isValid).toBe(true);
+    });
   });
 
   describe("Authorization code exchange", () => {

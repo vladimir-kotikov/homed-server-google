@@ -18,7 +18,6 @@ declare global {
 
 interface Client {
   id: string;
-  redirectUri: string;
 }
 
 interface User {
@@ -34,18 +33,22 @@ type TokenExchangeCallback = (
 
 export class OAuthController {
   private userRepository: UserRepository;
-  private configuredClientId: string;
-  private configuredRedirectUri: string;
+  private googleHomeClientId: string;
   private oauth2Server: oauth2orize.OAuth2Server<Client, User>;
+  private allowedRedirectUris: Set<string>;
 
   constructor(
     userRepository: UserRepository,
-    configuredClientId: string,
-    configuredRedirectUri: string
+    googleHomeClientId: string,
+    googleHomeProjectId: string
   ) {
     this.userRepository = userRepository;
-    this.configuredClientId = configuredClientId;
-    this.configuredRedirectUri = configuredRedirectUri;
+    this.googleHomeClientId = googleHomeClientId;
+
+    this.allowedRedirectUris = new Set([
+      `https://oauth-redirect.googleusercontent.com/r/${googleHomeProjectId}`,
+      `https://oauth-redirect-sandbox.googleusercontent.com/r/${googleHomeProjectId}`,
+    ]);
 
     this.oauth2Server = oauth2orize
       .createServer<Client, User>()
@@ -55,18 +58,13 @@ export class OAuthController {
 
     this.oauth2Server.serializeClient((client, done) => done(null, client.id));
     this.oauth2Server.deserializeClient((id, done) =>
-      done(
-        null,
-        id === this.configuredClientId
-          ? { id, redirectUri: this.configuredRedirectUri }
-          : false
-      )
+      done(null, this.isValidClient(id) && { id })
     );
   }
 
   private isValidClient = (clientId: string, redirectUri?: string): boolean =>
-    clientId === this.configuredClientId &&
-    (!redirectUri || this.configuredRedirectUri === redirectUri);
+    clientId === this.googleHomeClientId &&
+    (!redirectUri || this.allowedRedirectUris.has(redirectUri));
 
   private grantCode = (
     client: Client,
@@ -120,7 +118,7 @@ export class OAuthController {
     // TODO: valid scopes are unknown as google docs do not specify them
     // scope === GOOGLE_HOME_ALLOWES_SCOPE
     this.isValidClient(clientId, redirectUri)
-      ? done(null, { id: clientId, redirectUri }, redirectUri)
+      ? done(null, { id: clientId }, redirectUri)
       : done(null, false);
 
   private userinfoHandler = async (request: Request, response: Response) => {

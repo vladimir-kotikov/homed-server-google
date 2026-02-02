@@ -18,7 +18,7 @@ const usersRepository = UserRepository.open(databaseUrl, appConfig.jwtSecret, {
 const oauthController = new OAuthController(
   usersRepository,
   appConfig.googleHomeOAuthClientId,
-  appConfig.googleHomeOAuthRedirectUri
+  appConfig.googleHomeProjectId
 );
 const fulfillmentController = new FulfillmentController(
   usersRepository,
