@@ -10,10 +10,13 @@ import crypto from "node:crypto";
 
 const log = debug("homed:user");
 
+export type ClientToken = string & { readonly __clientToken: unique symbol };
+export type UserId = string & { readonly __userId: unique symbol };
+
 export interface User {
-  id: string;
+  id: UserId;
   username: string;
-  clientToken: string;
+  clientToken: ClientToken;
   createdAt: Date;
 }
 
@@ -53,7 +56,9 @@ export class UserRepository {
       return;
     }
 
-    return this.client.query.users.findFirst({ where: eq(users.id, sub) });
+    return this.client.query.users.findFirst({
+      where: eq(users.id, sub as UserId),
+    });
   };
 
   private verifyToken = async (
@@ -128,24 +133,30 @@ export class UserRepository {
   verifyAccessTokenPayload = (payload: jwt.JwtPayload) =>
     this.verifyTokenPayload(payload, "access");
 
-  getOrCreate = (id: string, username: string): Promise<User> =>
-    this.client.query.users.findFirst({ where: eq(users.id, id) }).then(
-      user =>
-        user ??
-        this.client
-          .insert(users)
-          .values({
-            id,
-            username,
-            clientToken: crypto.randomBytes(32).toString("hex"),
-          })
-          .returning()
-          .then(result => result[0])
-    );
+  getOrCreate = (id: UserId, username: string): Promise<User> =>
+    this.client.query.users
+      .findFirst({ where: eq(users.id, id as UserId) })
+      .then(
+        user =>
+          user ??
+          this.client
+            .insert(users)
+            .values({
+              id,
+              username,
+              clientToken: crypto
+                .randomBytes(32)
+                .toString("hex") as ClientToken,
+            })
+            .returning()
+            .then(result => result[0])
+      );
 
-  getByToken = (token: string) =>
-    this.client.query.users.findFirst({ where: eq(users.clientToken, token) });
+  getByToken = (token: ClientToken) =>
+    this.client.query.users.findFirst({
+      where: eq(users.clientToken, token),
+    });
 
-  delete = async (id: string) =>
+  delete = async (id: UserId) =>
     this.client.delete(users).where(eq(users.id, id)).run();
 }

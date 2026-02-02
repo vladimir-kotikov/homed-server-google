@@ -256,7 +256,6 @@ describe("ClientConnection", () => {
       const user = {
         id: "user1",
         username: "Test User",
-        clientToken: "token123",
         createdAt: new Date(),
       } as User;
 

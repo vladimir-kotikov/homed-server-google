@@ -1,7 +1,10 @@
-import type { User } from "./db/repository.ts";
-import type { ClientConnection } from "./homed/client.ts";
+import type { UserId } from "./db/repository.ts";
+import type { ClientId } from "./homed/client.ts";
 import type { EndpointOptions } from "./homed/schema.ts";
 import type { DeviceState } from "./homed/types.ts";
+import { setNested } from "./utility.ts";
+
+export type DeviceId = string & { readonly __deviceId: unique symbol };
 
 /**
  * Homed device structure as received from TCP clients
@@ -13,6 +16,10 @@ export interface HomedDevice {
   description?: string; // Optional description
   available: boolean; // Whether device is online
   endpoints: HomedEndpoint[];
+  manufacturer?: string;
+  model?: string;
+  version?: string;
+  firmware?: string;
 }
 
 export interface HomedEndpoint {
@@ -24,36 +31,40 @@ export interface HomedEndpoint {
 }
 
 export class DeviceRepository {
-  devices: Map<string, HomedDevice[]>;
-  deviceState: Map<[string, string], DeviceState>;
-
-  constructor() {
-    this.devices = new Map();
-    this.deviceState = new Map();
-  }
+  private devices: Record<UserId, Record<ClientId, HomedDevice[]>> = {};
+  private deviceState: Record<
+    UserId,
+    Record<ClientId, Record<DeviceId, DeviceState>>
+  > = {};
 
   getClientDevice = (
-    clientId: string,
-    deviceId: string
+    userId: UserId,
+    clientId: ClientId,
+    deviceId: DeviceId
   ): HomedDevice | undefined =>
-    this.devices.get(clientId)?.find(d => d.key === deviceId);
+    this.devices[userId]?.[clientId]?.find(d => d.key === deviceId);
 
-  getClientDevices = (clientId: string): HomedDevice[] =>
-    this.devices.get(clientId) ?? [];
+  getDevices = (userId: UserId, clientId?: ClientId): HomedDevice[] =>
+    clientId
+      ? (this.devices[userId]?.[clientId] ?? [])
+      : Object.values(this.devices[userId] ?? {}).flat();
 
-  removeClientDevices = (clientId: string): void => {
-    this.deviceState.keys().forEach(key => {
-      if (key[0] === clientId) {
-        this.deviceState.delete(key);
-      }
-    });
+  removeDevices = (userId: UserId, clientId?: ClientId): void => {
+    if (clientId) {
+      delete this.devices[userId]?.[clientId];
+      delete this.deviceState[userId]?.[clientId];
+    } else {
+      delete this.devices[userId];
+      delete this.deviceState[userId];
+    }
   };
 
   syncClientDevices = (
-    clientId: string,
+    userId: UserId,
+    clientId: ClientId,
     newDevices: HomedDevice[]
   ): [HomedDevice[], HomedDevice[]] => {
-    const existingDevices = this.devices.get(clientId) ?? [];
+    const existingDevices = this.devices[userId]?.[clientId] ?? [];
     const addedDevices = newDevices.filter(
       nd => !existingDevices.some(ed => ed.key === nd.key)
     );
@@ -61,33 +72,53 @@ export class DeviceRepository {
       ed => !newDevices.some(nd => nd.key === ed.key)
     );
 
-    this.devices.set(
-      clientId,
-      existingDevices
-        .filter(ed => !removedDevices.includes(ed))
-        .concat(addedDevices)
-    );
+    setNested([userId, clientId], this.devices, [
+      ...existingDevices.filter(ed => !removedDevices.includes(ed)),
+      ...addedDevices,
+    ]);
 
     return [addedDevices, removedDevices];
   };
 
   setDeviceStatus = (
-    client: ClientConnection<User>,
-    deviceId: string,
+    userId: UserId,
+    clientId: ClientId,
+    deviceId: DeviceId,
     online: boolean
   ): void => {
-    if (client.uniqueId) {
-      const state =
-        this.deviceState.get([client.uniqueId, deviceId]) ??
-        ({} satisfies DeviceState);
+    const state =
+      this.deviceState[userId]?.[clientId]?.[deviceId] ??
+      ({} satisfies DeviceState);
 
-      state.status = online ? "online" : "offline";
-      this.deviceState.set([client.uniqueId, deviceId], state);
-    }
+    state.status = online ? "online" : "offline";
+    setNested([userId, clientId, deviceId], this.deviceState, state);
+  };
+
+  setDeviceState = (
+    userId: UserId,
+    clientId: ClientId,
+    deviceId: DeviceId,
+    newState: Partial<DeviceState>
+  ): void => {
+    const state =
+      this.deviceState[userId]?.[clientId]?.[deviceId] ??
+      ({} satisfies DeviceState);
+
+    Object.assign(state, newState);
+    setNested([userId, clientId, deviceId], this.deviceState, state);
   };
 
   getDeviceState = (
-    clientId: string,
-    deviceId: string
-  ): DeviceState | undefined => this.deviceState.get([clientId, deviceId]);
+    userId: UserId,
+    deviceId: DeviceId,
+    clientId?: ClientId
+  ): DeviceState | undefined => {
+    if (clientId) {
+      return this.deviceState[userId]?.[clientId]?.[deviceId];
+    }
+
+    return Object.values(this.deviceState[userId] ?? {}).find(
+      state => state[deviceId] !== undefined
+    )?.[deviceId];
+  };
 }

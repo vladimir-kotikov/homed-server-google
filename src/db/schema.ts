@@ -1,9 +1,10 @@
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import type { ClientToken, UserId } from "./repository.ts";
 
 export const users = sqliteTable("user", {
-  id: text("id").primaryKey(),
+  id: text("id").primaryKey().$type<UserId>(),
   username: text("username").notNull(),
-  clientToken: text("client_token").notNull().unique(),
+  clientToken: text("client_token").notNull().unique().$type<ClientToken>(),
   createdAt: integer("created_at", { mode: "timestamp" })
     .notNull()
     .$defaultFn(() => new Date()),

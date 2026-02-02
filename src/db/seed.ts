@@ -1,5 +1,6 @@
 import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
+import type { ClientToken, User, UserId } from "./repository.ts";
 import * as schema from "./schema.ts";
 import { users } from "./schema.ts";
 
@@ -22,10 +23,10 @@ const database = new Database(databaseUrl);
 const client = drizzle(database, { schema });
 
 // Insert test user from homed.conf
-const testUser = {
-  id: "test-client",
+const testUser: User = {
+  id: "test-client" as UserId,
   username: "test-client",
-  clientToken: "token",
+  clientToken: "token" as ClientToken,
   createdAt: new Date(),
 };
 

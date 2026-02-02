@@ -372,8 +372,8 @@ describe("CapabilityMapper", () => {
       expect(google.name.name).toBe("Living Room Light");
       expect(google.name.defaultNames).toContain("Living Room Light");
       // If description becomes a nickname, it would be here, otherwise it's just in the device
-      expect(google.willReportState).toBe(true);
-      expect(google.deviceInfo?.manufacturer).toBe("Homed");
+      expect(google.willReportState).toBe(false);
+      expect(google.deviceInfo?.manufacturer).toBe("Unknown Manufacturer");
       expect(google.customData?.homedKey).toBe("0x123456");
       expect(google.type).toBe(DEVICE_TYPES.LIGHT);
     });

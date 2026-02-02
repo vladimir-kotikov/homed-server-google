@@ -1,7 +1,7 @@
 import debug from "debug";
 import { match, P } from "ts-pattern";
 import type { User, UserRepository } from "../db/repository.ts";
-import type { DeviceRepository } from "../device.ts";
+import type { DeviceId, DeviceRepository } from "../device.ts";
 import { safeParse } from "../utility.ts";
 import {
   mapToGoogleDevice,
@@ -64,7 +64,7 @@ export class FulfillmentController {
   private handleSync = async (user: User): Promise<SyncResponsePayload> => ({
     agentUserId: user.id,
     devices: this.deviceRepository
-      .getClientDevices(user.clientToken)
+      .getDevices(user.id)
       .map(device => mapToGoogleDevice(device, user.clientToken)),
   });
 
@@ -75,18 +75,21 @@ export class FulfillmentController {
     const requestedDeviceIds = new Set(request.devices.map(d => d.id));
 
     const mappedStates = this.deviceRepository
-      .getClientDevices(user.clientToken)
+      .getDevices(user.id)
       .filter(device => requestedDeviceIds.has(device.key))
       .map(
         device =>
           [
             device,
-            this.deviceRepository.getDeviceState(user.clientToken, device.key),
+            this.deviceRepository.getDeviceState(
+              user.id,
+              device.key as DeviceId
+            ),
           ] as const
       )
       .map(
         ([device, state]) =>
-          [device.key, mapToGoogleState(device, state)] as const
+          [device.key, mapToGoogleState(device, state ?? {})] as const
       );
 
     return { devices: Object.fromEntries(mappedStates) };
@@ -99,14 +102,14 @@ export class FulfillmentController {
     const homedCommands = request.commands.flatMap(({ devices, execution }) => {
       const requestedDeviceIds = new Set(devices.map(d => d.id));
       return this.deviceRepository
-        .getClientDevices(user.clientToken)
+        .getDevices(user.id)
         .filter(device => requestedDeviceIds.has(device.key))
         .flatMap(device =>
           execution.map(command => mapToHomedCommand(device, command))
         );
     });
 
-    this.emit("commands", homedCommands);
+    console.log("Homed commands to execute:", homedCommands);
     // FIXME: implement proper command result handling
     return { commands: [] };
   }
@@ -114,6 +117,6 @@ export class FulfillmentController {
   private handleDisconnect = async (user: User) =>
     this.userRepository
       .delete(user.id)
-      .then(() => this.deviceRepository.removeClientDevices(user.clientToken))
+      .then(() => this.deviceRepository.removeDevices(user.id))
       .then(() => ({}));
 }

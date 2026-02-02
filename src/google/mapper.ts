@@ -10,8 +10,8 @@ import type { GoogleCommand } from "./schema.ts";
 import { TRAIT_MAPPERS } from "./traits.ts";
 import type {
   GoogleDevice,
+  GoogleDeviceAttributes,
   GoogleDeviceState,
-  TraitAttributes,
 } from "./types.ts";
 
 /**
@@ -260,7 +260,7 @@ export const mapToGoogleDevice = (
   }
 
   // Collect all trait attributes using properly typed collection
-  const attributes: TraitAttributes = {};
+  const attributes: GoogleDeviceAttributes = {};
   for (const trait of TRAIT_MAPPERS) {
     if (traits.includes(trait.trait)) {
       const traitAttributes = trait.getAttributes(
@@ -280,13 +280,14 @@ export const mapToGoogleDevice = (
       name: homedDevice.name,
       nicknames,
     },
-    willReportState: true,
+    // TODO: Reporting is not supported yet
+    willReportState: false,
     attributes: Object.keys(attributes).length > 0 ? attributes : undefined,
     deviceInfo: {
-      manufacturer: "Homed",
-      model: homedDevice.type || "device",
-      hwVersion: "1.0",
-      swVersion: "1.0",
+      manufacturer: homedDevice.manufacturer ?? "Unknown Manufacturer",
+      model: homedDevice.model ?? "Unknown Model",
+      hwVersion: homedDevice.version ?? "unknown",
+      swVersion: homedDevice.firmware ?? "unknown",
     },
     customData: {
       homedKey: homedDevice.key,
@@ -317,7 +318,7 @@ export const mapToGoogleState = (
     .filter((expose, index, array) => array.indexOf(expose) === index);
 
   const traits = getTraitsForExposes(allExposes);
-  const state: Record<string, unknown> = {
+  const state: GoogleDeviceState = {
     online: homedDevice.available,
     status: "SUCCESS",
   };

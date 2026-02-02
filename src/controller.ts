@@ -2,15 +2,27 @@ import debug from "debug";
 import assert from "node:assert";
 import http from "node:http";
 import net from "node:net";
-import { UserRepository, type User } from "./db/repository.ts";
-import type { DeviceRepository, HomedDevice, HomedEndpoint } from "./device.ts";
-import { ClientConnection } from "./homed/client.ts";
+import {
+  UserRepository,
+  type ClientToken,
+  type User,
+  type UserId,
+} from "./db/repository.ts";
+import type {
+  DeviceId,
+  DeviceRepository,
+  HomedDevice,
+  HomedEndpoint,
+} from "./device.ts";
+import type { HomeGraphClient } from "./google/homeGraph.ts";
+import { ClientConnection, type ClientId } from "./homed/client.ts";
 import type {
   ClientStatusMessage,
   DeviceExposesMessage,
   DeviceStatusMessage,
   EndpointOptions,
 } from "./homed/schema.ts";
+import { setNested } from "./utility.ts";
 import { WebApp } from "./web/app.ts";
 
 const log = debug("homed:controller");
@@ -35,17 +47,21 @@ export class HomedServerController {
   private userDb: UserRepository;
   private httpHandler: WebApp;
   private deviceCache: DeviceRepository;
+  private googleHomeGraph?: HomeGraphClient;
 
-  private clients: Map<string, ClientConnection<User>> = new Map();
+  private clients: Record<UserId, Record<ClientId, ClientConnection<User>>> =
+    {};
 
   constructor(
     userDatabase: UserRepository,
     deviceCache: DeviceRepository,
-    httpHandler: WebApp
+    httpHandler: WebApp,
+    homeGraphClient?: HomeGraphClient
   ) {
     this.userDb = userDatabase;
     this.httpHandler = httpHandler;
     this.deviceCache = deviceCache;
+    this.googleHomeGraph = homeGraphClient;
 
     this.httpServer = http
       .createServer(this.httpHandler.handleRequest)
@@ -97,14 +113,17 @@ export class HomedServerController {
   };
 
   clientDisconnected = (client: ClientConnection<User>) => {
-    if (client.uniqueId) {
-      this.clients.delete(client.uniqueId);
-      this.deviceCache.removeClientDevices(client.uniqueId);
+    if (client.user && client.uniqueId) {
+      delete this.clients[client.user.id]?.[client.uniqueId];
+      this.deviceCache.removeDevices(client.user.id, client.uniqueId);
       log(`Client disconnected: ${client.uniqueId}`);
     }
   };
 
-  clientTokenReceived = (client: ClientConnection<User>, token: string) => {
+  clientTokenReceived = (
+    client: ClientConnection<User>,
+    token: ClientToken
+  ) => {
     const uniqueId = client.uniqueId;
     if (!uniqueId) {
       logError(`Client has no unique ID, cannot authorize`);
@@ -120,7 +139,7 @@ export class HomedServerController {
       }
 
       client.authorize(user);
-      this.clients.set(uniqueId, client);
+      setNested([user.id, uniqueId], this.clients, client);
       log(`Client ${uniqueId} authorized for ${user.username}`);
     });
   };
@@ -146,17 +165,22 @@ export class HomedServerController {
           name && name !== "HOMEd Coordinator" && cloud && !removed
       )
       .map(
-        ({ ieeeAddress, name, description }) =>
+        device =>
           ({
-            key: `zigbee/${ieeeAddress}`,
-            topic: `zigbee/${byName ? name : ieeeAddress}`,
-            name,
-            description,
+            key: `zigbee/${device.ieeeAddress}`,
+            topic: `zigbee/${byName ? device.name : device.ieeeAddress}`,
+            name: device.name,
+            description: device.description,
+            manufacturer: device.manufacturerName,
+            model: device.modelName,
+            firmware: device.firmware,
+            version: device.version,
             available: false,
           }) as HomedDevice
       );
 
     const [added, removed] = this.deviceCache.syncClientDevices(
+      client.user.id,
       client.uniqueId,
       homedDevices
     );
@@ -169,9 +193,9 @@ export class HomedServerController {
     }
 
     if (added.length > 0 || removed.length > 0) {
-      this.googleHomeGraph.updateDevices(
-        client.user,
-        this.deviceCache.getClientDevices(client.uniqueId)
+      this.googleHomeGraph?.updateDevices(
+        client.user.id,
+        this.deviceCache.getDevices(client.user.id, client.uniqueId)
       );
     }
   };
@@ -181,8 +205,12 @@ export class HomedServerController {
     deviceId: string,
     message: DeviceExposesMessage
   ) => {
-    if (!client.uniqueId) return;
-    const device = this.deviceCache.getClientDevice(client.uniqueId, deviceId);
+    if (!client.uniqueId || !client.user) return;
+    const device = this.deviceCache.getClientDevice(
+      client.user.id,
+      client.uniqueId,
+      deviceId as DeviceId
+    );
     if (!device) return;
 
     device.endpoints = Object.entries(message).map(
@@ -214,11 +242,27 @@ export class HomedServerController {
     client: ClientConnection<User>,
     deviceId: string,
     { status }: DeviceStatusMessage
-  ) => this.deviceCache.setDeviceStatus(client, deviceId, status === "online");
+  ) =>
+    client.user &&
+    client.uniqueId &&
+    this.deviceCache.setDeviceStatus(
+      client.user.id,
+      client.uniqueId,
+      deviceId as DeviceId,
+      status === "online"
+    );
 
   deviceDataUpdated = (
     client: ClientConnection<User>,
     deviceId: string,
     data: Record<string, unknown>
-  ) => this.deviceCache.setDeviceData(client, deviceId, data);
+  ) =>
+    client.user &&
+    client.uniqueId &&
+    this.deviceCache.setDeviceState(
+      client.user.id,
+      client.uniqueId,
+      deviceId as DeviceId,
+      data
+    );
 }

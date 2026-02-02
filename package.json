@@ -16,7 +16,7 @@
     "dev": "npm run migrations && node src/db/seed.ts && node --watch src/index.ts",
     "lint": "eslint src tests && tsc",
     "format": "prettier --write src tests; eslint src tests --fix",
-    "test": "vitest run --globals tests/unit",
+    "test": "DEBUG=-* vitest run --globals tests/unit",
     "test:all": "npx npm-run-all --parallel test test:integration",
     "test:integration": "vitest run --no-file-parallelism --globals tests/integration",
     "prepare": "husky || true",

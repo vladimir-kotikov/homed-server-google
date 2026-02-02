@@ -2,6 +2,7 @@ import debug from "debug";
 import { EventEmitter } from "node:events";
 import { Socket } from "node:net";
 import { match, P } from "ts-pattern";
+import type { ClientToken } from "../db/repository.ts";
 import { safeParse } from "../utility.ts";
 import { AES128CBC } from "./crypto.ts";
 import { escapePacket, readPacket, unescapePacket } from "./protocol.ts";
@@ -19,6 +20,8 @@ import {
 
 const logError = debug("homed:client:error");
 
+export type ClientId = string & { readonly __uniqueId: unique symbol };
+
 /**
  * Represents a single TCP client connection. Encapsulates the socket,
  * handles the DH handshake, encryption/decryption, and message parsing.
@@ -27,7 +30,7 @@ const logError = debug("homed:client:error");
 export class ClientConnection<U> extends EventEmitter<{
   error: [Error];
   close: [];
-  token: [string];
+  token: [ClientToken];
   device: [string, DeviceStatusMessage];
   expose: [string, DeviceExposesMessage];
   status: [string, ClientStatusMessage];
@@ -37,7 +40,7 @@ export class ClientConnection<U> extends EventEmitter<{
   private socket: Socket;
   private cipher?: AES128CBC;
   private timeout: NodeJS.Timeout;
-  uniqueId?: string;
+  uniqueId?: ClientId;
   user?: U;
 
   constructor(socket: Socket, timeout: number = 10_000) {

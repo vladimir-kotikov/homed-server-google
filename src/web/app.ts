@@ -8,7 +8,7 @@ import sessionMiddleware from "express-session";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import passport from "passport";
 import appConfig from "../config.ts";
-import type { User, UserRepository } from "../db/repository.ts";
+import type { User, UserId, UserRepository } from "../db/repository.ts";
 import { FulfillmentController } from "../google/fulfillment.ts";
 import {
   clientPasswordOauth20Strategy,
@@ -81,7 +81,7 @@ export class WebApp {
           appConfig.googleSsoClientSecret,
           appConfig.googleSsoRedirectUri,
           ({ id, emails }) =>
-            this.userRepository.getOrCreate(id, emails![0].value)
+            this.userRepository.getOrCreate(id as UserId, emails![0].value)
         )
       )
       .use(
