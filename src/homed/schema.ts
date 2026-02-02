@@ -218,7 +218,7 @@ export const ZigbeeDeviceInfoSchema = z
     lastSeen: z.number().optional(),
     linkQuality: z.number().optional(),
     firmware: z.string().optional(),
-    version: z.string().optional(),
+    version: z.coerce.string().optional(),
   })
   .loose();
 
