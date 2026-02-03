@@ -1,28 +1,34 @@
 import * as Sentry from "@sentry/node";
+import { BetterSqlite3Instrumentation } from "opentelemetry-plugin-better-sqlite3";
 
-const sentry_environment = Object.keys(process.env).filter(key =>
-  key.startsWith("SENTRY_")
-);
-
-if (sentry_environment.length > 0) {
-  console.log(`Sentry environment variables: ${sentry_environment.join(", ")}`);
-}
-
-if (process.env.SENTRY_DSN !== "") {
-  console.log(
-    `Initializing Sentry with DSN: ${process.env.SENTRY_DSN} \
-    environment: ${process.env.NODE_ENV}`
-  );
-  Sentry.init({
-    dsn: process.env.SENTRY_DSN,
-    environment: process.env.NODE_ENV,
-    enableLogs: true,
-    tracesSampleRate: 1.0,
-    integrations: [
-      Sentry.expressIntegration(),
-      Sentry.zodErrorsIntegration(),
-      Sentry.consoleIntegration(),
-      Sentry.httpServerIntegration(),
-    ],
-  });
-}
+Sentry.init({
+  dsn: process.env.SENTRY_DSN,
+  environment: process.env.NODE_ENV,
+  enableLogs: true,
+  tracesSampleRate: 1,
+  integrations: [
+    Sentry.httpIntegration(),
+    Sentry.httpServerIntegration(),
+    Sentry.httpServerSpansIntegration(),
+    Sentry.requestDataIntegration(),
+    Sentry.expressIntegration(),
+    Sentry.processSessionIntegration(),
+    Sentry.consoleIntegration(),
+    Sentry.consoleLoggingIntegration(),
+    Sentry.localVariablesIntegration(),
+    Sentry.zodErrorsIntegration(),
+  ],
+  openTelemetryInstrumentations: [new BetterSqlite3Instrumentation()],
+  enableMetrics: true,
+  includeLocalVariables: true,
+  sendClientReports: true,
+  sendDefaultPii: true,
+  beforeSendTransaction(transaction) {
+    // Ignore health check transactions
+    if (transaction.transaction === "GET /health") {
+      // eslint-disable-next-line unicorn/no-null
+      return null;
+    }
+    return transaction;
+  },
+});
