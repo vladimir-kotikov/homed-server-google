@@ -10,6 +10,10 @@ const intEnvironment = (value: string, fallback?: number): number => {
   return fallback ?? raise(`Missing or invalid environment variable: ${value}`);
 };
 
+const optStringEnvironment = (value: string): string | undefined => {
+  return process.env[value];
+};
+
 const stringEnvironment = (value: string, fallback?: string): string => {
   return (
     process.env[value] ??
@@ -26,6 +30,8 @@ export default {
   databaseUrl: stringEnvironment("DATABASE_URL"),
   jwtSecret: stringEnvironment("JWT_SECRET"),
   cookieSecret: stringEnvironment("COOKIE_SECRET"),
+  sslCert: optStringEnvironment("SSL_CERT"),
+  sslKey: optStringEnvironment("SSL_KEY"),
   googleHomeProjectId: stringEnvironment("GOOGLE_HOME_PROJECT_ID"),
   googleHomeOAuthClientId: stringEnvironment("GOOGLE_HOME_CLIENT_ID"),
   googleHomeOAuthClientSecret: stringEnvironment("GOOGLE_HOME_CLIENT_SECRET"),

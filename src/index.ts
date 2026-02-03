@@ -30,10 +30,17 @@ const httpHandler = new WebApp(
   oauthController
 );
 
+const sslOptions =
+  appConfig.sslCert && appConfig.sslKey
+    ? { cert: appConfig.sslCert, key: appConfig.sslKey }
+    : undefined;
+
 const mainController = new HomedServerController(
   usersRepository,
   deviceRepository,
-  httpHandler
+  httpHandler,
+  undefined,
+  sslOptions
 );
 
 const shutdown = async () => {

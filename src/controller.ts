@@ -1,6 +1,7 @@
 import debug from "debug";
 import assert from "node:assert";
 import http from "node:http";
+import https from "node:https";
 import net from "node:net";
 import {
   UserRepository,
@@ -42,7 +43,7 @@ const logError = debug("homed:controller:error");
  */
 
 export class HomedServerController {
-  private httpServer: http.Server;
+  private httpServer: http.Server | https.Server;
   private tcpServer: net.Server;
   private userDb: UserRepository;
   private httpHandler: WebApp;
@@ -56,17 +57,22 @@ export class HomedServerController {
     userDatabase: UserRepository,
     deviceCache: DeviceRepository,
     httpHandler: WebApp,
-    homeGraphClient?: HomeGraphClient
+    homeGraphClient?: HomeGraphClient,
+    sslOptions?: { cert: string; key: string }
   ) {
     this.userDb = userDatabase;
     this.httpHandler = httpHandler;
     this.deviceCache = deviceCache;
     this.googleHomeGraph = homeGraphClient;
 
-    this.httpServer = http
-      .createServer(this.httpHandler.handleRequest)
-      .on("error", error_ => {
-        logError("HTTP Server error:", error_);
+    this.httpServer = sslOptions
+      ? https.createServer(sslOptions)
+      : http.createServer();
+
+    this.httpServer
+      .on("request", this.httpHandler.handleRequest)
+      .on("error", error => {
+        logError("HTTP(S) Server error:", error);
         this.stop();
       });
 
@@ -83,7 +89,8 @@ export class HomedServerController {
     this.httpServer.listen(httpPort);
     this.tcpServer.listen(tcpPort);
 
-    log(`HTTP Server listening on port http://0.0.0.0:${httpPort}`);
+    const protocol = this.httpServer instanceof https.Server ? "https" : "http";
+    log(`HTTP Server listening on port ${protocol}://0.0.0.0:${httpPort}`);
     log(`TCP Server listening on port tcp://0.0.0.0:${tcpPort}`);
   }
 
