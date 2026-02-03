@@ -21,16 +21,17 @@ primary_region = 'cdg'
 
   [[services.ports]]
     port = 80
-    handlers = []
+    handlers = ['http']
 
   [[services.ports]]
     port = 443
-    handlers = []
+    handlers = ['http', 'tls']
 
-  [[services.tcp_checks]]
+  [[services.http_checks]]
     interval = '30s'
     timeout = '5s'
     grace_period = '5s'
+    path = '/health'
 
 [[services]]
   protocol = 'tcp'
