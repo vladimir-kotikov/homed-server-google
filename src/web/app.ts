@@ -47,10 +47,8 @@ export class WebApp {
     const SessionStore = SqliteStore(sessionMiddleware);
     const session = sessionMiddleware({
       secret: appConfig.cookieSecret,
-      name: "homed-google-server-cookie",
       resave: false,
       saveUninitialized: false,
-      rolling: true,
       store: new SessionStore({
         client: this.userRepository.database,
         expired: {
