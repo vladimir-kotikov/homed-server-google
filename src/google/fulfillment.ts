@@ -40,26 +40,31 @@ export class FulfillmentController {
     user: User,
     requestData: unknown
   ): Promise<SmartHomeResponse> =>
-    safeParse(requestData, SmartHomeRequestSchema).then(
-      async ({ requestId, inputs: [input] }) =>
-        match(input)
-          .with({ intent: "action.devices.SYNC" }, () => this.handleSync(user))
-          .with({ intent: "action.devices.QUERY", payload: P.select() }, p =>
-            this.handleQuery(p, user)
-          )
-          .with({ intent: "action.devices.EXECUTE", payload: P.select() }, p =>
-            this.handleExecute(p, user)
-          )
-          .with({ intent: "action.devices.DISCONNECT" }, () =>
-            this.handleDisconnect(user)
-          )
-          .exhaustive()
-          .then(payload => ({ requestId, payload })),
-      error => {
-        logError("Invalid Smart Home request:", error);
-        throw new RequestError("Invalid Smart Home request");
-      }
-    );
+    safeParse(requestData, SmartHomeRequestSchema)
+      .toPromise()
+      .then(
+        async ({ requestId, inputs: [input] }) =>
+          match(input)
+            .with({ intent: "action.devices.SYNC" }, () =>
+              this.handleSync(user)
+            )
+            .with({ intent: "action.devices.QUERY", payload: P.select() }, p =>
+              this.handleQuery(p, user)
+            )
+            .with(
+              { intent: "action.devices.EXECUTE", payload: P.select() },
+              p => this.handleExecute(p, user)
+            )
+            .with({ intent: "action.devices.DISCONNECT" }, () =>
+              this.handleDisconnect(user)
+            )
+            .exhaustive()
+            .then(payload => ({ requestId, payload })),
+        error => {
+          logError("Invalid Smart Home request:", error);
+          throw new RequestError("Invalid Smart Home request");
+        }
+      );
 
   private handleSync = async (user: User): Promise<SyncResponsePayload> => ({
     agentUserId: user.id,
@@ -95,10 +100,10 @@ export class FulfillmentController {
     return { devices: Object.fromEntries(mappedStates) };
   };
 
-  private async handleExecute(
+  private handleExecute = async (
     request: ExecuteRequestPayload,
     user: User
-  ): Promise<ExecuteResponsePayload> {
+  ): Promise<ExecuteResponsePayload> => {
     const homedCommands = request.commands.flatMap(({ devices, execution }) => {
       const requestedDeviceIds = new Set(devices.map(d => d.id));
       return this.deviceRepository
@@ -112,9 +117,9 @@ export class FulfillmentController {
     console.log("Homed commands to execute:", homedCommands);
     // FIXME: implement proper command result handling
     return { commands: [] };
-  }
+  };
 
-  private handleDisconnect = async (user: User) =>
+  private handleDisconnect = (user: User) =>
     this.userRepository
       .delete(user.id)
       .then(() => this.deviceRepository.removeDevices(user.id))

@@ -1,9 +1,10 @@
+import * as Sentry from "@sentry/node";
 import debug from "debug";
 import { EventEmitter } from "node:events";
 import { Socket } from "node:net";
 import { match, P } from "ts-pattern";
 import type { ClientToken } from "../db/repository.ts";
-import { safeParse } from "../utility.ts";
+import { Result, safeParse } from "../utility.ts";
 import { AES128CBC } from "./crypto.ts";
 import { escapePacket, readPacket, unescapePacket } from "./protocol.ts";
 import {
@@ -28,7 +29,7 @@ export type ClientId = string & { readonly __uniqueId: unique symbol };
  * handles the DH handshake, encryption/decryption, and message parsing.
  */
 
-export class ClientConnection<U> extends EventEmitter<{
+export class ClientConnection<U extends { id: string }> extends EventEmitter<{
   error: [Error];
   close: [];
   token: [ClientToken];
@@ -132,67 +133,59 @@ export class ClientConnection<U> extends EventEmitter<{
       const decrypted = this.cipher!.decrypt(unescapePacket(packet));
       const message = JSON.parse(decrypted.toString("utf8"));
 
-      this.handleMessage(message);
+      Sentry.startSpan(
+        {
+          forceTransaction: true,
+          name: "client message",
+          op: "message.process",
+          attributes: {
+            "client.unique_id": this.uniqueId,
+            "client.user_id": this.user?.id,
+            "messaging.message.body.size": decrypted.length,
+          },
+        },
+        span =>
+          this.parseMessage(message).fold(
+            error => logError(`Invalid message.`, error),
+            ([event, topic, data]) => {
+              span.setAttributes({
+                "client.message.topic": topic,
+                "messaging.message.topic": topic,
+              });
+              this.emit(event, topic, data);
+            }
+          )
+      );
 
       this.buf = remainder;
       [packet, remainder] = readPacket(this.buf);
     }
   }
 
-  private handleMessage(rawMessage: unknown): void {
-    const { data, success } = ClientMessageSchema.safeParse(rawMessage);
-    if (!success) {
-      return;
-    }
-
-    const { topic, message } = data;
-    match(topic)
-      .with(P.string.startsWith("status/"), () =>
-        safeParse(message, ClientStatusMessageSchema)
-          .then(data => this.emit("status", topic, data))
-          .catch(error =>
-            logError(
-              "Invalid client status message received:",
-              error,
-              JSON.stringify(message, undefined, 0)
-            )
+  private parseMessage = (
+    rawMessage: unknown
+  ): Result<[string, string, unknown]> => {
+    return safeParse(rawMessage, ClientMessageSchema).map(
+      ({ topic, message }) => {
+        const event = topic.split("/")[0];
+        return match(topic)
+          .with(P.string.startsWith("status/"), () =>
+            safeParse(message, ClientStatusMessageSchema)
           )
-      )
-      .with(P.string.startsWith("expose/"), () =>
-        safeParse(message, DeviceExposesMessageSchema)
-          .then(data => this.emit("expose", topic, data))
-          .catch(error =>
-            logError(
-              "Invalid expose message received:",
-              error,
-              JSON.stringify(message, undefined, 0)
-            )
+          .with(P.string.startsWith("expose/"), () =>
+            safeParse(message, DeviceExposesMessageSchema)
           )
-      )
-      .with(P.string.startsWith("device/"), () =>
-        safeParse(message, DeviceStatusMessageSchema)
-          .then(data => this.emit("device", topic, data))
-          .catch(error =>
-            logError(
-              "Invalid device status message received:",
-              error,
-              JSON.stringify(message, undefined, 0)
-            )
+          .with(P.string.startsWith("device/"), () =>
+            safeParse(message, DeviceStatusMessageSchema)
           )
-      )
-      .with(P.string.startsWith("fd/"), () => {
-        safeParse(message, DeviceStateMessageSchema)
-          .then(data => this.emit("fd", topic, data))
-          .catch(error =>
-            logError(
-              "Invalid device state message received:",
-              error,
-              JSON.stringify(message, undefined, 0)
-            )
-          );
-      })
-      .otherwise(() => logError("Unknown message topic received:", data.topic));
-  }
+          .with(P.string.startsWith("fd/"), () =>
+            safeParse(message, DeviceStateMessageSchema)
+          )
+          .otherwise(() => Result.err(`Unknown message topic ${topic}`))
+          .map(data => [event, topic, data] as const);
+      }
+    );
+  };
 
   // Public solely for testing purposes
   sendMessage(message: ServerMessage): void {
