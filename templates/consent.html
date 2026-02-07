@@ -40,11 +40,10 @@
         </div>
 
         <form id="approveForm" method="POST" action="/oauth/authorize/consent">
-            <input type="hidden" name="approve" value="yes">
             <input type="hidden" name="transaction_id" value="<%= transaction_id %>">
             <div class="buttons">
-                <button type="submit" class="approve">Agree and link</button>
-                <button type="button" class="deny" onclick="window.history.back()">Cancel</button>
+                <button type="submit" name="authorize" value="Approve" class="approve">Agree and link</button>
+                <button type="submit" name="cancel" value="Deny" class="deny">Cancel</button>
             </div>
         </form>
     </div>
