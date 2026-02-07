@@ -27,7 +27,8 @@ const fulfillmentController = new FulfillmentController(
 const httpHandler = new WebApp(
   usersRepository,
   fulfillmentController,
-  oauthController
+  oauthController,
+  deviceRepository
 );
 
 const sslOptions =

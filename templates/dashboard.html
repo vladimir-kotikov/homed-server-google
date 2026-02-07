@@ -31,7 +31,23 @@
         </div>
 
         <div class="card">
-            <h2>💡 Next Steps</h2>
+            <h2>�️ Connected Clients</h2>
+            <% if (connectedClients && connectedClients.length > 0) { %>
+            <div class="clients-list">
+                <% connectedClients.forEach(clientId => { %>
+                <div class="client-item">
+                    <span class="client-id"><%= clientId %></span>
+                    <span class="client-status">● Connected</span>
+                </div>
+                <% }); %>
+            </div>
+            <% } else { %>
+            <p class="no-clients">No clients connected yet.</p>
+            <% } %>
+        </div>
+
+        <div class="card">
+            <h2>�💡 Next Steps</h2>
             <p><strong>1. Configure your homed-service-cloud client:</strong></p>
             <p style="margin-left: 1rem;">Add your client token to the configuration file and point it to this server.
             </p>

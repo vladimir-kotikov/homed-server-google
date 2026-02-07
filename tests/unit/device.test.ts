@@ -279,4 +279,91 @@ describe("DeviceRepository", () => {
       expect(state).toBeUndefined();
     });
   });
+
+  describe("getConnectedClientIds", () => {
+    it("should return empty array when user has no clients", () => {
+      const clientIds = repository.getConnectedClientIds(userId);
+
+      expect(clientIds).toEqual([]);
+    });
+
+    it("should return single client ID when one client has devices", () => {
+      const device = createMockDevice("device1");
+      repository.syncClientDevices(userId, uniqueId, [device]);
+
+      const clientIds = repository.getConnectedClientIds(userId);
+
+      expect(clientIds).toEqual([uniqueId]);
+      expect(clientIds).toHaveLength(1);
+    });
+
+    it("should return multiple client IDs when multiple clients have devices", () => {
+      const client2 = createUniqueId("client2");
+      const client3 = createUniqueId("client3");
+      const device = createMockDevice("device1");
+
+      repository.syncClientDevices(userId, uniqueId, [device]);
+      repository.syncClientDevices(userId, client2, [device]);
+      repository.syncClientDevices(userId, client3, [device]);
+
+      const clientIds = repository.getConnectedClientIds(userId);
+
+      expect(clientIds).toEqual(
+        expect.arrayContaining([uniqueId, client2, client3])
+      );
+      expect(clientIds).toHaveLength(3);
+    });
+
+    it("should return each client ID only once", () => {
+      const device1 = createMockDevice("device1");
+      const device2 = createMockDevice("device2");
+
+      repository.syncClientDevices(userId, uniqueId, [device1, device2]);
+
+      const clientIds = repository.getConnectedClientIds(userId);
+
+      expect(clientIds).toEqual([uniqueId]);
+      expect(clientIds).toHaveLength(1);
+    });
+
+    it("should not include clients from other users", () => {
+      const user2 = createUserId("user2");
+      const client2 = createUniqueId("client2");
+      const device = createMockDevice("device1");
+
+      repository.syncClientDevices(userId, uniqueId, [device]);
+      repository.syncClientDevices(user2, client2, [device]);
+
+      const user1ClientIds = repository.getConnectedClientIds(userId);
+      const user2ClientIds = repository.getConnectedClientIds(user2);
+
+      expect(user1ClientIds).toEqual([uniqueId]);
+      expect(user2ClientIds).toEqual([client2]);
+      expect(user1ClientIds).not.toContain(client2);
+      expect(user2ClientIds).not.toContain(uniqueId);
+    });
+
+    it("should remove client when all devices are removed", () => {
+      const device = createMockDevice("device1");
+      repository.syncClientDevices(userId, uniqueId, [device]);
+      repository.syncClientDevices(userId, uniqueId, []);
+
+      const clientIds = repository.getConnectedClientIds(userId);
+
+      expect(clientIds).toEqual([]);
+    });
+
+    it("should maintain correct set after device removals", () => {
+      const client2 = createUniqueId("client2");
+      const device = createMockDevice("device1");
+
+      repository.syncClientDevices(userId, uniqueId, [device]);
+      repository.syncClientDevices(userId, client2, [device]);
+      repository.removeDevices(userId, uniqueId);
+
+      const clientIds = repository.getConnectedClientIds(userId);
+
+      expect(clientIds).toEqual([client2]);
+    });
+  });
 });

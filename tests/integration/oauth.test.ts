@@ -2,13 +2,12 @@
  * Integration tests for OAuth endpoints
  * Tests the actual server behavior against Google Cloud-to-Cloud specifications
  */
-import Database from "better-sqlite3";
-import type { NextFunction, Router } from "express";
 import request from "supertest";
 import { beforeEach, describe, expect, it } from "vitest";
-import { UserRepository } from "../../src/db/repository.ts";
+import type { UserRepository } from "../../src/db/repository.ts";
 import { WebApp } from "../../src/web/app.ts";
 import { OAuthController } from "../../src/web/oauth.ts";
+import { createTestUserRepository } from "./test-database-helper.ts";
 
 const JWT_SECRET = "test-oauth-secret";
 const CLIENT_ID = "dev-oauth-client-id";
@@ -42,59 +41,10 @@ const newTokens = async (repo: UserRepository) => {
 describe("OAuth Integration Tests", () => {
   let webApp: WebApp;
   let userRepository: UserRepository;
-  let database: Database.Database;
 
   beforeEach(() => {
-    // Create in-memory database
-    database = new (Database as any)(":memory:");
-
-    // Initialize schema
-    database.exec(`
-      CREATE TABLE "user" (
-        "id" TEXT PRIMARY KEY,
-        "username" TEXT NOT NULL,
-        "client_token" TEXT NOT NULL UNIQUE,
-        "created_at" INTEGER NOT NULL
-      );
-      CREATE TABLE "access_token" (
-        "token" TEXT PRIMARY KEY,
-        "user_id" TEXT NOT NULL,
-        "client_id" TEXT,
-        "expires_at" INTEGER NOT NULL,
-        "created_at" INTEGER NOT NULL,
-        FOREIGN KEY("user_id") REFERENCES "user"("id")
-      );
-      CREATE TABLE "refresh_token" (
-        "token" TEXT PRIMARY KEY,
-        "user_id" TEXT NOT NULL,
-        "client_id" TEXT,
-        "expires_at" INTEGER NOT NULL,
-        "created_at" INTEGER NOT NULL,
-        FOREIGN KEY("user_id") REFERENCES "user"("id")
-      );
-      CREATE TABLE "authorization_code" (
-        "code" TEXT PRIMARY KEY,
-        "user_id" TEXT NOT NULL,
-        "client_id" TEXT NOT NULL,
-        "redirect_uri" TEXT NOT NULL,
-        "scope" TEXT,
-        "expires_at" INTEGER NOT NULL,
-        "created_at" INTEGER NOT NULL,
-        FOREIGN KEY("user_id") REFERENCES "user"("id")
-      );
-    `);
-
-    userRepository = new UserRepository(database, JWT_SECRET);
-
-    // Create test user
-    database
-      .prepare(
-        `
-      INSERT INTO user (id, username, client_token, created_at)
-      VALUES (?, ?, ?, ?)
-    `
-      )
-      .run("test-user-id", "test@example.com", "test-token-123", Date.now());
+    const { repository } = createTestUserRepository(JWT_SECRET);
+    userRepository = repository;
 
     // Create OAuth controller
     const oauthController = new OAuthController(
@@ -103,17 +53,20 @@ describe("OAuth Integration Tests", () => {
       PROJECT_ID
     );
 
-    // Create mock SmartHomeController that just returns a router (not used in OAuth tests)
-    const mockSmartHomeController = {
-      routes: ((_request: Request, _response: Response, next: NextFunction) =>
-        next()) as unknown as Router,
-    };
+    // Create mock FulfillmentController
+    const mockFulfillmentController = {
+      handleFulfillment: () => Promise.resolve({}),
+    } as any;
+
+    // Create DeviceRepository
+    const deviceRepository: any = {};
 
     // Create actual WebApp with real implementation
     webApp = new WebApp(
       userRepository,
-      mockSmartHomeController as any,
-      oauthController
+      mockFulfillmentController,
+      oauthController,
+      deviceRepository
     );
   });
 

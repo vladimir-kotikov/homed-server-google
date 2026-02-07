@@ -157,3 +157,43 @@ body {
   font-size: 0.875rem;
   margin: 0;
 }
+
+.clients-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.client-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--bg-light);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  font-size: 0.875rem;
+}
+
+.client-id {
+  font-family: "Monaco", "Menlo", "Courier New", monospace;
+  color: var(--text-primary);
+  font-weight: 500;
+  flex: 1;
+  word-break: break-all;
+}
+
+.client-status {
+  color: #10b981;
+  font-weight: 600;
+  font-size: 0.75rem;
+  white-space: nowrap;
+  margin-left: 1rem;
+}
+
+.no-clients {
+  color: var(--text-secondary);
+  font-style: italic;
+  margin-top: 1rem;
+}

@@ -121,4 +121,15 @@ export class DeviceRepository {
       state => state[deviceId] !== undefined
     )?.[deviceId];
   };
+
+  getConnectedClientIds = (userId: UserId): ClientId[] => {
+    const userDevices = this.devices[userId];
+    if (!userDevices) {
+      return [];
+    }
+
+    return Object.entries(userDevices)
+      .filter(([, devices]) => devices.length > 0)
+      .map(([clientId]) => clientId as ClientId);
+  };
 }
