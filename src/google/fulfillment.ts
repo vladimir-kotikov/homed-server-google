@@ -21,6 +21,7 @@ import type {
 } from "./types.ts";
 
 const logError = debug("homed:google:fulfillment:error");
+const log = debug("homed:google:fulfillment");
 
 class RequestError extends Error {}
 
@@ -66,13 +67,30 @@ export class FulfillmentController {
         }
       );
 
-  private handleSync = async (user: User): Promise<SyncResponsePayload> => ({
-    agentUserId: user.id,
-    devices: this.deviceRepository
+  private handleSync = async (user: User): Promise<SyncResponsePayload> => {
+    const allDevices = this.deviceRepository
       .getDevices(user.id)
-      .filter(device => device.endpoints.length > 0)
-      .map(device => mapToGoogleDevice(device, user.clientToken)),
-  });
+      .filter(device => device.endpoints.length > 0);
+
+    const googleDevices = allDevices
+      .map(device => mapToGoogleDevice(device, user.clientToken))
+      .filter(device => {
+        const hasTraits = device.traits.length > 0;
+        if (!hasTraits) {
+          log(
+            `Excluding device "${device.name}" (${device.id}): no supported traits`
+          );
+        }
+        return hasTraits;
+      });
+
+    log(`Syncing ${googleDevices.length} of ${allDevices.length} devices`);
+
+    return {
+      agentUserId: user.id,
+      devices: googleDevices,
+    };
+  };
 
   private handleQuery = async (
     request: QueryRequestPayload,
