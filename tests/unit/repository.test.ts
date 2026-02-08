@@ -1,5 +1,5 @@
 import Database from "better-sqlite3";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import {
   UserRepository,
   type ClientToken,
@@ -99,7 +99,7 @@ describe("UatasaseerRepository", () => {
       expect(user1.clientToken).not.toBe(user2.clientToken);
     });
 
-    it("should generate different tokens on re-creation path", async () => {
+    it("should return the same token for existing user", async () => {
       const userId = "user123" as UserId;
       const user1 = await repository.getOrCreate(userId, "testuser");
       const token1: ClientToken = user1.clientToken;

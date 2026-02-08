@@ -2,7 +2,6 @@ import type { UserId } from "./db/repository.ts";
 import type { ClientId } from "./homed/client.ts";
 import type { EndpointOptions } from "./homed/schema.ts";
 import type { DeviceState } from "./homed/types.ts";
-import { setNested } from "./utility.ts";
 
 export type DeviceId = string & { readonly __deviceId: unique symbol };
 
@@ -85,10 +84,11 @@ export class DeviceRepository {
       ed => !newDevices.some(nd => nd.key === ed.key)
     );
 
-    setNested([userId, clientId], this.devices, [
+    this.devices[userId] = this.devices[userId] || {};
+    this.devices[userId][clientId] = [
       ...existingDevices.filter(ed => !removedDevices.includes(ed)),
       ...addedDevices,
-    ]);
+    ];
 
     return [addedDevices, removedDevices];
   };
@@ -104,7 +104,9 @@ export class DeviceRepository {
       ({} satisfies DeviceState);
 
     state.status = online ? "online" : "offline";
-    setNested([userId, clientId, deviceId], this.deviceState, state);
+    this.deviceState[userId] ??= {};
+    this.deviceState[userId][clientId] ??= {};
+    this.deviceState[userId][clientId][deviceId] = state;
   };
 
   setDeviceState = (
@@ -117,8 +119,9 @@ export class DeviceRepository {
       this.deviceState[userId]?.[clientId]?.[deviceId] ??
       ({} satisfies DeviceState);
 
-    Object.assign(state, newState);
-    setNested([userId, clientId, deviceId], this.deviceState, state);
+    this.deviceState[userId] ??= {};
+    this.deviceState[userId][clientId] ??= {};
+    this.deviceState[userId][clientId][deviceId] = { ...state, ...newState };
   };
 
   getDeviceState = (

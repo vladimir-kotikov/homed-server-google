@@ -8,6 +8,7 @@ import { Result, safeParse } from "../utility.ts";
 import { AES128CBC } from "./crypto.ts";
 import { escapePacket, readPacket, unescapePacket } from "./protocol.ts";
 import {
+  ClientAuthMessageSchema,
   ClientMessageSchema,
   ClientStatusMessageSchema,
   DeviceExposesMessageSchema,
@@ -89,8 +90,9 @@ export class ClientConnection<U extends { id: string }> extends EventEmitter<{
       this.buf = this.buf.subarray(12); // Remove handshake data from buffer
       this.socket.write(publicKey);
       return true;
-    } catch (error_) {
-      logError(`Handshake failed: ${error_}`);
+    } catch (err) {
+      logError(`Handshake failed: ${err}`);
+      this.close();
     }
 
     return false;
@@ -129,9 +131,39 @@ export class ClientConnection<U extends { id: string }> extends EventEmitter<{
     }
 
     let [packet, remainder] = readPacket(this.buf);
-    while (packet) {
-      const decrypted = this.cipher!.decrypt(unescapePacket(packet));
-      const message = JSON.parse(decrypted.toString("utf8"));
+    while (packet && !this.socket.closed) {
+      let message: unknown;
+      let decrypted: Buffer;
+      try {
+        decrypted = this.cipher!.decrypt(unescapePacket(packet));
+        message = JSON.parse(decrypted.toString("utf8"));
+      } catch (error) {
+        logError(`Failed to decrypt or parse message: ${error}`);
+        Sentry.captureException(error, {
+          tags: {
+            "client.unique_id": this.uniqueId ?? "not authenticated",
+            "client.user_id": this.user?.id ?? "not authenticated",
+          },
+        });
+        this.close();
+        return;
+      }
+
+      if (!this.user && !this.uniqueId) {
+        safeParse(message, ClientAuthMessageSchema).fold(
+          err => {
+            logError(`Invalid authentication message: ${err}`);
+            this.close();
+          },
+          ({ uniqueId, token }) => {
+            this.uniqueId = uniqueId as ClientId;
+            this.emit("token", token as ClientToken);
+          }
+        );
+
+        this.buf = remainder;
+        continue;
+      }
 
       Sentry.startSpan(
         {

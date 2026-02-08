@@ -38,11 +38,13 @@ export class OAuthController {
   private googleHomeClientId: string;
   private oauth2Server: oauth2orize.OAuth2Server<Client, User>;
   private allowedRedirectUris: Set<string>;
+  private allowedScopes: Set<string>;
 
   constructor(
     userRepository: UserRepository,
     googleHomeClientId: string,
-    googleHomeProjectId: string
+    googleHomeProjectId: string,
+    googleHomeAllowedScopes: string[] = ["email"]
   ) {
     this.userRepository = userRepository;
     this.googleHomeClientId = googleHomeClientId;
@@ -51,6 +53,7 @@ export class OAuthController {
       `https://oauth-redirect.googleusercontent.com/r/${googleHomeProjectId}`,
       `https://oauth-redirect-sandbox.googleusercontent.com/r/${googleHomeProjectId}`,
     ]);
+    this.allowedScopes = new Set(googleHomeAllowedScopes);
 
     this.oauth2Server = oauth2orize
       .createServer<Client, User>()
@@ -64,9 +67,14 @@ export class OAuthController {
     );
   }
 
-  private isValidClient = (clientId: string, redirectUri?: string): boolean =>
+  private isValidClient = (
+    clientId: string,
+    redirectUri?: string,
+    scopes?: string[]
+  ): boolean =>
     clientId === this.googleHomeClientId &&
-    (!redirectUri || this.allowedRedirectUris.has(redirectUri));
+    (!redirectUri || this.allowedRedirectUris.has(redirectUri)) &&
+    (!scopes || new Set(scopes).isSubsetOf(this.allowedScopes));
 
   private grantCode = (
     client: Client,
@@ -130,15 +138,14 @@ export class OAuthController {
   private authorizeClient = (
     clientId: string,
     redirectUri: string,
+    scopes: string[],
     done: (
       error: Error | null,
       client: Client | false,
       redirectUri?: string
     ) => void
   ): void =>
-    // TODO: valid scopes are unknown as google docs do not specify them
-    // scope === GOOGLE_HOME_ALLOWES_SCOPE
-    this.isValidClient(clientId, redirectUri)
+    this.isValidClient(clientId, redirectUri, scopes)
       ? done(null, { id: clientId }, redirectUri)
       : done(null, false);
 

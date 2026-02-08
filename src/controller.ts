@@ -1,9 +1,9 @@
 import * as Sentry from "@sentry/node";
 import debug from "debug";
-import assert from "node:assert";
 import http from "node:http";
 import https from "node:https";
 import net from "node:net";
+import { promisify } from "node:util";
 import {
   UserRepository,
   type ClientToken,
@@ -25,14 +25,13 @@ import type {
   DeviceStatusMessage,
   EndpointOptions,
 } from "./homed/schema.ts";
-import { setNested } from "./utility.ts";
 import { WebApp } from "./web/app.ts";
 
 const log = debug("homed:controller");
 const logError = debug("homed:controller:error");
 
 const topicToDeviceId = (topic: string): DeviceId =>
-  topic.split("/", 2)[1] as DeviceId;
+  topic.split("/").slice(1).join("/") as DeviceId;
 
 /**
  * A main controller that wires up HTTP and TCP servers and manages clients and
@@ -99,11 +98,11 @@ export class HomedServerController {
     log(`TCP Server listening on port tcp://0.0.0.0:${tcpPort}`);
   }
 
-  stop() {
-    this.userDb.close();
-    this.httpServer.close();
-    this.tcpServer.close();
-  }
+  stop = () =>
+    Promise.all([
+      promisify(this.httpServer.close.bind(this.httpServer))(),
+      promisify(this.tcpServer.close.bind(this.tcpServer))(),
+    ]).then(() => this.userDb.close());
 
   clientConnected = (socket: net.Socket) => {
     const client = new ClientConnection<User>(socket)
@@ -145,17 +144,31 @@ export class HomedServerController {
       return;
     }
 
-    this.userDb.getByToken(token).then(user => {
-      if (!user) {
-        client.close();
-        logError(`Client ${uniqueId} unauthorized: user not found`);
-        return;
-      }
+    this.userDb
+      .getByToken(token)
+      .then(user => {
+        if (!user) {
+          client.close();
+          logError(`Client ${uniqueId} unauthorized: user not found`);
+          return;
+        }
 
-      client.authorize(user);
-      setNested([user.id, uniqueId], this.clients, client);
-      log(`Client ${uniqueId} authorized for ${user.username}`);
-    });
+        client.authorize(user);
+        this.clients[user.id] = this.clients[user.id] || {};
+        this.clients[user.id][uniqueId] = client;
+        log(`Client ${uniqueId} authorized for ${user.username}`);
+      })
+      .catch(error => {
+        logError(
+          `Error during token authentication for client ${uniqueId}:`,
+          error
+        );
+        Sentry.captureException(error, {
+          tags: { component: "client-auth" },
+          extra: { uniqueId, token },
+        });
+        client.close();
+      });
   };
 
   clientStatusUpdated = (
@@ -164,7 +177,8 @@ export class HomedServerController {
     _topic: string,
     message: ClientStatusMessage
   ) => {
-    assert(client.user, "Client must be authorized before updating status");
+    if (!client.uniqueId || !client.user) return;
+
     log(
       `Client status update from ${client.uniqueId} . Devices: ${message.devices?.length ?? 0}`
     );
@@ -237,11 +251,12 @@ export class HomedServerController {
     deviceId: DeviceId,
     message: DeviceExposesMessage
   ) => {
+    if (!client.uniqueId || !client.user) return;
+
     log(
       `Device exposes update from ${client.uniqueId}. ${deviceId}: ${message.items}`
     );
 
-    if (!client.uniqueId || !client.user) return;
     const device = this.deviceCache.getClientDevice(
       client.user.id,
       client.uniqueId,

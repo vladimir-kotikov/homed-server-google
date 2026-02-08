@@ -36,7 +36,7 @@ export class Result<T> {
     if (this.isOk()) {
       return this.value as T;
     }
-    throw new Error(message || `Result is Err: ${this.value}`);
+    throw message ? new Error(message) : this.value;
   };
 
   fold = <U>(onError: (error: Error) => U, onOk: (value: T) => U): U =>
@@ -59,20 +59,4 @@ export const safeParse = <T extends zod.ZodType>(
 
   Sentry.captureException(error);
   return Result.err(error);
-};
-
-export const setNested = (
-  [key, ...rest]: string[],
-  object: Record<string, unknown>,
-  value: unknown
-): unknown => {
-  if (rest.length === 0) {
-    object[key] = value;
-    return;
-  }
-
-  if (object[key] === undefined) {
-    object[key] = {};
-  }
-  return setNested(rest, object[key] as Record<string, unknown>, value);
 };

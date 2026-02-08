@@ -565,7 +565,7 @@ describe("CapabilityMapper", () => {
 
       const state = mapToGoogleState(device, { on: true });
       expect(state.online).toBe(false);
-      expect(state.status).toBe("SUCCESS");
+      expect(state.status).toBe("OFFLINE");
     });
 
     // FIXME: Verify behavior when on property is already set in input state

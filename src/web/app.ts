@@ -5,7 +5,7 @@ import SqliteStore from "better-sqlite3-session-store";
 import { ensureLoggedIn, ensureLoggedOut } from "connect-ensure-login";
 import debug from "debug";
 import ejs from "ejs";
-import type { Request, Response } from "express";
+import type { NextFunction, Request, Response } from "express";
 import express from "express";
 import sessionMiddleware from "express-session";
 import type { IncomingMessage, ServerResponse } from "node:http";
@@ -116,7 +116,7 @@ export class WebApp {
     this.app = express()
       .use(logging)
       .disable("x-powered-by")
-      .set("trust proxy", true)
+      .set("trust proxy", 2)
       .set("views", "templates")
       .set("view engine", "html")
       .engine("html", ejs.renderFile)
@@ -139,9 +139,7 @@ export class WebApp {
         this.handleAuthCallback
       )
       .get("/logout", (req, res, next) =>
-        req.session.destroy(error =>
-          error ? next(error) : res.redirect("/login")
-        )
+        req.logOut(err => (err ? next(err) : res.redirect("/login")))
       )
       .get("/health", (_, res) => res.json({ status: "ok" }))
       .post(
@@ -185,10 +183,22 @@ export class WebApp {
     });
   };
 
-  private handleAuthCallback = (req: Request, res: Response) => {
+  private handleAuthCallback = (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ) => {
     const redirectUrl = req.session.returnTo ?? "/";
     delete req.session.returnTo;
-    res.redirect(redirectUrl);
+    return req.user
+      ? req.session.regenerate(err =>
+          err
+            ? next(err)
+            : req.login(req.user!, err =>
+                err ? next(err) : res.redirect(redirectUrl)
+              )
+        )
+      : res.redirect(redirectUrl);
   };
 
   private handleFulfillment = async (req: Request, res: Response) => {

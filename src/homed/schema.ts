@@ -251,6 +251,11 @@ export const DeviceStateMessageSchema = z.record(
   z.unknown()
 );
 
+export const ClientAuthMessageSchema = z.object({
+  uniqueId: z.string(),
+  token: z.string(),
+});
+
 export const ClientMessageSchema = z.object({
   topic: z.string(),
   message: z

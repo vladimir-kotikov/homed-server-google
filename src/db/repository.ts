@@ -10,6 +10,9 @@ import crypto from "node:crypto";
 
 const log = debug("homed:user");
 
+const newClientToken = () =>
+  crypto.randomBytes(32).toString("hex") as ClientToken;
+
 export type ClientToken = string & { readonly __clientToken: unique symbol };
 export type UserId = string & { readonly __userId: unique symbol };
 
@@ -69,7 +72,7 @@ export class UserRepository {
   ) => {
     const options = {} as jwt.VerifyOptions;
     if (clientId) {
-      options.audience = redirectUri;
+      options.issuer = clientId;
     }
     if (redirectUri) {
       options.audience = redirectUri;
@@ -134,22 +137,17 @@ export class UserRepository {
     this.verifyTokenPayload(payload, "access");
 
   getOrCreate = (id: UserId, username: string): Promise<User> =>
-    this.client.query.users
-      .findFirst({ where: eq(users.id, id as UserId) })
-      .then(
-        user =>
-          user ??
-          this.client
-            .insert(users)
-            .values({
-              id,
-              username,
-              clientToken: crypto
-                .randomBytes(32)
-                .toString("hex") as ClientToken,
-            })
-            .returning()
-            .then(result => result[0])
+    this.client
+      .insert(users)
+      .values({ id, username, clientToken: newClientToken() })
+      .onConflictDoNothing()
+      .returning()
+      .then(result =>
+        result.length > 0
+          ? result[0]
+          : (this.client.query.users.findFirst({
+              where: eq(users.id, id as UserId),
+            }) as Promise<User>)
       );
 
   getByToken = (token: ClientToken) =>

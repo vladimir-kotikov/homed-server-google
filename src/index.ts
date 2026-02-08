@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/node";
 import debug from "debug";
 import appConfig from "./config.ts";
 import { HomedServerController } from "./controller.ts";
@@ -9,6 +10,7 @@ import { WebApp } from "./web/app.ts";
 import { OAuthController } from "./web/oauth.ts";
 
 const log = debug("homed:main");
+const logError = debug("homed:main:error");
 const { databaseUrl, tcpPort, httpPort } = appConfig;
 
 const deviceRepository = new DeviceRepository();
@@ -48,14 +50,21 @@ const mainController = new HomedServerController(
   sslOptions
 );
 
-const shutdown = async () => {
-  log("Shutting down...");
-  mainController.stop();
-  usersRepository.close();
-  process.exit(0);
+const shutdown = (signal: string) => {
+  log(`Received ${signal}, shutting down gracefully...`);
+  return mainController
+    .stop()
+    .then(() => Sentry.close(2000))
+    .then(() => {
+      log("Shutdown complete");
+      process.exit(0);
+    })
+    .catch(error => {
+      logError("Error during shutdown:", error);
+      process.exit(1);
+    });
 };
 
-process.on("SIGTERM", shutdown);
-process.on("SIGINT", shutdown);
+process.on("SIGTERM", shutdown).on("SIGINT", shutdown);
 
 mainController.start(httpPort, tcpPort);

@@ -584,7 +584,7 @@ export const mapToGoogleState = (
   const traits = getTraitsForExposes(allExposes);
   const state: GoogleDeviceState = {
     online: homedDevice.available,
-    status: "SUCCESS",
+    status: homedDevice.available ? "SUCCESS" : "OFFLINE",
   };
 
   // Get state for each supported trait - use properly typed TraitState union
