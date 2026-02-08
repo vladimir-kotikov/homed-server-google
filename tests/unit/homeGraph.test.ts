@@ -97,6 +97,9 @@ describe("HomeGraphClient", () => {
 
       await client.reportStateChange(userId, deviceId, state);
 
+      // Wait for debounce delay
+      await new Promise(resolve => setTimeout(resolve, 1100));
+
       expect(mockReportStateAndNotification).toHaveBeenCalledWith({
         requestBody: {
           agentUserId: userId,
@@ -135,6 +138,9 @@ describe("HomeGraphClient", () => {
       const testDeviceId = "testDevice456";
 
       await client.reportStateChange(testUserId, testDeviceId, state);
+
+      // Wait for debounce delay
+      await new Promise(resolve => setTimeout(resolve, 1100));
 
       expect(mockReportStateAndNotification).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -254,6 +260,146 @@ describe("HomeGraphClient", () => {
 
       // Should not call API for devices without traits
       expect(mockReportStateAndNotification).not.toHaveBeenCalled();
+    });
+
+    it("should debounce multiple rapid state changes for the same device", async () => {
+      const { google } = await import("googleapis");
+      const mockAuthClient = { projectId: "test-project" };
+      vi.mocked(google.auth.fromJSON).mockResolvedValue(
+        mockAuthClient as never
+      );
+
+      const mockReportStateAndNotification = vi.fn().mockResolvedValue({});
+      const mockHomegraph = {
+        devices: {
+          reportStateAndNotification: mockReportStateAndNotification,
+        },
+      };
+      vi.mocked(google.homegraph).mockReturnValue(mockHomegraph as never);
+
+      const client = new HomeGraphClient(JSON.stringify(mockServiceAccount));
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      // Send multiple state changes rapidly
+      const state1: GoogleDeviceState = { online: true, on: true };
+      const state2: GoogleDeviceState = { online: true, on: false };
+      const state3: GoogleDeviceState = { online: true, brightness: 50 };
+
+      await client.reportStateChange(userId, deviceId, state1);
+      await client.reportStateChange(userId, deviceId, state2);
+      await client.reportStateChange(userId, deviceId, state3);
+
+      // Should not call API immediately
+      expect(mockReportStateAndNotification).not.toHaveBeenCalled();
+
+      // Wait for debounce delay (1100ms)
+      await new Promise(resolve => setTimeout(resolve, 1100));
+
+      // Should have called API only once with the last state
+      expect(mockReportStateAndNotification).toHaveBeenCalledTimes(1);
+      expect(mockReportStateAndNotification).toHaveBeenCalledWith(
+        expect.objectContaining({
+          requestBody: expect.objectContaining({
+            payload: {
+              devices: {
+                states: {
+                  [`${userId}-${deviceId}`]: state3,
+                },
+              },
+            },
+          }),
+        })
+      );
+    });
+
+    it("should retry failed requests with exponential backoff", async () => {
+      const { google } = await import("googleapis");
+      const mockAuthClient = { projectId: "test-project" };
+      vi.mocked(google.auth.fromJSON).mockResolvedValue(
+        mockAuthClient as never
+      );
+
+      const mockReportStateAndNotification = vi
+        .fn()
+        .mockRejectedValueOnce(new Error("Network error"))
+        .mockRejectedValueOnce(new Error("Network error"))
+        .mockResolvedValueOnce({});
+
+      const mockHomegraph = {
+        devices: {
+          reportStateAndNotification: mockReportStateAndNotification,
+        },
+      };
+      vi.mocked(google.homegraph).mockReturnValue(mockHomegraph as never);
+
+      const client = new HomeGraphClient(JSON.stringify(mockServiceAccount));
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      const state: GoogleDeviceState = { online: true, on: true };
+
+      // Trigger state change
+      await client.reportStateChange(userId, deviceId, state);
+
+      // Wait for debounce + initial attempt
+      await new Promise(resolve => setTimeout(resolve, 1100));
+      expect(mockReportStateAndNotification).toHaveBeenCalledTimes(1);
+
+      // Wait for first retry (1000ms backoff)
+      await new Promise(resolve => setTimeout(resolve, 1100));
+      expect(mockReportStateAndNotification).toHaveBeenCalledTimes(2);
+
+      // Wait for second retry (2000ms backoff)
+      await new Promise(resolve => setTimeout(resolve, 2100));
+      expect(mockReportStateAndNotification).toHaveBeenCalledTimes(3);
+
+      // Should have succeeded on third attempt
+    });
+
+    it("should give up after max retries", { timeout: 15000 }, async () => {
+      const { google } = await import("googleapis");
+      const mockAuthClient = { projectId: "test-project" };
+      vi.mocked(google.auth.fromJSON).mockResolvedValue(
+        mockAuthClient as never
+      );
+
+      const mockReportStateAndNotification = vi
+        .fn()
+        .mockRejectedValue(new Error("Persistent error"));
+
+      const mockHomegraph = {
+        devices: {
+          reportStateAndNotification: mockReportStateAndNotification,
+        },
+      };
+      vi.mocked(google.homegraph).mockReturnValue(mockHomegraph as never);
+
+      const client = new HomeGraphClient(JSON.stringify(mockServiceAccount));
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      const state: GoogleDeviceState = { online: true, on: true };
+
+      // Trigger state change
+      await client.reportStateChange(userId, deviceId, state);
+
+      // Wait for debounce + initial attempt
+      await new Promise(resolve => setTimeout(resolve, 1100));
+      expect(mockReportStateAndNotification).toHaveBeenCalledTimes(1);
+
+      // Wait for first retry (1000ms)
+      await new Promise(resolve => setTimeout(resolve, 1100));
+      expect(mockReportStateAndNotification).toHaveBeenCalledTimes(2);
+
+      // Wait for second retry (2000ms)
+      await new Promise(resolve => setTimeout(resolve, 2100));
+      expect(mockReportStateAndNotification).toHaveBeenCalledTimes(3);
+
+      // Wait for third retry (4000ms)
+      await new Promise(resolve => setTimeout(resolve, 4100));
+      expect(mockReportStateAndNotification).toHaveBeenCalledTimes(4);
+
+      // Wait a bit more - should not retry again (max 3 retries = 4 total attempts)
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      expect(mockReportStateAndNotification).toHaveBeenCalledTimes(4);
     });
   });
 });
