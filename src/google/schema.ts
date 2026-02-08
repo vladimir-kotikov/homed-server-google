@@ -1,6 +1,7 @@
 // Schema for incoming Google Smart Home requests and trait parameters
 
 import { z } from "zod";
+import type { GoogleDeviceId } from "./types.ts";
 
 // ===========================================================================
 // Google Commands Enum
@@ -153,8 +154,17 @@ export const SmartHomeRequestSchema = z
 // Type Exports
 // ===========================================================================
 
-export type QueryRequestPayload = z.infer<typeof QueryRequestPayloadSchema>;
-export type ExecuteRequestPayload = z.infer<typeof ExecuteRequestPayloadSchema>;
+export type QueryRequestPayload = {
+  devices: Array<{ id: GoogleDeviceId }>;
+};
+
+export type ExecuteRequestPayload = {
+  commands: Array<{
+    devices: Array<{ id: GoogleDeviceId }>;
+    execution: GoogleCommand[];
+  }>;
+};
+
 export type SmartHomeRequest = z.infer<typeof SmartHomeRequestSchema>;
 export type GoogleCommand = z.infer<typeof GoogleCommandSchema>;
 

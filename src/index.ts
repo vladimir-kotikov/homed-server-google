@@ -32,16 +32,8 @@ const httpHandler = new WebApp(
   deviceRepository
 );
 
-// Initialize HomeGraph client if service account is configured
-const homeGraphClient = appConfig.googleServiceAccountJson
-  ? new HomeGraphClient(appConfig.googleServiceAccountJson)
-  : undefined;
-
-if (homeGraphClient) {
-  log("Google Home state reporting enabled");
-} else {
-  log("Google Home state reporting disabled (no service account configured)");
-}
+// Initialize HomeGraph client with Application Default Credentials
+const homeGraphClient = new HomeGraphClient();
 
 const sslOptions =
   appConfig.sslCert && appConfig.sslKey

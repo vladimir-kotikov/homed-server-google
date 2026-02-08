@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/node";
 import debug from "debug";
 import assert from "node:assert";
 import http from "node:http";
@@ -16,7 +17,7 @@ import type {
   HomedEndpoint,
 } from "./device.ts";
 import type { HomeGraphClient } from "./google/homeGraph.ts";
-import { mapToGoogleState } from "./google/mapper.ts";
+import { mapToGoogleState, toGoogleDeviceId } from "./google/mapper.ts";
 import { ClientConnection, type ClientId } from "./homed/client.ts";
 import type {
   ClientStatusMessage,
@@ -220,10 +221,19 @@ export class HomedServerController {
     }
 
     if (added.length > 0 || removed.length > 0) {
-      this.googleHomeGraph?.updateDevices(
-        client.user.id,
-        this.deviceCache.getDevices(client.user.id, client.uniqueId)
-      );
+      const userId = client.user.id;
+      const clientId = client.uniqueId;
+      this.googleHomeGraph?.updateDevices(userId).catch(error => {
+        logError(
+          "Failed to request device sync for user %s: %O",
+          userId,
+          error
+        );
+        Sentry.captureException(error, {
+          tags: { component: "google-homegraph" },
+          extra: { userId, clientId },
+        });
+      });
     }
   };
 
@@ -269,10 +279,15 @@ export class HomedServerController {
     });
 
     // Notify Google Home that device capabilities have been updated
-    this.googleHomeGraph?.updateDevices(
-      client.user.id,
-      this.deviceCache.getDevices(client.user.id, client.uniqueId)
-    );
+    const userId = client.user.id;
+    const clientId = client.uniqueId;
+    this.googleHomeGraph?.updateDevices(userId).catch(error => {
+      logError("Failed to request device sync for user %s: %O", userId, error);
+      Sentry.captureException(error, {
+        tags: { component: "google-homegraph" },
+        extra: { userId, clientId },
+      });
+    });
   };
 
   deviceStatusUpdated = (
@@ -305,29 +320,38 @@ export class HomedServerController {
     );
 
     // Report state change to Google Home
-    if (this.googleHomeGraph) {
-      const device = this.deviceCache.getClientDevice(
+    const device = this.deviceCache.getClientDevice(
+      client.user.id,
+      client.uniqueId,
+      deviceId as DeviceId
+    );
+
+    // Only report if device exists and has traits (endpoints with exposes)
+    if (device && device.endpoints.some(ep => ep.exposes.length > 0)) {
+      const deviceState = this.deviceCache.getDeviceState(
         client.user.id,
-        client.uniqueId,
-        deviceId as DeviceId
+        deviceId as DeviceId,
+        client.uniqueId
       );
 
-      // Only report if device exists and has traits (endpoints with exposes)
-      if (device && device.endpoints.some(ep => ep.exposes.length > 0)) {
-        const deviceState = this.deviceCache.getDeviceState(
-          client.user.id,
-          deviceId as DeviceId,
-          client.uniqueId
-        );
-
-        if (deviceState) {
-          const googleState = mapToGoogleState(device, deviceState);
-          this.googleHomeGraph.reportStateChange(
-            client.user.id,
-            deviceId,
-            googleState
-          );
-        }
+      if (deviceState) {
+        const userId = client.user.id;
+        const clientId = client.uniqueId;
+        const googleState = mapToGoogleState(device, deviceState);
+        const googleDeviceId = toGoogleDeviceId(clientId, deviceId);
+        this.googleHomeGraph
+          ?.reportStateChange(userId, googleDeviceId, googleState)
+          .catch(error => {
+            logError(
+              "Failed to report state for device %s: %O",
+              googleDeviceId,
+              error
+            );
+            Sentry.captureException(error, {
+              tags: { component: "google-homegraph" },
+              extra: { userId, clientId, deviceId: googleDeviceId },
+            });
+          });
       }
     }
   };

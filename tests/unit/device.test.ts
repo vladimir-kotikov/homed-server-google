@@ -75,8 +75,9 @@ describe("DeviceRepository", () => {
       repository.syncClientDevices(userId, uniqueId, [device]);
       repository.syncClientDevices(userId, client2, []);
 
-      const devices1 = repository.getDevices(userId, uniqueId);
-      const devices2 = repository.getDevices(userId, client2);
+      const allDevices = repository.getDevices(userId);
+      const devices1 = allDevices.filter(d => d.clientId === uniqueId);
+      const devices2 = allDevices.filter(d => d.clientId === client2);
 
       expect(devices1).toHaveLength(1);
       expect(devices2).toHaveLength(0);
@@ -89,23 +90,28 @@ describe("DeviceRepository", () => {
       repository.syncClientDevices(userId, uniqueId, [device]);
       repository.syncClientDevices(user2, uniqueId, []);
 
-      const devices1 = repository.getDevices(userId, uniqueId);
-      const devices2 = repository.getDevices(user2, uniqueId);
+      const devices1 = repository
+        .getDevices(userId)
+        .filter(d => d.clientId === uniqueId);
+      const devices2 = repository
+        .getDevices(user2)
+        .filter(d => d.clientId === uniqueId);
 
       expect(devices1).toHaveLength(1);
       expect(devices2).toHaveLength(0);
     });
   });
 
-  describe("getDevices", () => {
+  describe("getDevicesWithClientId", () => {
     it("should get devices for specific client", () => {
       const device = createMockDevice("device1");
       repository.syncClientDevices(userId, uniqueId, [device]);
 
-      const devices = repository.getDevices(userId, uniqueId);
+      const allDevices = repository.getDevices(userId);
+      const devices = allDevices.filter(d => d.clientId === uniqueId);
 
       expect(devices).toHaveLength(1);
-      expect(devices[0].key).toBe("device1");
+      expect(devices[0].device.key).toBe("device1");
     });
 
     it("should get all devices for user across all clients", () => {
@@ -119,12 +125,12 @@ describe("DeviceRepository", () => {
       const allDevices = repository.getDevices(userId);
 
       expect(allDevices).toHaveLength(2);
-      expect(allDevices.map(d => d.key)).toContain("device1");
-      expect(allDevices.map(d => d.key)).toContain("device2");
+      expect(allDevices.map(d => d.device.key)).toContain("device1");
+      expect(allDevices.map(d => d.device.key)).toContain("device2");
     });
 
     it("should return empty array for non-existent client", () => {
-      const devices = repository.getDevices(userId, uniqueId);
+      const devices = repository.getDevices(userId);
 
       expect(devices).toHaveLength(0);
     });

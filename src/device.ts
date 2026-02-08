@@ -44,10 +44,23 @@ export class DeviceRepository {
   ): HomedDevice | undefined =>
     this.devices[userId]?.[clientId]?.find(d => d.key === deviceId);
 
-  getDevices = (userId: UserId, clientId?: ClientId): HomedDevice[] =>
-    clientId
-      ? (this.devices[userId]?.[clientId] ?? [])
-      : Object.values(this.devices[userId] ?? {}).flat();
+  /**
+   * Get all devices for a user with their associated ClientId
+   */
+  getDevices = (
+    userId: UserId
+  ): Array<{ device: HomedDevice; clientId: ClientId }> => {
+    const result: Array<{ device: HomedDevice; clientId: ClientId }> = [];
+    const userDevices = this.devices[userId] ?? {};
+
+    for (const [clientId, devices] of Object.entries(userDevices)) {
+      for (const device of devices) {
+        result.push({ device, clientId: clientId as ClientId });
+      }
+    }
+
+    return result;
+  };
 
   removeDevices = (userId: UserId, clientId?: ClientId): void => {
     if (clientId) {

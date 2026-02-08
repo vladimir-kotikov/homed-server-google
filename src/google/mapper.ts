@@ -4,6 +4,7 @@
  */
 
 import type { HomedDevice, HomedEndpoint } from "../device.ts";
+import type { ClientId } from "../homed/client.ts";
 import type { EndpointOptions } from "../homed/schema.ts";
 import type { CommandMessage, DeviceState } from "../homed/types.ts";
 import type { GoogleCommand } from "./schema.ts";
@@ -11,8 +12,27 @@ import { TRAIT_MAPPERS } from "./traits.ts";
 import type {
   GoogleDevice,
   GoogleDeviceAttributes,
+  GoogleDeviceId,
   GoogleDeviceState,
 } from "./types.ts";
+
+/**
+ * Creates a Google device ID from clientId (unique client identifier) and homed device key
+ * Uses clientId instead of clientToken to avoid exposing secrets
+ */
+export const toGoogleDeviceId = (
+  clientId: ClientId,
+  homedDeviceKey: string
+): GoogleDeviceId => `${clientId}#${homedDeviceKey}` as GoogleDeviceId;
+
+/**
+ * Extracts the homed device key from a Google device ID
+ */
+export const fromGoogleDeviceId = (googleDeviceId: GoogleDeviceId): string => {
+  const parts = googleDeviceId.split("#");
+  // Device key is everything after the first hash
+  return parts.slice(1).join("#");
+};
 
 /**
  * Command structure for execution
@@ -99,6 +119,11 @@ const detectDeviceType = (exposes: string[]): string => {
   }
 
   // Priority mapping for devices with multiple exposes
+  // Outlet takes priority over light if present
+  if (exposes.includes("outlet")) {
+    return GOOGLE_DEVICE_TYPES.OUTLET;
+  }
+
   // Light takes priority if present
   if (
     exposes.some(expose =>
@@ -177,6 +202,10 @@ const getTraitsForExposes = (exposes: string[]): string[] => {
       }
 
       case "brightness": {
+        // Add OnOff if there's a light present, otherwise just brightness
+        if (exposes.includes("light")) {
+          traits.add("action.devices.traits.OnOff");
+        }
         traits.add("action.devices.traits.Brightness");
         break;
       }
@@ -239,7 +268,7 @@ const mergeEndpointOptions = (endpoints: HomedEndpoint[]): EndpointOptions => {
  */
 export const mapToGoogleDevice = (
   homedDevice: HomedDevice,
-  clientId: string
+  clientId: ClientId
 ): GoogleDevice => {
   // Flatten all exposes from all endpoints
   const allExposes = homedDevice.endpoints
@@ -249,9 +278,8 @@ export const mapToGoogleDevice = (
   const deviceType = detectDeviceType(allExposes);
   const traits = getTraitsForExposes(allExposes);
 
-  // Build device ID from client and device key
-  // Build the device ID from client and device key
-  const googleDeviceId = `${clientId}-${homedDevice.key}`;
+  // Build device ID from clientId and homed device key (no secret exposure)
+  const googleDeviceId = toGoogleDeviceId(clientId, homedDevice.key);
 
   // Build nicknames from alternative names
   const nicknames: string[] = [];
@@ -280,8 +308,7 @@ export const mapToGoogleDevice = (
       name: homedDevice.name,
       nicknames,
     },
-    // TODO: Reporting is not supported yet
-    willReportState: false,
+    willReportState: true,
     attributes: Object.keys(attributes).length > 0 ? attributes : undefined,
     deviceInfo: {
       manufacturer: homedDevice.manufacturer ?? "Unknown Manufacturer",

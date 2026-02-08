@@ -7,6 +7,7 @@ import {
   mapToGoogleDevice,
   mapToGoogleState,
   mapToHomedCommand,
+  toGoogleDeviceId,
 } from "./mapper.ts";
 import {
   SmartHomeRequestSchema,
@@ -50,11 +51,11 @@ export class FulfillmentController {
               this.handleSync(user)
             )
             .with({ intent: "action.devices.QUERY", payload: P.select() }, p =>
-              this.handleQuery(p, user)
+              this.handleQuery(p as QueryRequestPayload, user)
             )
             .with(
               { intent: "action.devices.EXECUTE", payload: P.select() },
-              p => this.handleExecute(p, user)
+              p => this.handleExecute(p as ExecuteRequestPayload, user)
             )
             .with({ intent: "action.devices.DISCONNECT" }, () =>
               this.handleDisconnect(user)
@@ -70,15 +71,15 @@ export class FulfillmentController {
   private handleSync = async (user: User): Promise<SyncResponsePayload> => {
     const allDevices = this.deviceRepository
       .getDevices(user.id)
-      .filter(device => device.endpoints.length > 0);
+      .filter(({ device }) => device.endpoints.length > 0);
 
     const googleDevices = allDevices
-      .map(device => mapToGoogleDevice(device, user.clientToken))
+      .map(({ device, clientId }) => mapToGoogleDevice(device, clientId))
       .filter(device => {
         const hasTraits = device.traits.length > 0;
         if (!hasTraits) {
           log(
-            `Excluding device "${device.name}" (${device.id}): no supported traits`
+            `Excluding device "${device.name.name}" (${device.id}): no supported traits`
           );
         }
         return hasTraits;
@@ -100,20 +101,27 @@ export class FulfillmentController {
 
     const mappedStates = this.deviceRepository
       .getDevices(user.id)
-      .filter(device => requestedDeviceIds.has(device.key))
+      .map(({ device, clientId }) => ({
+        device,
+        clientId,
+        googleId: toGoogleDeviceId(clientId, device.key),
+      }))
+      .filter(({ googleId }) => requestedDeviceIds.has(googleId))
       .map(
-        device =>
+        ({ device, clientId, googleId }) =>
           [
             device,
+            googleId,
             this.deviceRepository.getDeviceState(
               user.id,
-              device.key as DeviceId
+              device.key as DeviceId,
+              clientId
             ),
           ] as const
       )
       .map(
-        ([device, state]) =>
-          [device.key, mapToGoogleState(device, state ?? {})] as const
+        ([device, googleId, state]) =>
+          [googleId, mapToGoogleState(device, state ?? {})] as const
       );
 
     return { devices: Object.fromEntries(mappedStates) };
@@ -127,8 +135,12 @@ export class FulfillmentController {
       const requestedDeviceIds = new Set(devices.map(d => d.id));
       return this.deviceRepository
         .getDevices(user.id)
-        .filter(device => requestedDeviceIds.has(device.key))
-        .flatMap(device =>
+        .map(({ device, clientId }) => ({
+          device,
+          googleId: toGoogleDeviceId(clientId, device.key),
+        }))
+        .filter(({ googleId }) => requestedDeviceIds.has(googleId))
+        .flatMap(({ device }) =>
           execution.map(command => mapToHomedCommand(device, command))
         );
     });

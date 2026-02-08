@@ -14,6 +14,7 @@ import {
   type GoogleCommand,
 } from "../../src/google/schema.ts";
 import { GOOGLE_TRAITS } from "../../src/google/traits.ts";
+import type { ClientId } from "../../src/homed/client.ts";
 
 // ============================================================================
 // Test Constants - Reduce Magic Strings
@@ -22,6 +23,7 @@ import { GOOGLE_TRAITS } from "../../src/google/traits.ts";
 const DEVICE_TYPES = GOOGLE_DEVICE_TYPES;
 const TRAITS = GOOGLE_TRAITS;
 const COMMANDS = GOOGLE_COMMANDS;
+const testClientId = "client1" as ClientId;
 
 // ============================================================================
 // Test Helpers - Unified & Parameterized
@@ -98,7 +100,7 @@ describe("CapabilityMapper", () => {
         name: "Main Switch",
       });
 
-      const google = mapToGoogleDevice(device, "client1");
+      const google = mapToGoogleDevice(device, testClientId);
       expect(google.type).toBe(DEVICE_TYPES.SWITCH);
       expect(google.traits).toContain(TRAITS.ON_OFF);
     });
@@ -110,7 +112,7 @@ describe("CapabilityMapper", () => {
         name: "Power Outlet",
       });
 
-      const google = mapToGoogleDevice(device, "client1");
+      const google = mapToGoogleDevice(device, testClientId);
       expect(google.type).toBe(DEVICE_TYPES.OUTLET);
     });
 
@@ -121,7 +123,7 @@ describe("CapabilityMapper", () => {
         name: "Ceiling Light",
       });
 
-      const google = mapToGoogleDevice(device, "client1");
+      const google = mapToGoogleDevice(device, testClientId);
       expect(google.type).toBe(DEVICE_TYPES.LIGHT);
     });
 
@@ -132,7 +134,7 @@ describe("CapabilityMapper", () => {
         name: "Dimmable Light",
       });
 
-      const google = mapToGoogleDevice(device, "client1");
+      const google = mapToGoogleDevice(device, testClientId);
       expect(google.type).toBe(DEVICE_TYPES.LIGHT);
       expect(google.traits).toContain(TRAITS.ON_OFF);
       expect(google.traits).toContain(TRAITS.BRIGHTNESS);
@@ -145,7 +147,7 @@ describe("CapabilityMapper", () => {
         name: "RGB Light",
       });
 
-      const google = mapToGoogleDevice(device, "client1");
+      const google = mapToGoogleDevice(device, testClientId);
       expect(google.traits).toContain(TRAITS.ON_OFF);
       expect(google.traits).toContain(TRAITS.BRIGHTNESS);
       expect(google.traits).toContain(TRAITS.COLOR_SETTING);
@@ -158,7 +160,7 @@ describe("CapabilityMapper", () => {
         name: "Window Blinds",
       });
 
-      const google = mapToGoogleDevice(device, "client1");
+      const google = mapToGoogleDevice(device, testClientId);
       expect(google.type).toBe(DEVICE_TYPES.BLINDS);
       expect(google.traits).toContain(TRAITS.OPEN_CLOSE);
     });
@@ -170,7 +172,7 @@ describe("CapabilityMapper", () => {
         name: "Door Lock",
       });
 
-      const google = mapToGoogleDevice(device, "client1");
+      const google = mapToGoogleDevice(device, testClientId);
       expect(google.type).toBe(DEVICE_TYPES.LOCK);
       expect(google.traits).toContain(TRAITS.ON_OFF);
     });
@@ -182,7 +184,7 @@ describe("CapabilityMapper", () => {
         name: "Smart Thermostat",
       });
 
-      const google = mapToGoogleDevice(device, "client1");
+      const google = mapToGoogleDevice(device, testClientId);
       expect(google.type).toBe(DEVICE_TYPES.THERMOSTAT);
       expect(google.traits).toContain(TRAITS.TEMPERATURE_SETTING);
     });
@@ -194,7 +196,7 @@ describe("CapabilityMapper", () => {
         name: "Smoke Detector",
       });
 
-      const google = mapToGoogleDevice(device, "client1");
+      const google = mapToGoogleDevice(device, testClientId);
       expect(google.type).toBe(DEVICE_TYPES.SMOKE_DETECTOR);
     });
 
@@ -205,7 +207,7 @@ describe("CapabilityMapper", () => {
         name: "Door Contact",
       });
 
-      const google = mapToGoogleDevice(device, "client1");
+      const google = mapToGoogleDevice(device, testClientId);
       expect(google.type).toBe(DEVICE_TYPES.SENSOR);
       expect(google.traits).toContain(TRAITS.SENSOR_STATE);
     });
@@ -217,7 +219,7 @@ describe("CapabilityMapper", () => {
         name: "Motion Sensor",
       });
 
-      const google = mapToGoogleDevice(device, "client1");
+      const google = mapToGoogleDevice(device, testClientId);
       expect(google.type).toBe(DEVICE_TYPES.SENSOR);
       expect(google.traits).toContain(TRAITS.SENSOR_STATE);
     });
@@ -229,7 +231,7 @@ describe("CapabilityMapper", () => {
         name: "Water Leak Sensor",
       });
 
-      const google = mapToGoogleDevice(device, "client1");
+      const google = mapToGoogleDevice(device, testClientId);
       expect(google.type).toBe(DEVICE_TYPES.SENSOR);
     });
 
@@ -243,7 +245,7 @@ describe("CapabilityMapper", () => {
         name: "Device-With_Special.Chars@123!",
       });
 
-      const google = mapToGoogleDevice(device, "client1");
+      const google = mapToGoogleDevice(device, testClientId);
       expect(google.name.name).toBe("Device-With_Special.Chars@123!");
       expect(google.type).toBe(DEVICE_TYPES.SWITCH);
     });
@@ -254,7 +256,7 @@ describe("CapabilityMapper", () => {
         key: "001", // Missing 0x
       });
 
-      const google = mapToGoogleDevice(device, "client1");
+      const google = mapToGoogleDevice(device, testClientId);
       expect(google.customData?.homedKey).toBe("001");
     });
 
@@ -264,7 +266,7 @@ describe("CapabilityMapper", () => {
         available: false,
       });
 
-      const google = mapToGoogleDevice(device, "client1");
+      const google = mapToGoogleDevice(device, testClientId);
       expect(google.type).toBe(DEVICE_TYPES.LIGHT); // Type should not change
       expect(google.name.name).toBe("Test Device");
     });
@@ -281,7 +283,7 @@ describe("CapabilityMapper", () => {
         name: "Light Switch Combo",
       });
 
-      const google = mapToGoogleDevice(device, "client1");
+      const google = mapToGoogleDevice(device, testClientId);
       expect(google.type).toBe(DEVICE_TYPES.LIGHT);
     });
 
@@ -292,7 +294,7 @@ describe("CapabilityMapper", () => {
         name: "Smart Device",
       });
 
-      const google = mapToGoogleDevice(device, "client1");
+      const google = mapToGoogleDevice(device, testClientId);
       expect(google.type).toBe(DEVICE_TYPES.LIGHT);
     });
 
@@ -303,7 +305,7 @@ describe("CapabilityMapper", () => {
         name: "Cover with Light",
       });
 
-      const google = mapToGoogleDevice(device, "client1");
+      const google = mapToGoogleDevice(device, testClientId);
       expect(google.type).toBe(DEVICE_TYPES.LIGHT);
     });
 
@@ -314,7 +316,7 @@ describe("CapabilityMapper", () => {
         name: "Smart Lock",
       });
 
-      const google = mapToGoogleDevice(device, "client1");
+      const google = mapToGoogleDevice(device, testClientId);
       expect(google.type).toBe(DEVICE_TYPES.LOCK);
     });
 
@@ -325,7 +327,7 @@ describe("CapabilityMapper", () => {
         name: "Combo Sensor",
       });
 
-      const google = mapToGoogleDevice(device, "client1");
+      const google = mapToGoogleDevice(device, testClientId);
       expect(google.type).toBe(DEVICE_TYPES.SMOKE_DETECTOR);
     });
 
@@ -336,7 +338,7 @@ describe("CapabilityMapper", () => {
         name: "Outlet",
       });
 
-      const google = mapToGoogleDevice(device, "client1");
+      const google = mapToGoogleDevice(device, testClientId);
       expect(google.type).toBe(DEVICE_TYPES.OUTLET);
     });
 
@@ -347,7 +349,7 @@ describe("CapabilityMapper", () => {
         name: "Multi Sensor",
       });
 
-      const google = mapToGoogleDevice(device, "client1");
+      const google = mapToGoogleDevice(device, testClientId);
       expect(google.type).toBe(DEVICE_TYPES.SENSOR);
       expect(google.traits).toContain(TRAITS.SENSOR_STATE);
     });
@@ -366,9 +368,9 @@ describe("CapabilityMapper", () => {
         description: "Main light",
       });
 
-      const google = mapToGoogleDevice(device, "client-001");
+      const google = mapToGoogleDevice(device, "client-001" as ClientId);
 
-      expect(google.id).toBe("client-001-0x123456");
+      expect(google.id).toBe("client-001#0x123456");
       expect(google.name.name).toBe("Living Room Light");
       expect(google.name.defaultNames).toContain("Living Room Light");
       // If description becomes a nickname, it would be here, otherwise it's just in the device
@@ -385,7 +387,7 @@ describe("CapabilityMapper", () => {
         name: "Simple Switch",
       });
 
-      const google = mapToGoogleDevice(device, "client1");
+      const google = mapToGoogleDevice(device, testClientId);
       expect(google.name.nicknames).toHaveLength(0);
       expect(google.name.name).toBe("Simple Switch");
       expect(google.type).toBe(DEVICE_TYPES.SWITCH);
@@ -398,7 +400,7 @@ describe("CapabilityMapper", () => {
         name: "Multi-endpoint Device",
       });
 
-      const google = mapToGoogleDevice(device, "client1");
+      const google = mapToGoogleDevice(device, testClientId);
       expect(google.traits).toContain(TRAITS.ON_OFF);
       expect(google.traits).toContain(TRAITS.BRIGHTNESS);
       expect(google.traits).toContain(TRAITS.COLOR_SETTING);
@@ -416,7 +418,7 @@ describe("CapabilityMapper", () => {
         name: "Device with duplicate exposes",
       });
 
-      const google = mapToGoogleDevice(device, "client1");
+      const google = mapToGoogleDevice(device, testClientId);
       // Should not duplicate OnOff trait from duplicate switch exposes
       expect(google.traits).toContain(TRAITS.ON_OFF);
       expect(google.type).toBe(DEVICE_TYPES.SWITCH);
@@ -429,7 +431,7 @@ describe("CapabilityMapper", () => {
         name: "Device",
       });
 
-      const google = mapToGoogleDevice(device, "client1");
+      const google = mapToGoogleDevice(device, testClientId);
       expect(google.customData?.endpoints).toBeDefined();
       expect(google.customData?.endpoints).toHaveLength(2);
       const endpoints = google.customData?.endpoints as any;
@@ -450,7 +452,7 @@ describe("CapabilityMapper", () => {
         name: "Device 1",
         description: "",
       });
-      const google1 = mapToGoogleDevice(device1, "client1");
+      const google1 = mapToGoogleDevice(device1, "client1" as ClientId);
       expect(google1.name.nicknames).toHaveLength(0);
 
       // Special characters
@@ -459,7 +461,7 @@ describe("CapabilityMapper", () => {
         name: "Device 2",
         description: "Main & living room's bright light (150W) [premium]",
       });
-      const google2 = mapToGoogleDevice(device2, "client1");
+      const google2 = mapToGoogleDevice(device2, "client1" as ClientId);
       expect(google2.name.name).toBe("Device 2");
       expect(google2.type).toBe(DEVICE_TYPES.LIGHT);
 
@@ -469,7 +471,7 @@ describe("CapabilityMapper", () => {
         name: "Offline Light",
         available: false,
       });
-      const google3 = mapToGoogleDevice(device3, "client1");
+      const google3 = mapToGoogleDevice(device3, "client1" as ClientId);
       expect(google3.name.name).toBe("Offline Light");
       expect(google3.type).toBe(DEVICE_TYPES.LIGHT);
     });
@@ -480,7 +482,7 @@ describe("CapabilityMapper", () => {
         key: "0xABCDEF",
       });
 
-      const google = mapToGoogleDevice(device, "client1");
+      const google = mapToGoogleDevice(device, testClientId);
       expect(google.customData?.homedKey).toBe("0xABCDEF");
       expect(google.id).toContain("0xABCDEF");
     });
@@ -495,7 +497,7 @@ describe("CapabilityMapper", () => {
         name: "Multi-endpoint Edge Case",
       });
 
-      const google = mapToGoogleDevice(device, "client1");
+      const google = mapToGoogleDevice(device, testClientId);
       const endpoints = google.customData?.endpoints as any;
       expect(endpoints).toHaveLength(20);
     });
@@ -1604,7 +1606,7 @@ describe("CapabilityMapper", () => {
         },
       });
 
-      const google = mapToGoogleDevice(device, "client1");
+      const google = mapToGoogleDevice(device, testClientId);
       expect(google.attributes).toBeDefined();
       expect(google.type).toBe(DEVICE_TYPES.THERMOSTAT);
     });
@@ -1621,7 +1623,7 @@ describe("CapabilityMapper", () => {
         name: "Advanced Light",
       });
 
-      const google = mapToGoogleDevice(device, "client1");
+      const google = mapToGoogleDevice(device, testClientId);
       expect(google.type).toBe(DEVICE_TYPES.LIGHT);
       expect(google.traits).toContain(TRAITS.ON_OFF);
       expect(google.traits).toContain(TRAITS.BRIGHTNESS);
@@ -1634,7 +1636,7 @@ describe("CapabilityMapper", () => {
         options: {},
       });
 
-      const google = mapToGoogleDevice(device, "client1");
+      const google = mapToGoogleDevice(device, testClientId);
       expect(google).toBeDefined();
       expect(google.type).toBe(DEVICE_TYPES.SWITCH);
     });
@@ -1649,7 +1651,7 @@ describe("CapabilityMapper", () => {
         },
       });
 
-      const google = mapToGoogleDevice(device, "client1");
+      const google = mapToGoogleDevice(device, testClientId);
       // Should either reject or normalize
       expect(google).toBeDefined();
     });
@@ -1702,7 +1704,7 @@ describe("CapabilityMapper", () => {
         },
       });
 
-      const google = mapToGoogleDevice(device, "client1");
+      const google = mapToGoogleDevice(device, testClientId);
       expect(google.customData?.endpoints).toBeDefined();
       expect(google.customData?.endpoints).toHaveLength(2);
       const endpoints = google.customData?.endpoints as any;
@@ -1854,7 +1856,7 @@ describe("CapabilityMapper", () => {
         name: "Empty Device",
       });
 
-      const google = mapToGoogleDevice(device, "client1");
+      const google = mapToGoogleDevice(device, testClientId);
       expect(google.type).toBe(DEVICE_TYPES.SWITCH); // Default fallback
       expect(google.traits).toHaveLength(0);
     });
@@ -1865,7 +1867,7 @@ describe("CapabilityMapper", () => {
         name: "Empty Endpoint",
       });
 
-      const google = mapToGoogleDevice(device, "client1");
+      const google = mapToGoogleDevice(device, testClientId);
       expect(google.type).toBe(DEVICE_TYPES.SWITCH); // Default fallback
     });
 
@@ -1902,7 +1904,7 @@ describe("CapabilityMapper", () => {
         name: "Empty Device",
       });
 
-      const google = mapToGoogleDevice(device, "client1");
+      const google = mapToGoogleDevice(device, testClientId);
       expect(google.type).toBe(DEVICE_TYPES.SWITCH); // Default fallback
       expect(google.traits).toHaveLength(0);
     });
@@ -1968,7 +1970,7 @@ describe("CapabilityMapper", () => {
         description: "Living room RGB light",
       });
 
-      const google = mapToGoogleDevice(device, "client-001");
+      const google = mapToGoogleDevice(device, "client-001" as ClientId);
 
       // Device mapping
       expect(google.type).toBe(DEVICE_TYPES.LIGHT);
@@ -2010,7 +2012,7 @@ describe("CapabilityMapper", () => {
         name: "Living Room Thermostat",
       });
 
-      const google = mapToGoogleDevice(device, "client-001");
+      const google = mapToGoogleDevice(device, "client-001" as ClientId);
       expect(google.type).toBe(DEVICE_TYPES.THERMOSTAT);
       expect(google.traits).toContain(TRAITS.TEMPERATURE_SETTING);
 
@@ -2033,7 +2035,7 @@ describe("CapabilityMapper", () => {
         name: "Smart Outlet",
       });
 
-      const google = mapToGoogleDevice(device, "client-001");
+      const google = mapToGoogleDevice(device, "client-001" as ClientId);
       expect(google.type).toBe(DEVICE_TYPES.OUTLET);
       expect(google.traits).toContain(TRAITS.ON_OFF);
     });
@@ -2045,7 +2047,7 @@ describe("CapabilityMapper", () => {
         name: "Multi-trait Device",
       });
 
-      const google = mapToGoogleDevice(device, "client1");
+      const google = mapToGoogleDevice(device, testClientId);
       // Should pick primary type based on priority
       expect(google.type).toBeDefined();
       expect([

@@ -22,30 +22,6 @@ const stringEnvironment = (value: string, fallback?: string): string => {
   );
 };
 
-const googleServiceAccountJson = (() => {
-  const base64Value = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
-  const isProduction =
-    (process.env.NODE_ENV || "production").toLowerCase() === "production";
-
-  if (!base64Value) {
-    if (isProduction) {
-      throw new Error(
-        "Missing required environment variable: GOOGLE_SERVICE_ACCOUNT_JSON"
-      );
-    }
-    return undefined;
-  }
-
-  try {
-    const decoded = Buffer.from(base64Value, "base64").toString("utf-8");
-    return JSON.parse(decoded);
-  } catch (error) {
-    throw new Error(
-      `Failed to parse GOOGLE_SERVICE_ACCOUNT_JSON: ${error instanceof Error ? error.message : String(error)}`
-    );
-  }
-})();
-
 export default {
   env: (process.env.NODE_ENV || "production").toLowerCase(),
   sentryDsn: stringEnvironment("SENTRY_DSN", ""),
@@ -62,7 +38,6 @@ export default {
   googleSsoClientId: stringEnvironment("GOOGLE_SSO_CLIENT_ID"),
   googleSsoClientSecret: stringEnvironment("GOOGLE_SSO_CLIENT_SECRET"),
   googleSsoRedirectUri: stringEnvironment("GOOGLE_SSO_REDIRECT_URI"),
-  googleServiceAccountJson,
   accessTokenLifetime: intEnvironment("OAUTH_ACCESS_TOKEN_EXPIRES_IN", 3600), // 1 hour
   refreshTokenLifetime: intEnvironment(
     "OAUTH_REFRESH_TOKEN_EXPIRES_IN",

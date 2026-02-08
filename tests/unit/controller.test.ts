@@ -1,16 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { HomedServerController } from "../../src/controller.ts";
-import type { UserId } from "../../src/db/repository.ts";
+import type { ClientToken, UserId } from "../../src/db/repository.ts";
 import { UserRepository } from "../../src/db/repository.ts";
 import type { DeviceId, HomedDevice } from "../../src/device.ts";
 import { DeviceRepository } from "../../src/device.ts";
 import type { HomeGraphClient } from "../../src/google/homeGraph.ts";
+import { toGoogleDeviceId } from "../../src/google/mapper.ts";
 import type { ClientId } from "../../src/homed/client.ts";
 import { WebApp } from "../../src/web/app.ts";
 
 const createUserId = (id: string): UserId => id as UserId;
 const createClientId = (id: string): ClientId => id as ClientId;
 const createDeviceId = (id: string): DeviceId => id as DeviceId;
+const createClientToken = (token: string): ClientToken => token as ClientToken;
 
 const createMockDevice = (
   key: string,
@@ -38,6 +40,7 @@ describe("HomedServerController", () => {
 
   const userId = createUserId("user1");
   const clientId = createClientId("client1");
+  const clientToken = createClientToken("test-client-token");
   const deviceId = createDeviceId("device1");
 
   beforeEach(() => {
@@ -51,8 +54,8 @@ describe("HomedServerController", () => {
 
     // Create mock HomeGraphClient
     mockHomeGraph = {
-      reportStateChange: vi.fn(),
-      updateDevices: vi.fn(),
+      reportStateChange: vi.fn().mockResolvedValue(undefined),
+      updateDevices: vi.fn().mockResolvedValue(undefined),
     } as unknown as HomeGraphClient;
   });
 
@@ -71,17 +74,19 @@ describe("HomedServerController", () => {
 
       // Create a mock client connection
       const mockClient = {
-        user: { id: userId },
+        user: { id: userId, clientToken },
         uniqueId: clientId,
       };
 
       // Trigger device data update
       (controller as any).deviceDataUpdated(mockClient, deviceId, { on: true });
 
+      const googleDeviceId = toGoogleDeviceId(clientId, deviceId);
+
       // Verify reportStateChange was called
       expect(mockHomeGraph.reportStateChange).toHaveBeenCalledWith(
         userId,
-        deviceId,
+        googleDeviceId,
         expect.objectContaining({
           online: true,
           on: true,
@@ -127,7 +132,7 @@ describe("HomedServerController", () => {
       deviceCache.syncClientDevices(userId, clientId, [device]);
 
       const mockClient = {
-        user: { id: userId },
+        user: { id: userId, clientToken },
         uniqueId: clientId,
       };
 
@@ -137,10 +142,12 @@ describe("HomedServerController", () => {
         state: "ON",
       });
 
+      const googleDeviceId = toGoogleDeviceId(clientId, deviceId);
+
       // Verify state is mapped to Google format
       expect(mockHomeGraph.reportStateChange).toHaveBeenCalledWith(
         userId,
-        deviceId,
+        googleDeviceId,
         expect.objectContaining({
           brightness: expect.any(Number),
           on: expect.any(Boolean),

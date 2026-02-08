@@ -1,3 +1,16 @@
+/**
+ * Google Smart Home device types and interfaces
+ */
+
+/**
+ * Branded type for Google device IDs
+ * Format: ${clientId}-${homedDeviceKey}
+ * Example: "service-123-zigbee/04:cf:8c:df:3c:7c:3b:97"
+ */
+export type GoogleDeviceId = string & {
+  readonly __googleDeviceId: unique symbol;
+};
+
 // Types for Google Smart Home outbound responses and trait attributes/state
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
@@ -204,12 +217,12 @@ export interface QueryDeviceState {
 
 export interface QueryResponsePayload {
   devices: {
-    [deviceId: string]: QueryDeviceState;
+    [deviceId: GoogleDeviceId]: QueryDeviceState;
   };
 }
 
 export interface ExecuteResponseCommand {
-  ids: string[];
+  ids: GoogleDeviceId[];
   status: "SUCCESS" | "PENDING" | "OFFLINE" | "ERROR";
   states?: Record<string, unknown>; // Trait-specific states after command
   errorCode?: string;
@@ -254,7 +267,7 @@ export interface GoogleDeviceAttributes {
 }
 
 export interface GoogleDevice {
-  id: string;
+  id: GoogleDeviceId;
   type: string;
   traits: string[];
   name: GoogleDeviceName;
