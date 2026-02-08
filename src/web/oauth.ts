@@ -142,9 +142,9 @@ export class OAuthController {
       ? done(null, { id: clientId }, redirectUri)
       : done(null, false);
 
-  private userinfoHandler = async (request: Request, response: Response) => {
-    const { user } = request as Express.AuthenticatedRequest;
-    return response.json({
+  private userinfoHandler = async (req: Request, res: Response) => {
+    const { user } = req as Express.AuthenticatedRequest;
+    res.json({
       sub: user.id,
       email: user.username,
       name: user.username,
@@ -178,39 +178,36 @@ export class OAuthController {
         this.oauth2Server.token(),
         this.oauth2Server.errorHandler()
       )
-      .get(
-        "/userinfo",
-        (request: Request, response: Response, next: NextFunction) => {
-          passport.authenticate(
-            "jwt",
-            { session: false },
-            (authError: Error | null, user: User | false) => {
-              // Handle JWT authentication errors
-              if (authError) {
-                response.set("WWW-Authenticate", 'Bearer realm="api"');
-                return response.status(401).json({
-                  error: "invalid_token",
-                  error_description: authError.message,
-                });
-              }
-
-              // Handle no user returned (invalid/missing token)
-              if (!user) {
-                response.set("WWW-Authenticate", 'Bearer realm="api"');
-                return response.status(401).json({
-                  error: "invalid_token",
-                  error_description:
-                    "The access token provided is invalid or expired",
-                });
-              }
-
-              // Authentication successful
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              request.user = user as any;
-              this.userinfoHandler(request, response);
+      .get("/userinfo", (req: Request, res: Response, next: NextFunction) => {
+        passport.authenticate(
+          "jwt",
+          { session: false },
+          (authError: Error | null, user: User | false) => {
+            // Handle JWT authentication errors
+            if (authError) {
+              res.set("WWW-Authenticate", 'Bearer realm="api"');
+              return res.status(401).json({
+                error: "invalid_token",
+                error_description: authError.message,
+              });
             }
-          )(request, response, next);
-        }
-      );
+
+            // Handle no user returned (invalid/missing token)
+            if (!user) {
+              res.set("WWW-Authenticate", 'Bearer realm="api"');
+              return res.status(401).json({
+                error: "invalid_token",
+                error_description:
+                  "The access token provided is invalid or expired",
+              });
+            }
+
+            // Authentication successful
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            req.user = user as any;
+            this.userinfoHandler(req, res);
+          }
+        )(req, res, next);
+      });
   }
 }

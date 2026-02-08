@@ -5,6 +5,7 @@ import SqliteStore from "better-sqlite3-session-store";
 import { ensureLoggedIn, ensureLoggedOut } from "connect-ensure-login";
 import debug from "debug";
 import ejs from "ejs";
+import type { Request, Response } from "express";
 import express from "express";
 import sessionMiddleware from "express-session";
 import type { IncomingMessage, ServerResponse } from "node:http";
@@ -137,8 +138,10 @@ export class WebApp {
         passport.authenticate("google-oauth20", { keepSessionInfo: true }),
         this.handleAuthCallback
       )
-      .get("/logout", (req, res) =>
-        req.session.destroy(() => res.redirect("/"))
+      .get("/logout", (req, res, next) =>
+        req.session.destroy(error =>
+          error ? next(error) : res.redirect("/login")
+        )
       )
       .get("/health", (_, res) => res.json({ status: "ok" }))
       .post(
@@ -171,10 +174,7 @@ export class WebApp {
     Sentry.setupExpressErrorHandler(this.app);
   }
 
-  private handleHome = (
-    request: express.Request,
-    response: express.Response
-  ) => {
+  private handleHome = (request: Request, response: Response) => {
     const {
       user: { id, clientToken },
     } = request as Express.AuthenticatedRequest;
@@ -185,23 +185,18 @@ export class WebApp {
     });
   };
 
-  private handleAuthCallback = (
-    request: express.Request,
-    response: express.Response
-  ) => {
-    const redirectUrl = request.session.returnTo ?? "/";
-    delete request.session.returnTo;
-    response.redirect(redirectUrl);
+  private handleAuthCallback = (req: Request, res: Response) => {
+    const redirectUrl = req.session.returnTo ?? "/";
+    delete req.session.returnTo;
+    res.redirect(redirectUrl);
   };
 
-  private handleFulfillment = (
-    request: express.Request,
-    response: express.Response
-  ) => {
-    this.fulfillmentController
-      .handleFulfillment(request.user!, request.body)
-      .then(response.json)
-      .catch(error => response.status(500).json({ error: error.message }));
+  private handleFulfillment = async (req: Request, res: Response) => {
+    const data = await this.fulfillmentController.handleFulfillment(
+      (req as Express.AuthenticatedRequest).user,
+      req.body
+    );
+    res.json(data);
   };
 
   handleRequest = (request: IncomingMessage, response: ServerResponse) =>
