@@ -17,7 +17,7 @@ import type {
   HomedEndpoint,
 } from "./device.ts";
 import type { HomeGraphClient } from "./google/homeGraph.ts";
-import { mapToGoogleState, toGoogleDeviceId } from "./google/mapper.ts";
+import { mapToGoogleStateReports } from "./google/mapper.ts";
 import { ClientConnection, type ClientId } from "./homed/client.ts";
 import type {
   ClientStatusMessage,
@@ -332,19 +332,40 @@ export class HomedServerController {
       if (deviceState) {
         const userId = client.user.id;
         const clientId = client.uniqueId;
-        const googleState = mapToGoogleState(device, deviceState);
-        const googleDeviceId = toGoogleDeviceId(clientId, deviceId);
+
+        // Map device state to Google state reports (handles multi-endpoint logic)
+        const stateReports = mapToGoogleStateReports(
+          device,
+          clientId,
+          deviceId,
+          deviceState
+        );
+
+        // Batch report all state updates in a single API call
+        const stateUpdates = stateReports.map(
+          ({ googleDeviceId, googleState }) => ({
+            googleDeviceId,
+            state: googleState,
+          })
+        );
+
         this.googleHomeGraph
-          ?.reportStateChange(userId, googleDeviceId, googleState)
+          ?.reportStateChange(userId, stateUpdates)
           .catch(error => {
             logError(
-              "Failed to report state for device %s: %O",
-              googleDeviceId,
+              "Failed to report state for %d device(s): %O",
+              stateUpdates.length,
               error
             );
+
             Sentry.captureException(error, {
               tags: { component: "google-homegraph" },
-              extra: { userId, clientId, deviceId: googleDeviceId },
+              extra: {
+                userId,
+                clientId,
+                deviceId,
+                deviceCount: stateUpdates.length,
+              },
             });
           });
       }

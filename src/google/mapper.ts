@@ -3,7 +3,7 @@
  * Converts between Homed device capabilities and Google Smart Home format
  */
 
-import type { HomedDevice, HomedEndpoint } from "../device.ts";
+import type { DeviceId, HomedDevice, HomedEndpoint } from "../device.ts";
 import type { ClientId } from "../homed/client.ts";
 import type { EndpointOptions } from "../homed/schema.ts";
 import type { CommandMessage, DeviceState } from "../homed/types.ts";
@@ -19,11 +19,18 @@ import type {
 /**
  * Creates a Google device ID from clientId (unique client identifier) and homed device key
  * Uses clientId instead of clientToken to avoid exposing secrets
+ * Optionally includes endpoint ID for multi-endpoint devices
  */
 export const toGoogleDeviceId = (
   clientId: ClientId,
-  homedDeviceKey: string
-): GoogleDeviceId => `${clientId}#${homedDeviceKey}` as GoogleDeviceId;
+  homedDeviceKey: string,
+  endpointId?: number
+): GoogleDeviceId => {
+  const base = `${clientId}#${homedDeviceKey}`;
+  return (
+    endpointId !== undefined ? `${base}:${endpointId}` : base
+  ) as GoogleDeviceId;
+};
 
 /**
  * Extracts the homed device key from a Google device ID
@@ -31,7 +38,28 @@ export const toGoogleDeviceId = (
 export const fromGoogleDeviceId = (googleDeviceId: GoogleDeviceId): string => {
   const parts = googleDeviceId.split("#");
   // Device key is everything after the first hash
-  return parts.slice(1).join("#");
+  const withEndpoint = parts.slice(1).join("#");
+  // Remove endpoint ID if present
+  return withEndpoint.split(":")[0];
+};
+
+/**
+ * Extracts the clientId from a Google device ID
+ */
+export const getClientIdFromGoogleDeviceId = (
+  googleDeviceId: GoogleDeviceId
+): ClientId => {
+  return googleDeviceId.split("#")[0] as ClientId;
+};
+
+/**
+ * Extracts the endpoint ID from a Google device ID (if present)
+ */
+export const getEndpointIdFromGoogleDeviceId = (
+  googleDeviceId: GoogleDeviceId
+): number | undefined => {
+  const parts = googleDeviceId.split(":");
+  return parts.length > 1 ? parseInt(parts[1], 10) : undefined;
 };
 
 /**
@@ -260,7 +288,272 @@ const mergeEndpointOptions = (endpoints: HomedEndpoint[]): EndpointOptions => {
 };
 
 /**
+ * Determines if an endpoint has control capabilities (vs just metadata)
+ */
+const hasControlCapabilities = (exposes: string[]): boolean => {
+  const controlExposes = [
+    "switch",
+    "relay",
+    "outlet",
+    "light",
+    "dimmable_light",
+    "color_light",
+    "brightness",
+    "color",
+    "cover",
+    "blinds",
+    "curtain",
+    "shutter",
+    "lock",
+    "door_lock",
+    "thermostat",
+    "temperature_controller",
+  ];
+  return exposes.some(expose => controlExposes.includes(expose));
+};
+
+/**
+ * Get the primary device-level expose from an endpoint
+ * Returns the most significant control capability that defines the device type
+ */
+const getPrimaryExpose = (exposes: string[]): string | undefined => {
+  // Priority order: specific device types first, then generic attributes
+  const priorities = [
+    "color_light",
+    "dimmable_light",
+    "light", // Light types (specific to general)
+    "outlet",
+    "relay",
+    "switch", // Switch types (specific to general)
+    "blinds",
+    "curtain",
+    "shutter",
+    "cover", // Cover types
+    "door_lock",
+    "lock", // Lock types
+    "thermostat",
+    "temperature_controller", // Climate types
+  ];
+
+  for (const primary of priorities) {
+    if (exposes.includes(primary)) {
+      return primary;
+    }
+  }
+
+  return undefined;
+};
+
+/**
+ * Determines if all control endpoints have the same primary control expose
+ * Used to decide if a multi-endpoint device should be split into multiple Google devices
+ * Only splits if endpoints have the SAME independently-controllable capability (like multiple switches)
+ */
+const areAllSameDeviceType = (endpoints: HomedEndpoint[]): boolean => {
+  if (endpoints.length <= 1) return false;
+
+  // Get the primary expose for each endpoint
+  const primaryExposes = endpoints.map(ep => getPrimaryExpose(ep.exposes));
+
+  // Filter out undefined (endpoints with no primary expose)
+  const validPrimaries = primaryExposes.filter(p => p !== undefined);
+  if (validPrimaries.length <= 1) return false;
+
+  // Check if all primary exposes are the same
+  const firstPrimary = validPrimaries[0];
+  return validPrimaries.every(primary => primary === firstPrimary);
+};
+
+/**
+ * Get all Google device IDs for a Homed device
+ * Returns array of IDs based on whether the device should be split into multiple Google devices
+ *
+ * @param homedDevice - Homed device
+ * @param clientId - Unique client/service identifier
+ * @returns Array of Google device IDs that exist for this device
+ */
+export const getGoogleDeviceIds = (
+  homedDevice: HomedDevice,
+  clientId: ClientId
+): GoogleDeviceId[] => {
+  // Find all endpoints with control capabilities
+  const controlEndpoints = homedDevice.endpoints.filter(ep =>
+    hasControlCapabilities(ep.exposes)
+  );
+
+  // Determine if device should be split (same logic as mapToGoogleDevices)
+  const shouldSplit =
+    controlEndpoints.length > 1 && areAllSameDeviceType(controlEndpoints);
+
+  if (shouldSplit) {
+    // Multiple control endpoints of same type - return ID for each endpoint
+    return controlEndpoints.map(endpoint =>
+      toGoogleDeviceId(clientId, homedDevice.key, endpoint.id)
+    );
+  }
+
+  // Single device - return single ID
+  return [toGoogleDeviceId(clientId, homedDevice.key)];
+};
+
+/**
+ * Convert a Homed device to Google Smart Home device format(s)
+ * Returns an array because multi-endpoint devices are split into separate Google devices
+ *
+ * @param homedDevice - Homed device data
+ * @param clientId - Unique client/service identifier
+ * @returns Array of Google devices ready for SYNC intent
+ */
+export const mapToGoogleDevices = (
+  homedDevice: HomedDevice,
+  clientId: ClientId
+): GoogleDevice[] => {
+  // Find all endpoints with control capabilities
+  const controlEndpoints = homedDevice.endpoints.filter(ep =>
+    hasControlCapabilities(ep.exposes)
+  );
+
+  // Determine if device should be split into multiple Google devices
+  // Only split if there are 2+ control endpoints AND they're all the same type
+  const shouldSplit =
+    controlEndpoints.length > 1 && areAllSameDeviceType(controlEndpoints);
+
+  // If not splitting, treat as single device
+  if (!shouldSplit) {
+    // Single device: flatten all exposes from all endpoints
+    const allExposes = homedDevice.endpoints
+      .flatMap(ep => ep.exposes)
+      .filter((expose, index, array) => array.indexOf(expose) === index);
+
+    const deviceType = detectDeviceType(allExposes);
+    const traits = getTraitsForExposes(allExposes);
+
+    const googleDeviceId = toGoogleDeviceId(clientId, homedDevice.key);
+
+    const nicknames: string[] = [];
+    if (homedDevice.description) {
+      nicknames.push(homedDevice.description);
+    }
+
+    // Collect all trait attributes
+    const attributes: GoogleDeviceAttributes = {};
+    for (const trait of TRAIT_MAPPERS) {
+      if (traits.includes(trait.trait)) {
+        const traitAttributes = trait.getAttributes(
+          allExposes,
+          mergeEndpointOptions(homedDevice.endpoints)
+        );
+        Object.assign(attributes, traitAttributes);
+      }
+    }
+
+    return [
+      {
+        id: googleDeviceId,
+        type: deviceType,
+        traits,
+        name: {
+          defaultNames: [homedDevice.name],
+          name: homedDevice.name,
+          nicknames,
+        },
+        willReportState: true,
+        attributes: Object.keys(attributes).length > 0 ? attributes : undefined,
+        deviceInfo: {
+          manufacturer: homedDevice.manufacturer ?? "Unknown Manufacturer",
+          model: homedDevice.model ?? "Unknown Model",
+          hwVersion: homedDevice.version ?? "unknown",
+          swVersion: homedDevice.firmware ?? "unknown",
+        },
+        customData: {
+          homedKey: homedDevice.key,
+          clientId,
+          endpoints: homedDevice.endpoints.map(ep => ({
+            id: ep.id,
+            exposes: ep.exposes,
+          })),
+        },
+      },
+    ];
+  }
+
+  // Multiple control endpoints of the same type - create separate Google device for each
+  return controlEndpoints
+    .map(endpoint => {
+      const exposes = endpoint.exposes;
+      const deviceType = detectDeviceType(exposes);
+      const traits = getTraitsForExposes(exposes);
+
+      // Skip if no traits (shouldn't happen for control endpoints)
+      if (traits.length === 0) {
+        return undefined;
+      }
+
+      const googleDeviceId = toGoogleDeviceId(
+        clientId,
+        homedDevice.key,
+        endpoint.id
+      );
+
+      // Add endpoint number to device name
+      const endpointSuffix = ` - Switch ${endpoint.id}`;
+      const name = homedDevice.name + endpointSuffix;
+
+      const nicknames: string[] = [];
+      if (homedDevice.description) {
+        nicknames.push(homedDevice.description + endpointSuffix);
+      }
+
+      // Collect trait attributes for this specific endpoint
+      const attributes: GoogleDeviceAttributes = {};
+      for (const trait of TRAIT_MAPPERS) {
+        if (traits.includes(trait.trait)) {
+          const traitAttributes = trait.getAttributes(
+            exposes,
+            endpoint.options ?? {}
+          );
+          Object.assign(attributes, traitAttributes);
+        }
+      }
+
+      const googleDevice: GoogleDevice = {
+        id: googleDeviceId,
+        type: deviceType,
+        traits,
+        name: {
+          defaultNames: [name],
+          name,
+          nicknames,
+        },
+        willReportState: true,
+        attributes: Object.keys(attributes).length > 0 ? attributes : undefined,
+        deviceInfo: {
+          manufacturer: homedDevice.manufacturer ?? "Unknown Manufacturer",
+          model: homedDevice.model ?? "Unknown Model",
+          hwVersion: homedDevice.version ?? "unknown",
+          swVersion: homedDevice.firmware ?? "unknown",
+        },
+        customData: {
+          homedKey: homedDevice.key,
+          clientId,
+          endpointId: endpoint.id,
+          endpoints: [
+            {
+              id: endpoint.id,
+              exposes: endpoint.exposes,
+            },
+          ],
+        },
+      };
+
+      return googleDevice;
+    })
+    .filter((device): device is GoogleDevice => device !== undefined);
+};
+
+/**
  * Convert a Homed device to Google Smart Home device format
+ * Legacy function for backward compatibility - simply returns the first device from mapToGoogleDevices
  *
  * @param homedDevice - Homed device data
  * @param clientId - Unique client/service identifier
@@ -270,63 +563,7 @@ export const mapToGoogleDevice = (
   homedDevice: HomedDevice,
   clientId: ClientId
 ): GoogleDevice => {
-  // Flatten all exposes from all endpoints
-  const allExposes = homedDevice.endpoints
-    .flatMap(ep => ep.exposes)
-    .filter((expose, index, array) => array.indexOf(expose) === index); // Deduplicate
-
-  const deviceType = detectDeviceType(allExposes);
-  const traits = getTraitsForExposes(allExposes);
-
-  // Build device ID from clientId and homed device key (no secret exposure)
-  const googleDeviceId = toGoogleDeviceId(clientId, homedDevice.key);
-
-  // Build nicknames from alternative names
-  const nicknames: string[] = [];
-  if (homedDevice.description) {
-    nicknames.push(homedDevice.description);
-  }
-
-  // Collect all trait attributes using properly typed collection
-  const attributes: GoogleDeviceAttributes = {};
-  for (const trait of TRAIT_MAPPERS) {
-    if (traits.includes(trait.trait)) {
-      const traitAttributes = trait.getAttributes(
-        allExposes,
-        mergeEndpointOptions(homedDevice.endpoints)
-      );
-      Object.assign(attributes, traitAttributes);
-    }
-  }
-
-  const googleDevice: GoogleDevice = {
-    id: googleDeviceId,
-    type: deviceType,
-    traits,
-    name: {
-      defaultNames: [homedDevice.name],
-      name: homedDevice.name,
-      nicknames,
-    },
-    willReportState: true,
-    attributes: Object.keys(attributes).length > 0 ? attributes : undefined,
-    deviceInfo: {
-      manufacturer: homedDevice.manufacturer ?? "Unknown Manufacturer",
-      model: homedDevice.model ?? "Unknown Model",
-      hwVersion: homedDevice.version ?? "unknown",
-      swVersion: homedDevice.firmware ?? "unknown",
-    },
-    customData: {
-      homedKey: homedDevice.key,
-      clientId,
-      endpoints: homedDevice.endpoints.map(ep => ({
-        id: ep.id,
-        exposes: ep.exposes,
-      })),
-    },
-  };
-
-  return googleDevice;
+  return mapToGoogleDevices(homedDevice, clientId)[0];
 };
 
 /**
@@ -361,6 +598,51 @@ export const mapToGoogleState = (
   }
 
   return state;
+};
+
+/**
+ * Map device state to Google state reports for all control endpoints
+ * Returns an array because multi-endpoint devices need separate state reports
+ *
+ * @param homedDevice - Homed device (for trait info)
+ * @param clientId - Unique client/service identifier
+ * @param deviceId - Device ID for building Google device ID
+ * @param deviceState - Current device state
+ * @returns Array of {googleDeviceId, googleState} tuples for state reporting
+ */
+export const mapToGoogleStateReports = (
+  homedDevice: HomedDevice,
+  clientId: ClientId,
+  deviceId: DeviceId,
+  deviceState: DeviceState
+): Array<{
+  googleDeviceId: GoogleDeviceId;
+  googleState: GoogleDeviceState;
+}> => {
+  // Find all endpoints with control capabilities
+  const controlEndpoints = homedDevice.endpoints.filter(ep =>
+    hasControlCapabilities(ep.exposes)
+  );
+
+  // Determine if device should be split (same logic as mapToGoogleDevices)
+  const shouldSplit =
+    controlEndpoints.length > 1 && areAllSameDeviceType(controlEndpoints);
+
+  // Multiple control endpoints of same type - report state for each separately
+  if (shouldSplit) {
+    return controlEndpoints.map(endpoint => {
+      // Create filtered device with only this endpoint for accurate state mapping
+      const endpointDevice = { ...homedDevice, endpoints: [endpoint] };
+      const googleState = mapToGoogleState(endpointDevice, deviceState);
+      const googleDeviceId = toGoogleDeviceId(clientId, deviceId, endpoint.id);
+      return { googleDeviceId, googleState };
+    });
+  }
+
+  // Single device - report state once
+  const googleState = mapToGoogleState(homedDevice, deviceState);
+  const googleDeviceId = toGoogleDeviceId(clientId, deviceId);
+  return [{ googleDeviceId, googleState }];
 };
 
 /**

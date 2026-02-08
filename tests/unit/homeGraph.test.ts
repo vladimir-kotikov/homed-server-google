@@ -76,7 +76,7 @@ describe("HomeGraphClient", () => {
       };
 
       const googleDeviceId = toGoogleDeviceId(clientId, deviceId);
-      await client.reportStateChange(userId, googleDeviceId, state);
+      await client.reportStateChange(userId, [{ googleDeviceId, state }]);
 
       expect(mockReportStateAndNotification).toHaveBeenCalledWith({
         requestBody: {
@@ -86,6 +86,54 @@ describe("HomeGraphClient", () => {
             devices: {
               states: {
                 [googleDeviceId]: state,
+              },
+            },
+          },
+        },
+      });
+    });
+
+    it("should batch multiple device states in a single API call", async () => {
+      const { google } = await import("googleapis");
+      await setupAuthMock();
+
+      const mockReportStateAndNotification = vi.fn().mockResolvedValue({});
+      const mockHomegraph = {
+        devices: {
+          reportStateAndNotification: mockReportStateAndNotification,
+        },
+      };
+      vi.mocked(google.homegraph).mockReturnValue(mockHomegraph as never);
+
+      const client = new HomeGraphClient();
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      const device1Id = toGoogleDeviceId(clientId, "device1");
+      const device2Id = toGoogleDeviceId(clientId, "device2");
+      const device3Id = toGoogleDeviceId(clientId, "device3");
+
+      const state1: GoogleDeviceState = { online: true, on: true };
+      const state2: GoogleDeviceState = { online: true, on: false };
+      const state3: GoogleDeviceState = { online: true, brightness: 50 };
+
+      await client.reportStateChange(userId, [
+        { googleDeviceId: device1Id, state: state1 },
+        { googleDeviceId: device2Id, state: state2 },
+        { googleDeviceId: device3Id, state: state3 },
+      ]);
+
+      // Should have called API only once with all three devices
+      expect(mockReportStateAndNotification).toHaveBeenCalledTimes(1);
+      expect(mockReportStateAndNotification).toHaveBeenCalledWith({
+        requestBody: {
+          agentUserId: userId,
+          requestId: expect.any(String),
+          payload: {
+            devices: {
+              states: {
+                [device1Id]: state1,
+                [device2Id]: state2,
+                [device3Id]: state3,
               },
             },
           },
@@ -114,7 +162,7 @@ describe("HomeGraphClient", () => {
       const testDeviceId = "testDevice456";
 
       const googleDeviceId = toGoogleDeviceId(testClientId, testDeviceId);
-      await client.reportStateChange(testUserId, googleDeviceId, state);
+      await client.reportStateChange(testUserId, [{ googleDeviceId, state }]);
 
       expect(mockReportStateAndNotification).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -131,46 +179,11 @@ describe("HomeGraphClient", () => {
       );
     });
 
-    it("should handle API errors gracefully and log them", async () => {
+    it("should handle empty batch gracefully without API call", async () => {
       const { google } = await import("googleapis");
       await setupAuthMock();
 
-      const mockError = new Error("API Error");
-      const mockReportStateAndNotification = vi
-        .fn()
-        .mockRejectedValue(mockError);
-      const mockHomegraph = {
-        devices: {
-          reportStateAndNotification: mockReportStateAndNotification,
-        },
-      };
-      vi.mocked(google.homegraph).mockReturnValue(mockHomegraph as never);
-
-      // Mock debug logger
-      const mockDebug = vi.fn();
-      vi.doMock("debug", () => ({
-        default: () => mockDebug,
-      }));
-
-      const client = new HomeGraphClient();
-      await new Promise(resolve => setTimeout(resolve, 0));
-
-      const state: GoogleDeviceState = { online: true };
-
-      const googleDeviceId = toGoogleDeviceId(clientId, deviceId);
-      // Should not throw
-      await expect(
-        client.reportStateChange(userId, googleDeviceId, state)
-      ).resolves.not.toThrow();
-    });
-
-    it("should not throw errors when API call fails (fire-and-forget)", async () => {
-      const { google } = await import("googleapis");
-      await setupAuthMock();
-
-      const mockReportStateAndNotification = vi
-        .fn()
-        .mockRejectedValue(new Error("Network error"));
+      const mockReportStateAndNotification = vi.fn().mockResolvedValue({});
       const mockHomegraph = {
         devices: {
           reportStateAndNotification: mockReportStateAndNotification,
@@ -181,13 +194,10 @@ describe("HomeGraphClient", () => {
       const client = new HomeGraphClient();
       await new Promise(resolve => setTimeout(resolve, 0));
 
-      const state: GoogleDeviceState = { online: false };
+      await client.reportStateChange(userId, []);
 
-      const googleDeviceId = toGoogleDeviceId(clientId, deviceId);
-      // Should not throw
-      await expect(
-        client.reportStateChange(userId, googleDeviceId, state)
-      ).resolves.toBeUndefined();
+      // Should not call API for empty batch
+      expect(mockReportStateAndNotification).not.toHaveBeenCalled();
     });
   });
 

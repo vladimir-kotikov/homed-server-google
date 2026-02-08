@@ -15,33 +15,30 @@ export class HomeGraphClient {
 
   reportStateChange = async (
     userId: UserId,
-    googleDeviceId: GoogleDeviceId,
-    state: GoogleDeviceState
+    stateUpdates: Array<{
+      googleDeviceId: GoogleDeviceId;
+      state: GoogleDeviceState;
+    }>
   ): Promise<void> => {
-    try {
-      await this.homegraph.devices.reportStateAndNotification({
-        requestBody: {
-          requestId: crypto.randomUUID(),
-          agentUserId: userId,
-          payload: {
-            devices: {
-              states: {
-                [googleDeviceId]: state,
-              },
-            },
+    if (stateUpdates.length === 0) return;
+
+    // Build states object with all device states
+    const states: Record<string, GoogleDeviceState> = {};
+    for (const { googleDeviceId, state } of stateUpdates) {
+      states[googleDeviceId] = state;
+    }
+
+    await this.homegraph.devices.reportStateAndNotification({
+      requestBody: {
+        requestId: crypto.randomUUID(),
+        agentUserId: userId,
+        payload: {
+          devices: {
+            states,
           },
         },
-      });
-
-      log("State reported for device %s", googleDeviceId);
-    } catch (error) {
-      logError(
-        "Failed to report state for device %s: %O",
-        googleDeviceId,
-        error
-      );
-      // Don't throw - fire-and-forget pattern
-    }
+      },
+    });
   };
 
   updateDevices = async (userId: UserId): Promise<void> => {

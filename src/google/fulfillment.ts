@@ -4,10 +4,11 @@ import type { User, UserRepository } from "../db/repository.ts";
 import type { DeviceId, DeviceRepository } from "../device.ts";
 import { safeParse } from "../utility.ts";
 import {
-  mapToGoogleDevice,
-  mapToGoogleState,
+  getEndpointIdFromGoogleDeviceId,
+  getGoogleDeviceIds,
+  mapToGoogleDevices,
+  mapToGoogleStateReports,
   mapToHomedCommand,
-  toGoogleDeviceId,
 } from "./mapper.ts";
 import {
   SmartHomeRequestSchema,
@@ -74,7 +75,7 @@ export class FulfillmentController {
       .filter(({ device }) => device.endpoints.length > 0);
 
     const googleDevices = allDevices
-      .map(({ device, clientId }) => mapToGoogleDevice(device, clientId))
+      .flatMap(({ device, clientId }) => mapToGoogleDevices(device, clientId))
       .filter(device => {
         const hasTraits = device.traits.length > 0;
         if (!hasTraits) {
@@ -85,7 +86,9 @@ export class FulfillmentController {
         return hasTraits;
       });
 
-    log(`Syncing ${googleDevices.length} of ${allDevices.length} devices`);
+    log(
+      `Syncing ${googleDevices.length} Google devices from ${allDevices.length} Homed devices`
+    );
 
     return {
       agentUserId: user.id,
@@ -101,28 +104,31 @@ export class FulfillmentController {
 
     const mappedStates = this.deviceRepository
       .getDevices(user.id)
-      .map(({ device, clientId }) => ({
-        device,
-        clientId,
-        googleId: toGoogleDeviceId(clientId, device.key),
-      }))
-      .filter(({ googleId }) => requestedDeviceIds.has(googleId))
-      .map(
-        ({ device, clientId, googleId }) =>
-          [
-            device,
-            googleId,
-            this.deviceRepository.getDeviceState(
-              user.id,
-              device.key as DeviceId,
-              clientId
-            ),
-          ] as const
-      )
-      .map(
-        ([device, googleId, state]) =>
-          [googleId, mapToGoogleState(device, state ?? {})] as const
-      );
+      .flatMap(({ device, clientId }) => {
+        const state = this.deviceRepository.getDeviceState(
+          user.id,
+          device.key as DeviceId,
+          clientId
+        );
+
+        // Use mapper to get all Google device IDs and states for this Homed device
+        const stateReports = mapToGoogleStateReports(
+          device,
+          clientId,
+          device.key as DeviceId,
+          state ?? {}
+        );
+
+        // Filter to only requested device IDs
+        return stateReports
+          .filter(({ googleDeviceId }) =>
+            requestedDeviceIds.has(googleDeviceId)
+          )
+          .map(
+            ({ googleDeviceId, googleState }) =>
+              [googleDeviceId, googleState] as const
+          );
+      });
 
     return { devices: Object.fromEntries(mappedStates) };
   };
@@ -133,16 +139,37 @@ export class FulfillmentController {
   ): Promise<ExecuteResponsePayload> => {
     const homedCommands = request.commands.flatMap(({ devices, execution }) => {
       const requestedDeviceIds = new Set(devices.map(d => d.id));
+
       return this.deviceRepository
         .getDevices(user.id)
-        .map(({ device, clientId }) => ({
-          device,
-          googleId: toGoogleDeviceId(clientId, device.key),
-        }))
-        .filter(({ googleId }) => requestedDeviceIds.has(googleId))
-        .flatMap(({ device }) =>
-          execution.map(command => mapToHomedCommand(device, command))
-        );
+        .flatMap(({ device, clientId }) => {
+          // Get all Google device IDs that exist for this Homed device
+          const googleDeviceIds = getGoogleDeviceIds(device, clientId);
+
+          return googleDeviceIds
+            .filter(googleId => requestedDeviceIds.has(googleId))
+            .map(googleId => ({
+              device,
+              googleId,
+              endpointId: getEndpointIdFromGoogleDeviceId(googleId),
+            }));
+        })
+        .flatMap(({ device, endpointId }) => {
+          // For multi-endpoint devices, filter to only the requested endpoint
+          const deviceForCommand =
+            endpointId !== undefined
+              ? {
+                  ...device,
+                  endpoints: device.endpoints.filter(
+                    ep => ep.id === endpointId
+                  ),
+                }
+              : device;
+
+          return execution.map(command =>
+            mapToHomedCommand(deviceForCommand, command)
+          );
+        });
     });
 
     console.log("Homed commands to execute:", homedCommands);

@@ -60,7 +60,7 @@ describe("HomedServerController", () => {
   });
 
   describe("deviceDataUpdated", () => {
-    it("should call googleHomeGraph.reportStateChange after updating device state", () => {
+    it("should batch report state changes to Google HomeGraph", () => {
       controller = new HomedServerController(
         userDb,
         deviceCache,
@@ -83,14 +83,18 @@ describe("HomedServerController", () => {
 
       const googleDeviceId = toGoogleDeviceId(clientId, deviceId);
 
-      // Verify reportStateChange was called
+      // Verify reportStateChange was called with batched updates
       expect(mockHomeGraph.reportStateChange).toHaveBeenCalledWith(
         userId,
-        googleDeviceId,
-        expect.objectContaining({
-          online: true,
-          on: true,
-        })
+        expect.arrayContaining([
+          expect.objectContaining({
+            googleDeviceId,
+            state: expect.objectContaining({
+              online: true,
+              on: true,
+            }),
+          }),
+        ])
       );
     });
 
@@ -147,11 +151,15 @@ describe("HomedServerController", () => {
       // Verify state is mapped to Google format
       expect(mockHomeGraph.reportStateChange).toHaveBeenCalledWith(
         userId,
-        googleDeviceId,
-        expect.objectContaining({
-          brightness: expect.any(Number),
-          on: expect.any(Boolean),
-        })
+        expect.arrayContaining([
+          expect.objectContaining({
+            googleDeviceId,
+            state: expect.objectContaining({
+              brightness: expect.any(Number),
+              on: expect.any(Boolean),
+            }),
+          }),
+        ])
       );
     });
 
@@ -195,7 +203,7 @@ describe("HomedServerController", () => {
         uniqueId: clientId,
       };
 
-      // Should not throw or call reportStateChange
+      // Should not throw or call batch reporting
       expect(() =>
         (controller as any).deviceDataUpdated(mockClient, deviceId, {
           on: true,
