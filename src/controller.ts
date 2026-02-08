@@ -16,6 +16,7 @@ import type {
   HomedEndpoint,
 } from "./device.ts";
 import type { HomeGraphClient } from "./google/homeGraph.ts";
+import { mapToGoogleState } from "./google/mapper.ts";
 import { ClientConnection, type ClientId } from "./homed/client.ts";
 import type {
   ClientStatusMessage,
@@ -292,13 +293,42 @@ export class HomedServerController {
     client: ClientConnection<User>,
     deviceId: string,
     data: Record<string, unknown>
-  ) =>
-    client.user &&
-    client.uniqueId &&
+  ) => {
+    if (!client.user || !client.uniqueId) return;
+
+    // Update device state in cache
     this.deviceCache.setDeviceState(
       client.user.id,
       client.uniqueId,
       deviceId as DeviceId,
       data
     );
+
+    // Report state change to Google Home
+    if (this.googleHomeGraph) {
+      const device = this.deviceCache.getClientDevice(
+        client.user.id,
+        client.uniqueId,
+        deviceId as DeviceId
+      );
+
+      // Only report if device exists and has traits (endpoints with exposes)
+      if (device && device.endpoints.some(ep => ep.exposes.length > 0)) {
+        const deviceState = this.deviceCache.getDeviceState(
+          client.user.id,
+          deviceId as DeviceId,
+          client.uniqueId
+        );
+
+        if (deviceState) {
+          const googleState = mapToGoogleState(device, deviceState);
+          this.googleHomeGraph.reportStateChange(
+            client.user.id,
+            deviceId,
+            googleState
+          );
+        }
+      }
+    }
+  };
 }

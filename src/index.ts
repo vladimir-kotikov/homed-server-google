@@ -4,6 +4,7 @@ import { HomedServerController } from "./controller.ts";
 import { UserRepository } from "./db/repository.ts";
 import { DeviceRepository } from "./device.ts";
 import { FulfillmentController } from "./google/fulfillment.ts";
+import { HomeGraphClient } from "./google/homeGraph.ts";
 import { WebApp } from "./web/app.ts";
 import { OAuthController } from "./web/oauth.ts";
 
@@ -31,6 +32,17 @@ const httpHandler = new WebApp(
   deviceRepository
 );
 
+// Initialize HomeGraph client if service account is configured
+const homeGraphClient = appConfig.googleServiceAccountJson
+  ? new HomeGraphClient(appConfig.googleServiceAccountJson)
+  : undefined;
+
+if (homeGraphClient) {
+  log("Google Home state reporting enabled");
+} else {
+  log("Google Home state reporting disabled (no service account configured)");
+}
+
 const sslOptions =
   appConfig.sslCert && appConfig.sslKey
     ? { cert: appConfig.sslCert, key: appConfig.sslKey }
@@ -40,7 +52,7 @@ const mainController = new HomedServerController(
   usersRepository,
   deviceRepository,
   httpHandler,
-  undefined,
+  homeGraphClient,
   sslOptions
 );
 
