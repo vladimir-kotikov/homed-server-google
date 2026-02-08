@@ -4,7 +4,7 @@
  */
 import request from "supertest";
 import { beforeEach, describe, expect, it } from "vitest";
-import type { UserRepository } from "../../../src/db/repository.ts";
+import type { UserId, UserRepository } from "../../../src/db/repository.ts";
 import { WebApp } from "../../../src/web/app.ts";
 import { OAuthController } from "../../../src/web/oauth.ts";
 import { createTestUserRepository } from "../testDatabase.ts";
@@ -30,7 +30,7 @@ const EXCHANGE_TOKENS_PAYLOAD = {
 };
 
 const newCode = (repo: UserRepository) =>
-  repo.issueCode("test-user-id", CLIENT_ID, REDIRECT_URI);
+  repo.issueCode("test-user-id" as UserId, CLIENT_ID, REDIRECT_URI);
 
 const newTokens = async (repo: UserRepository) => {
   const code = newCode(repo);

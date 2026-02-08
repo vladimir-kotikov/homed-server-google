@@ -1,7 +1,7 @@
 import request from "supertest";
 import { beforeEach, describe, expect, it } from "vitest";
 import appConfig from "../../../src/config.ts";
-import type { UserRepository } from "../../../src/db/repository.ts";
+import type { UserId, UserRepository } from "../../../src/db/repository.ts";
 import { WebApp } from "../../../src/web/app.ts";
 import { OAuthController } from "../../../src/web/oauth.ts";
 import { createTestUserRepository } from "../testDatabase.ts";
@@ -45,7 +45,11 @@ describe("Verify expires_in in token response", () => {
 
   it("Token exchange response MUST include expires_in field", async () => {
     // Create a valid authorization code
-    const code = userRepository.issueCode(testUserId, CLIENT_ID, REDIRECT_URI);
+    const code = userRepository.issueCode(
+      testUserId as UserId,
+      CLIENT_ID,
+      REDIRECT_URI
+    );
 
     // Exchange the code for tokens
     const response = await request(webApp.app)
@@ -71,7 +75,11 @@ describe("Verify expires_in in token response", () => {
 
   it("Refresh token exchange MUST also include expires_in field", async () => {
     // Create initial tokens
-    const code = userRepository.issueCode(testUserId, CLIENT_ID, REDIRECT_URI);
+    const code = userRepository.issueCode(
+      testUserId as UserId,
+      CLIENT_ID,
+      REDIRECT_URI
+    );
 
     const initialResponse = await request(webApp.app)
       .post("/oauth/token")

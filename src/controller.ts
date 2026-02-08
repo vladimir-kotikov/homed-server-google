@@ -31,6 +31,9 @@ import { WebApp } from "./web/app.ts";
 const log = debug("homed:controller");
 const logError = debug("homed:controller:error");
 
+const topicToDeviceId = (topic: string): DeviceId =>
+  topic.split("/", 2)[1] as DeviceId;
+
 /**
  * A main controller that wires up HTTP and TCP servers and manages clients and
  * users.
@@ -108,24 +111,16 @@ export class HomedServerController {
       .on("token", token => this.clientTokenReceived(client, token))
       // status/# subscription
       .on("status", (topic, message) =>
-        this.clientStatusUpdated(client, topic, message)
+        this.clientStatusUpdated(client, topicToDeviceId(topic), message)
       )
       .on("device", (topic, message) =>
-        this.deviceStatusUpdated(
-          client,
-          topic.replace(/^device\//, ""),
-          message
-        )
+        this.deviceStatusUpdated(client, topicToDeviceId(topic), message)
       )
       .on("expose", (topic, devices) =>
-        this.clientDeviceUpdated(
-          client,
-          topic.replace(/^expose\//, ""),
-          devices
-        )
+        this.clientDeviceUpdated(client, topicToDeviceId(topic), devices)
       )
       .on("fd", (topic, data) =>
-        this.deviceDataUpdated(client, topic.replace(/^fd\//, ""), data)
+        this.deviceDataUpdated(client, topicToDeviceId(topic), data)
       );
 
     log(`New connection from ${socket.remoteAddress}:${socket.remotePort}`);
@@ -239,7 +234,7 @@ export class HomedServerController {
 
   clientDeviceUpdated = (
     client: ClientConnection<User>,
-    deviceId: string,
+    deviceId: DeviceId,
     message: DeviceExposesMessage
   ) => {
     log(
@@ -250,7 +245,7 @@ export class HomedServerController {
     const device = this.deviceCache.getClientDevice(
       client.user.id,
       client.uniqueId,
-      deviceId as DeviceId
+      deviceId
     );
     if (!device) return;
 
@@ -292,7 +287,7 @@ export class HomedServerController {
 
   deviceStatusUpdated = (
     client: ClientConnection<User>,
-    deviceId: string,
+    deviceId: DeviceId,
     { status }: DeviceStatusMessage
   ) =>
     client.user &&
@@ -300,13 +295,13 @@ export class HomedServerController {
     this.deviceCache.setDeviceStatus(
       client.user.id,
       client.uniqueId,
-      deviceId as DeviceId,
+      deviceId,
       status === "online"
     );
 
   deviceDataUpdated = (
     client: ClientConnection<User>,
-    deviceId: string,
+    deviceId: DeviceId,
     data: Record<string, unknown>
   ) => {
     if (!client.user || !client.uniqueId) return;
@@ -315,7 +310,7 @@ export class HomedServerController {
     this.deviceCache.setDeviceState(
       client.user.id,
       client.uniqueId,
-      deviceId as DeviceId,
+      deviceId,
       data
     );
 
@@ -323,14 +318,14 @@ export class HomedServerController {
     const device = this.deviceCache.getClientDevice(
       client.user.id,
       client.uniqueId,
-      deviceId as DeviceId
+      deviceId
     );
 
     // Only report if device exists and has traits (endpoints with exposes)
     if (device && device.endpoints.some(ep => ep.exposes.length > 0)) {
       const deviceState = this.deviceCache.getDeviceState(
         client.user.id,
-        deviceId as DeviceId,
+        deviceId,
         client.uniqueId
       );
 

@@ -2,6 +2,8 @@
  * Google Smart Home device types and interfaces
  */
 
+import type { UserId } from "../db/repository.ts";
+
 /**
  * Branded type for Google device IDs
  * Format: ${clientId}-${homedDeviceKey}
@@ -201,7 +203,7 @@ export type TraitState =
   | SensorState;
 
 export interface SyncResponsePayload {
-  agentUserId: string;
+  agentUserId: UserId;
   devices: GoogleDevice[];
 }
 

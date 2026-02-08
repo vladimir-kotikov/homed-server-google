@@ -5,7 +5,7 @@
 import Database from "better-sqlite3";
 import jwt from "jsonwebtoken";
 import { beforeEach, describe, expect, it } from "vitest";
-import { UserRepository } from "../../src/db/repository.ts";
+import { UserRepository, type UserId } from "../../src/db/repository.ts";
 
 describe("UserRepository - Token Routines", () => {
   let repository: UserRepository;
@@ -66,7 +66,7 @@ describe("UserRepository - Token Routines", () => {
   describe("Authorization Code Generation", () => {
     it("should generate authorization code with correct structure", () => {
       const code = repository.issueCode(
-        "test-user-id",
+        "test-user-id" as UserId,
         "client-id",
         "http://localhost:3000/callback"
       );
@@ -78,13 +78,13 @@ describe("UserRepository - Token Routines", () => {
 
     it("should generate different codes for different calls", () => {
       const code1 = repository.issueCode(
-        "test-user-id",
+        "test-user-id" as UserId,
         "client-id",
         "http://localhost:3000/callback"
       );
       // Add a small delay to ensure different iat timestamp
       const code2 = repository.issueCode(
-        "test-user-id",
+        "test-user-id" as UserId,
         "client-id",
         "http://localhost:3000/callback"
       );
@@ -104,7 +104,7 @@ describe("UserRepository - Token Routines", () => {
       const token = repository.issueToken(
         "access",
         "1h",
-        "test-user-id",
+        "test-user-id" as UserId,
         "client-id",
         "http://localhost"
       );
@@ -121,7 +121,7 @@ describe("UserRepository - Token Routines", () => {
       const token = repository.issueToken(
         "refresh",
         "7d",
-        "test-user-id",
+        "test-user-id" as UserId,
         "client-id",
         "http://localhost"
       );
@@ -135,7 +135,7 @@ describe("UserRepository - Token Routines", () => {
       const token = repository.issueToken(
         "access",
         "1h",
-        "test-user-id",
+        "test-user-id" as UserId,
         "client-id",
         "http://localhost"
       );
@@ -149,7 +149,7 @@ describe("UserRepository - Token Routines", () => {
       const token = repository.issueToken(
         "access",
         "1h",
-        "test-user-id",
+        "test-user-id" as UserId,
         "client-id",
         "http://localhost"
       );
@@ -166,7 +166,7 @@ describe("UserRepository - Token Routines", () => {
       const token = repository.issueToken(
         "access",
         "1h",
-        "test-user-id",
+        "test-user-id" as UserId,
         "client-id",
         "http://localhost"
       );
@@ -180,7 +180,7 @@ describe("UserRepository - Token Routines", () => {
       const token = repository.issueToken(
         "access",
         "1h",
-        "test-user-id",
+        "test-user-id" as UserId,
         "client-id",
         "http://localhost"
       );
@@ -207,7 +207,7 @@ describe("UserRepository - Token Routines", () => {
       const token = repository.issueToken(
         "access",
         "1h",
-        "test-user-id",
+        "test-user-id" as UserId,
         "client-id",
         "http://localhost"
       );
@@ -282,14 +282,14 @@ describe("UserRepository - Token Routines", () => {
       const token1 = repository.issueToken(
         "access",
         "1h",
-        "user-1",
+        "user-1" as UserId,
         "client-id",
         "http://localhost"
       );
       const token2 = repository.issueToken(
         "access",
         "1h",
-        "user-2",
+        "user-2" as UserId,
         "client-id",
         "http://localhost"
       );
@@ -311,7 +311,7 @@ describe("UserRepository - Token Routines", () => {
       const token = repository.issueToken(
         "access",
         "1h",
-        "user-1",
+        "user-1" as UserId,
         "client-id",
         "http://localhost"
       );
@@ -326,7 +326,7 @@ describe("UserRepository - Token Routines", () => {
       const token = repository.issueToken(
         "access",
         "1h",
-        "test-user-id",
+        "test-user-id" as UserId,
         "client-id",
         "http://localhost"
       );
@@ -344,14 +344,14 @@ describe("UserRepository - Token Routines", () => {
       const accessToken = repository.issueToken(
         "access",
         "1h",
-        "test-user-id",
+        "test-user-id" as UserId,
         "client-id",
         "http://localhost"
       );
       const refreshToken = repository.issueToken(
         "refresh",
         "7d",
-        "test-user-id",
+        "test-user-id" as UserId,
         "client-id",
         "http://localhost"
       );
@@ -373,7 +373,7 @@ describe("UserRepository - Token Routines", () => {
       const token = repository.issueToken(
         "access",
         "1h",
-        "test-user-id",
+        "test-user-id" as UserId,
         "client-id",
         "http://localhost"
       );
@@ -408,7 +408,7 @@ describe("UserRepository - Token Routines", () => {
       const token = repository.issueToken(
         "access",
         "1h",
-        "test-user-id",
+        "test-user-id" as UserId,
         "client-id",
         "http://localhost"
       );
@@ -423,7 +423,7 @@ describe("UserRepository - Token Routines", () => {
       const accessToken = repository.issueToken(
         "access",
         "1h",
-        "test-user-id",
+        "test-user-id" as UserId,
         "client-id",
         "http://localhost"
       );
@@ -432,7 +432,7 @@ describe("UserRepository - Token Routines", () => {
       const refreshToken = repository.issueToken(
         "refresh",
         "7d",
-        "test-user-id",
+        "test-user-id" as UserId,
         "client-id",
         "http://localhost"
       );
@@ -473,7 +473,7 @@ describe("UserRepository - Token Routines", () => {
       const token = repository.issueToken(
         "access",
         "1h",
-        "test-user-id",
+        "test-user-id" as UserId,
         "client-id",
         "http://localhost"
       );
@@ -490,7 +490,7 @@ describe("UserRepository - Token Routines", () => {
       const token = repository.issueToken(
         "access",
         "1h",
-        "test-user-id",
+        "test-user-id" as UserId,
         "client-id",
         "http://localhost"
       );

@@ -90,7 +90,7 @@ export class UserRepository {
   issueToken = (
     typ: "code" | "access" | "refresh",
     expiresIn: string,
-    userId: string,
+    userId: UserId,
     clientId?: string,
     redirectUri?: string
   ) => {
@@ -107,7 +107,7 @@ export class UserRepository {
     return jwt.sign({ typ }, this.jwtSecret, options);
   };
 
-  issueCode = (userId: string, clientId: string, redirectUri: string) =>
+  issueCode = (userId: UserId, clientId: string, redirectUri: string) =>
     this.issueToken("code", "5m", userId, clientId, redirectUri);
 
   exchangeCode = async (code: string, clientId: string, redirectUri: string) =>

@@ -6,7 +6,7 @@ import { Router } from "express";
 import * as oauth2orize from "oauth2orize";
 import passport from "passport";
 import appConfig from "../config.ts";
-import { UserRepository } from "../db/repository.ts";
+import { UserRepository, type UserId } from "../db/repository.ts";
 
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
@@ -22,7 +22,7 @@ interface Client {
 }
 
 interface User {
-  id: string;
+  id: UserId;
 }
 
 type CodeIssueCallback = (error: Error | null, code?: string | false) => void;
