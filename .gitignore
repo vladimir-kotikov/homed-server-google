@@ -4,8 +4,6 @@ coverage/
 .env.*
 *.db
 *.db-*
-certs/cert.pem
-certs/cert.key
 
 .gitsecret/keys/random_seed
 !*.secret
