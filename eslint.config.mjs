@@ -24,14 +24,6 @@ export default defineConfig(
             case: "camelCase",
           },
         ],
-        "unicorn/prevent-abbreviations": [
-          "error",
-          {
-            allowList: {
-              args: true,
-            },
-          },
-        ],
       },
     },
   ],

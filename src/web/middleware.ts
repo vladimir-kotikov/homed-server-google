@@ -53,6 +53,7 @@ export const googleOauth20Strategy = (
       clientID: clientId,
       clientSecret: clientSecret,
       callbackURL: redirectUrl,
+      scope: ["email"],
     },
     async (accessToken, refreshToken, profile, callback) =>
       Promise.try(() => verifyUser(profile))

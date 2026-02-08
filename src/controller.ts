@@ -108,13 +108,23 @@ export class HomedServerController {
       .on("status", (topic, message) =>
         this.clientStatusUpdated(client, topic, message)
       )
-      .on("device", (deviceId, message) =>
-        this.deviceStatusUpdated(client, deviceId, message)
+      .on("device", (topic, message) =>
+        this.deviceStatusUpdated(
+          client,
+          topic.replace(/^device\//, ""),
+          message
+        )
       )
-      .on("expose", (type_, devices) =>
-        this.clientDeviceUpdated(client, type_, devices)
+      .on("expose", (topic, devices) =>
+        this.clientDeviceUpdated(
+          client,
+          topic.replace(/^expose\//, ""),
+          devices
+        )
       )
-      .on("fd", (topic, data) => this.deviceDataUpdated(client, topic, data));
+      .on("fd", (topic, data) =>
+        this.deviceDataUpdated(client, topic.replace(/^fd\//, ""), data)
+      );
 
     log(`New connection from ${socket.remoteAddress}:${socket.remotePort}`);
   };
@@ -200,6 +210,11 @@ export class HomedServerController {
       added.forEach(({ topic }) => {
         client.subscribe(`expose/${topic}`);
         client.subscribe(`device/${topic}`);
+        // Request device exposes immediately
+        client.publish(`command/${topic}`, {
+          action: "getDeviceInfo",
+          service: "cloud",
+        });
       });
     }
 
@@ -251,6 +266,12 @@ export class HomedServerController {
       device: deviceId,
       service: "cloud",
     });
+
+    // Notify Google Home that device capabilities have been updated
+    this.googleHomeGraph?.updateDevices(
+      client.user.id,
+      this.deviceCache.getDevices(client.user.id, client.uniqueId)
+    );
   };
 
   deviceStatusUpdated = (

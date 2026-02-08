@@ -11,7 +11,9 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import passport from "passport";
 import appConfig from "../config.ts";
 import type {
+  ClientToken,
   User as HomedUser,
+  User,
   UserId,
   UserRepository,
 } from "../db/repository.ts";
@@ -86,31 +88,28 @@ export class WebApp {
       },
     });
 
+    const jwtAuthentication = jwtStrategy(
+      appConfig.jwtSecret,
+      this.userRepository.verifyAccessTokenPayload
+    );
+
+    const googleSSOAuthentication = googleOauth20Strategy(
+      appConfig.googleSsoClientId,
+      appConfig.googleSsoClientSecret,
+      appConfig.googleSsoRedirectUri,
+      ({ id, emails }) =>
+        this.userRepository.getOrCreate(id as UserId, emails![0].value)
+    );
+
+    const clientOauthAuthentication = clientPasswordOauth20Strategy(
+      appConfig.googleHomeOAuthClientId,
+      appConfig.googleHomeOAuthClientSecret
+    );
+
     const authentication = passport
-      .use(
-        "jwt",
-        jwtStrategy(
-          appConfig.jwtSecret,
-          this.userRepository.verifyAccessTokenPayload
-        )
-      )
-      .use(
-        "google-oauth20",
-        googleOauth20Strategy(
-          appConfig.googleSsoClientId,
-          appConfig.googleSsoClientSecret,
-          appConfig.googleSsoRedirectUri,
-          ({ id, emails }) =>
-            this.userRepository.getOrCreate(id as UserId, emails![0].value)
-        )
-      )
-      .use(
-        "client-password-oauth20",
-        clientPasswordOauth20Strategy(
-          appConfig.googleHomeOAuthClientId,
-          appConfig.googleHomeOAuthClientSecret
-        )
-      )
+      .use("jwt", jwtAuthentication)
+      .use("google-oauth20", googleSSOAuthentication)
+      .use("client-password-oauth20", clientOauthAuthentication)
       .initialize();
 
     this.app = express()
@@ -131,27 +130,39 @@ export class WebApp {
         ensureLoggedIn("/login"),
         this.handleHome
       )
-      .get("/login", ensureLoggedOut("/"), (_request, response) =>
-        response.render("signin", {
-          isTest: process.env.NODE_ENV === "test",
-        })
-      )
-      .get(
-        "/auth/google",
-        passport.authenticate("google-oauth20", { scope: ["profile", "email"] })
-      )
+      .get("/login", ensureLoggedOut("/"), (_, res) => res.render("signin"))
+      .get("/auth/google", passport.authenticate("google-oauth20"))
       .get(
         "/auth/google/callback",
         passport.authenticate("google-oauth20", { keepSessionInfo: true }),
-        this.handleAuthGoogleCallback
+        this.handleAuthCallback
       )
-      .get("/logout", (request, response) =>
-        request.session.destroy(() => response.redirect("/"))
+      .get("/logout", (req, res) =>
+        req.session.destroy(() => res.redirect("/"))
       )
-      .get("/health", (_request, response) => response.json({ status: "ok" }))
+      .get("/health", (_, res) => res.json({ status: "ok" }))
       .post(
         "/fulfillment",
-        passport.authenticate("jwt", { session: false }),
+        (req, res, next) => {
+          const log = debug("homed:fulfillment");
+
+          // DEV MODE: Skip authentication if NODE_ENV is not production
+          if (process.env.NODE_ENV !== "production") {
+            log("DEV MODE: Skipping JWT authentication");
+            // Create a mock user for testing
+            req.user = {
+              id: (process.env.DEV_USER_ID ||
+                "105970409134870248485") as UserId,
+              username: "dev-user@test.local",
+              clientToken: (process.env.DEV_CLIENT_TOKEN ||
+                "dev-token-123") as ClientToken,
+              createdAt: new Date(),
+            } satisfies User;
+            return next();
+          }
+
+          passport.authenticate("jwt", { session: false })(req, res, next);
+        },
         requireLoggedIn,
         this.handleFulfillment
       )
@@ -167,15 +178,14 @@ export class WebApp {
     const {
       user: { id, clientToken },
     } = request as Express.AuthenticatedRequest;
-    const connectedClients = this.deviceRepository.getConnectedClientIds(id);
     response.render("dashboard", {
       username: id,
       clientToken,
-      connectedClients,
+      connectedClients: this.deviceRepository.getConnectedClientIds(id),
     });
   };
 
-  private handleAuthGoogleCallback = (
+  private handleAuthCallback = (
     request: express.Request,
     response: express.Response
   ) => {

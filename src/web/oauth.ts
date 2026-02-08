@@ -1,15 +1,12 @@
 /* eslint-disable unicorn/no-null */
 import bodyParser from "body-parser";
 import { ensureLoggedIn } from "connect-ensure-login";
-import debug from "debug";
 import type { NextFunction, Request, Response } from "express";
 import { Router } from "express";
 import * as oauth2orize from "oauth2orize";
 import passport from "passport";
 import appConfig from "../config.ts";
 import { UserRepository } from "../db/repository.ts";
-
-const log = debug("homed:oauth");
 
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
@@ -154,32 +151,6 @@ export class OAuthController {
     });
   };
 
-  private errorHandler = (
-    error: Error,
-    request: Request,
-    response: Response
-  ): void => {
-    // Handle JWT/authentication errors
-    if (
-      error.name === "UnauthorizedError" ||
-      error.message?.includes("No auth") ||
-      error.message?.includes("invalid token")
-    ) {
-      log("JWT authentication error", { error: error.message });
-      response.set("WWW-Authenticate", 'Bearer realm="api"');
-      response.status(401).json({
-        error: "invalid_token",
-        error_description: "The access token provided is invalid or expired",
-      });
-    } else {
-      log("OAuth error", { error: error.message, status: 400 });
-      response.status(400).json({
-        error: "invalid_request",
-        error_description: error.message,
-      });
-    }
-  };
-
   get routes() {
     return Router()
       .use(bodyParser.urlencoded({ extended: false }))
@@ -188,22 +159,12 @@ export class OAuthController {
         ensureLoggedIn(),
         this.oauth2Server.authorize(this.authorizeClient),
         (request, response) => {
-          try {
-            response.render("consent", {
-              // TODO: Pass client name and proper scopes
-              clientId: request.oauth2.client.id,
-              scopes: request.oauth2.req.scope,
-              transaction_id: request.oauth2.transactionID,
-            });
-          } catch (error) {
-            log("Error rendering consent page", {
-              error: error instanceof Error ? error.message : String(error),
-            });
-            response.status(500).json({
-              error: "server_error",
-              error_description: "Failed to render consent page",
-            });
-          }
+          response.render("consent", {
+            // TODO: Pass client name and proper scopes
+            clientId: request.oauth2.client.id,
+            scopes: request.oauth2.req.scope,
+            transaction_id: request.oauth2.transactionID,
+          });
         }
       )
       .post(
@@ -226,9 +187,6 @@ export class OAuthController {
             (authError: Error | null, user: User | false) => {
               // Handle JWT authentication errors
               if (authError) {
-                log("JWT auth error", {
-                  error: authError.message,
-                });
                 response.set("WWW-Authenticate", 'Bearer realm="api"');
                 return response.status(401).json({
                   error: "invalid_token",
@@ -238,7 +196,6 @@ export class OAuthController {
 
               // Handle no user returned (invalid/missing token)
               if (!user) {
-                log("JWT auth failed: no user");
                 response.set("WWW-Authenticate", 'Bearer realm="api"');
                 return response.status(401).json({
                   error: "invalid_token",
@@ -254,7 +211,6 @@ export class OAuthController {
             }
           )(request, response, next);
         }
-      )
-      .use(this.errorHandler);
+      );
   }
 }

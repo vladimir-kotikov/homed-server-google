@@ -4,10 +4,10 @@
  */
 import request from "supertest";
 import { beforeEach, describe, expect, it } from "vitest";
-import type { UserRepository } from "../../src/db/repository.ts";
-import { WebApp } from "../../src/web/app.ts";
-import { OAuthController } from "../../src/web/oauth.ts";
-import { createTestUserRepository } from "./test-database-helper.ts";
+import type { UserRepository } from "../../../src/db/repository.ts";
+import { WebApp } from "../../../src/web/app.ts";
+import { OAuthController } from "../../../src/web/oauth.ts";
+import { createTestUserRepository } from "../testDatabase.ts";
 
 const JWT_SECRET = "test-oauth-secret";
 const CLIENT_ID = "dev-oauth-client-id";
@@ -164,9 +164,7 @@ describe("OAuth Integration Tests", () => {
         token_type: "Bearer",
         access_token: expect.any(String),
         refresh_token: expect.any(String),
-        // TODO: oauth2orize doesn't return expires_in field
-        // Should be approximately 1 hour (3600 seconds)
-        // expires_in: expect.closeTo(3600, 100),
+        expires_in: 3600, // 1 hour as configured
       });
     });
 
@@ -238,9 +236,7 @@ describe("OAuth Integration Tests", () => {
         token_type: "Bearer",
         access_token: expect.any(String),
         refresh_token: expect.any(String),
-        // TODO: oauth2orize doesn't return expires_in field
-        // Should be approximately 1 hour (3600 seconds)
-        // expires_in: expect.closeTo(3600, 100),
+        expires_in: 3600, // 1 hour as configured
       });
     });
   });

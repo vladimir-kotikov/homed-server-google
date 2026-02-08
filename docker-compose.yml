@@ -6,11 +6,13 @@ services:
     ports:
       - "8042:8042"
       - "8080:8080"
-    env_file: dev.env
+    env_file: .env.dev
     environment:
       DATABASE_URL: /app/db/dev.db
     command: dev
     volumes:
+      - ./public:/app/public
+      - ./templates:/app/templates
       - ./src:/app/src
       - db:/app/db
 
