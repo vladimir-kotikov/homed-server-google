@@ -132,7 +132,6 @@ export const SmartHomeRequestSchema = z
       z.union([
         z.object({
           intent: z.literal("action.devices.SYNC"),
-          payload: z.never(),
         }),
         z.object({
           intent: z.literal("action.devices.QUERY"),
@@ -144,7 +143,6 @@ export const SmartHomeRequestSchema = z
         }),
         z.object({
           intent: z.literal("action.devices.DISCONNECT"),
-          payload: z.never(),
         }),
       ]),
     ]),

@@ -90,38 +90,23 @@ export class OAuthController {
     redirectUri: string,
     done: TokenExchangeCallback
   ): void => {
-    log("Exchanging authorization code", {
-      clientId: client.id,
-      redirectUri,
-      codeValid: !!code,
-    });
-    if (this.isValidClient(client.id, redirectUri)) {
-      this.userRepository.exchangeCode(code, client.id, redirectUri).then(
-        args => {
-          log("Authorization code exchanged successfully", {
-            clientId: client.id,
-            hasTokens: !!args,
-          });
-          if (args === undefined) {
-            done(null, false);
-          } else {
-            // Include expires_in as required by Google
-            done(null, args[0], args[1], {
-              expires_in: appConfig.accessTokenLifetime,
-            });
-          }
-        },
-        error => {
-          log("Authorization code exchange failed", {
-            clientId: client.id,
-            error: error instanceof Error ? error.message : String(error),
-          });
-          done(error);
-        }
-      );
-    } else {
-      done(null, false);
+    if (!this.isValidClient(client.id, redirectUri)) {
+      return done(null, false);
     }
+
+    this.userRepository
+      .exchangeCode(code, client.id, redirectUri)
+      .then(args => {
+        if (args === undefined) {
+          return done(null, false);
+        }
+
+        const [accessToken, refreshToken] = args;
+        // Include expires_in as required by Google
+        done(null, accessToken, refreshToken, {
+          expires_in: appConfig.accessTokenLifetime,
+        });
+      }, done);
   };
 
   private exchangeToken = (
@@ -129,34 +114,20 @@ export class OAuthController {
     token: string,
     done: TokenExchangeCallback
   ): void => {
-    log("Exchanging refresh token", { clientId: client.id });
-    if (this.isValidClient(client.id)) {
-      this.userRepository.exchangeRefreshToken(token).then(
-        args => {
-          log("Refresh token exchanged successfully", {
-            clientId: client.id,
-            hasTokens: !!args,
-          });
-          if (args === undefined) {
-            done(null, false);
-          } else {
-            // Include expires_in as required by Google
-            done(null, args[0], args[1], {
-              expires_in: appConfig.accessTokenLifetime,
-            });
-          }
-        },
-        error => {
-          log("Refresh token exchange failed", {
-            clientId: client.id,
-            error: error instanceof Error ? error.message : String(error),
-          });
-          done(error);
-        }
-      );
-    } else {
-      done(null, false);
+    if (!this.isValidClient(client.id)) {
+      return done(null, false);
     }
+
+    this.userRepository.exchangeRefreshToken(token).then(args => {
+      if (args === undefined) {
+        return done(null, false);
+      }
+      const [accessToken, refreshToken] = args;
+      // Include expires_in as required by Google
+      done(null, accessToken, refreshToken, {
+        expires_in: appConfig.accessTokenLifetime,
+      });
+    }, done);
   };
 
   private authorizeClient = (

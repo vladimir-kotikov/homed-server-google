@@ -1,4 +1,3 @@
-/* eslint-disable unicorn/prevent-abbreviations */
 import * as Sentry from "@sentry/node";
 import zod from "zod";
 

@@ -70,6 +70,7 @@ export class FulfillmentController {
     agentUserId: user.id,
     devices: this.deviceRepository
       .getDevices(user.id)
+      .filter(device => device.endpoints.length > 0)
       .map(device => mapToGoogleDevice(device, user.clientToken)),
   });
 

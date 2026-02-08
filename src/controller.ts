@@ -186,6 +186,7 @@ export class HomedServerController {
             firmware: device.firmware,
             version: device.version,
             available: false,
+            endpoints: [],
           }) as HomedDevice
       );
 
