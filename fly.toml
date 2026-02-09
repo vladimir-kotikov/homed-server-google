@@ -3,9 +3,14 @@ primary_region = 'cdg'
 
 [env]
   DATABASE_URL = '/data/user.db'
+  GOOGLE_APPLICATION_CREDENTIALS = '/tmp/gcloud/key.json'
   DEBUG = '*,-router:*,-router,-require-in-the-middle,-send,-body-parser,-esbuild-register'
   DEBUG_HIDE_DATE = "1"
   NODE_ENV = 'production'
+
+[[files]]
+  secret_name = 'GOOGLE_APPLICATION_CREDENTIALS_JSON'
+  guest_path = '/tmp/gcloud/key.json'
 
 [[mounts]]
   source = 'data'

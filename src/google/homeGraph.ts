@@ -10,7 +10,13 @@ export class HomeGraphClient {
   private homegraph: homegraph_v1.Homegraph;
 
   constructor() {
-    this.homegraph = google.homegraph("v1");
+    const auth = new google.auth.GoogleAuth({
+      scopes: ["https://www.googleapis.com/auth/homegraph"],
+    });
+    this.homegraph = google.homegraph({
+      version: "v1",
+      auth,
+    });
   }
 
   reportStateChange = async (
