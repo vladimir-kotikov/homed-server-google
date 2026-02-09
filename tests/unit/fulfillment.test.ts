@@ -5,9 +5,31 @@ import type {
   DeviceRepository,
   HomedDevice,
 } from "../../src/device.ts";
-import { FulfillmentController } from "../../src/google/fulfillment.ts";
 import type { ClientId } from "../../src/homed/client.ts";
 import type { DeviceState } from "../../src/homed/types.ts";
+
+// Create the spy outside and reference it in the mock
+const reportStateAndNotificationSpy = vi.fn().mockResolvedValue(undefined);
+const requestSyncSpy = vi.fn().mockResolvedValue(undefined);
+
+// Mock googleapis before importing FulfillmentController
+vi.mock("googleapis", () => ({
+  google: {
+    auth: {
+      GoogleAuth: vi.fn(),
+    },
+    homegraph: vi.fn(() => ({
+      devices: {
+        requestSync: requestSyncSpy,
+        reportStateAndNotification: reportStateAndNotificationSpy,
+      },
+    })),
+  },
+}));
+
+// Import after mocking
+const { FulfillmentController } =
+  await import("../../src/google/fulfillment.ts");
 
 const createUserId = (id: string): UserId => id as UserId;
 const createClientId = (id: string): ClientId => id as ClientId;
@@ -28,16 +50,18 @@ const createMockDevice = (key: string, name?: string): HomedDevice => ({
 });
 
 describe("FulfillmentController - State Change Listener", () => {
-  let _fulfillmentController: FulfillmentController;
+  let _fulfillmentController: InstanceType<typeof FulfillmentController>;
   let mockUserRepository: UserRepository;
   let mockDeviceRepository: DeviceRepository;
-  let reportStateChangeSpy: ReturnType<typeof vi.fn>;
 
   const userId = createUserId("user1");
   const clientId = createClientId("client1");
   const deviceId = createDeviceId("device1");
 
   beforeEach(() => {
+    // Reset all mocks
+    vi.clearAllMocks();
+
     // Create mock repositories
     mockUserRepository = {
       findByClientToken: vi.fn(),
@@ -59,9 +83,6 @@ describe("FulfillmentController - State Change Listener", () => {
       emit: vi.fn(),
     } as unknown as DeviceRepository;
 
-    // Create mock HomeGraphClient
-    reportStateChangeSpy = vi.fn().mockResolvedValue(undefined);
-
     _fulfillmentController = new FulfillmentController(
       mockUserRepository,
       mockDeviceRepository
@@ -77,9 +98,8 @@ describe("FulfillmentController - State Change Listener", () => {
 
   it("should report state changes to Google Home Graph when event is received", async () => {
     const device = createMockDevice("device1", "Test Device");
+    const prevState: DeviceState = { status: "off" };
     const newState: DeviceState = { status: "on", data: { brightness: 75 } };
-
-    vi.mocked(mockDeviceRepository.getDevice).mockReturnValue(device);
 
     // Get the registered event handler
     const eventHandler = vi
@@ -94,23 +114,32 @@ describe("FulfillmentController - State Change Listener", () => {
       clientId,
       deviceId,
       device,
+      prevState,
       newState,
     });
 
     // Should report to Google
-    expect(reportStateChangeSpy).toHaveBeenCalledTimes(1);
-    expect(reportStateChangeSpy).toHaveBeenCalledWith(userId, [
-      {
-        googleDeviceId: expect.stringContaining("device1"),
-        state: expect.objectContaining({ online: true, on: true }),
-      },
-    ]);
+    expect(reportStateAndNotificationSpy).toHaveBeenCalledTimes(1);
+    const callArg = reportStateAndNotificationSpy.mock.calls[0][0];
+
+    expect(callArg.requestBody.agentUserId).toBe(userId);
+    expect(callArg.requestBody.requestId).toBeDefined();
+
+    const states = callArg.requestBody.payload.devices.states;
+    const deviceIds = Object.keys(states);
+    expect(deviceIds).toHaveLength(1);
+    expect(deviceIds[0]).toContain("device1");
+    expect(states[deviceIds[0]]).toEqual({
+      online: true,
+      on: true,
+    });
   });
 
   it("should not report devices without traits", async () => {
     const device = createMockDevice("device1", "Test Device");
     device.endpoints = [{ id: 0, exposes: [], options: {} }]; // No exposes = no traits
 
+    const prevState: DeviceState = { status: "off" };
     const newState: DeviceState = { status: "on" };
 
     // Get the registered event handler
@@ -124,11 +153,12 @@ describe("FulfillmentController - State Change Listener", () => {
       clientId,
       deviceId,
       device,
+      prevState,
       newState,
     });
 
     // Should not report to Google
-    expect(reportStateChangeSpy).not.toHaveBeenCalled();
+    expect(reportStateAndNotificationSpy).not.toHaveBeenCalled();
   });
 
   it("should handle multi-endpoint devices correctly", async () => {
@@ -139,6 +169,7 @@ describe("FulfillmentController - State Change Listener", () => {
       { id: 3, exposes: ["switch"], options: {} },
     ];
 
+    const prevState: DeviceState = { status: "off" };
     const newState: DeviceState = { status: "on" };
 
     // Get the registered event handler
@@ -152,32 +183,28 @@ describe("FulfillmentController - State Change Listener", () => {
       clientId,
       deviceId,
       device,
+      prevState,
       newState,
     });
 
     // Should report all 3 endpoints
-    expect(reportStateChangeSpy).toHaveBeenCalledTimes(1);
-    expect(reportStateChangeSpy).toHaveBeenCalledWith(
-      userId,
-      expect.arrayContaining([
-        expect.objectContaining({
-          googleDeviceId: expect.stringContaining(":1"),
-        }),
-        expect.objectContaining({
-          googleDeviceId: expect.stringContaining(":2"),
-        }),
-        expect.objectContaining({
-          googleDeviceId: expect.stringContaining(":3"),
-        }),
-      ])
-    );
+    expect(reportStateAndNotificationSpy).toHaveBeenCalledTimes(1);
+    const callArg = reportStateAndNotificationSpy.mock.calls[0][0];
+    const states = callArg.requestBody.payload.devices.states;
+    const deviceIds = Object.keys(states);
+
+    expect(deviceIds).toHaveLength(3);
+    expect(deviceIds.some(id => id.includes(":1"))).toBe(true);
+    expect(deviceIds.some(id => id.includes(":2"))).toBe(true);
+    expect(deviceIds.some(id => id.includes(":3"))).toBe(true);
   });
 
   it("should handle errors gracefully and not throw", async () => {
     const device = createMockDevice("device1");
+    const prevState: DeviceState = { status: "off" };
     const newState: DeviceState = { status: "on" };
 
-    reportStateChangeSpy.mockRejectedValueOnce(new Error("API Error"));
+    reportStateAndNotificationSpy.mockRejectedValueOnce(new Error("API Error"));
 
     // Get the registered event handler
     const eventHandler = vi
@@ -191,6 +218,7 @@ describe("FulfillmentController - State Change Listener", () => {
         clientId,
         deviceId,
         device,
+        prevState,
         newState,
       })
     ).resolves.not.toThrow();
@@ -202,6 +230,7 @@ describe("FulfillmentController - State Change Listener", () => {
       { id: 0, exposes: ["switch", "brightness"], options: {} },
     ];
 
+    const prevState: DeviceState = { status: "off" };
     const newState: DeviceState = {
       status: "on",
       data: { brightness: 50, power: 100 },
@@ -218,10 +247,11 @@ describe("FulfillmentController - State Change Listener", () => {
       clientId,
       deviceId,
       device,
+      prevState,
       newState,
     });
 
     // Should make only one API call
-    expect(reportStateChangeSpy).toHaveBeenCalledTimes(1);
+    expect(reportStateAndNotificationSpy).toHaveBeenCalledTimes(1);
   });
 });
