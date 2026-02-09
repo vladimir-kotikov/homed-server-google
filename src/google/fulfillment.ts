@@ -55,9 +55,8 @@ export class FulfillmentController {
     });
 
     this.deviceRepository
-      .on("devicesSynced", this.requestSync)
-      .on("deviceCapabilitiesChanged", this.requestSync)
-      .on("deviceStateChange", this.handleDeviceStateChanged);
+      .on("devicesUpdated", this.requestSync)
+      .on("deviceStateChanged", this.handleDeviceStateChanged);
   }
 
   /**
@@ -311,6 +310,6 @@ export class FulfillmentController {
   private handleDisconnect = (user: User) =>
     this.userRepository
       .delete(user.id)
-      .then(() => this.deviceRepository.removeDevices(user.id))
+      .then(() => this.deviceRepository.removeClientDevices(user.id))
       .then(() => ({}));
 }

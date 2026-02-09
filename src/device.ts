@@ -47,9 +47,8 @@ export interface DeviceStateChangeEvent {
  * Device repository that manages device state and emits events when state changes
  */
 export class DeviceRepository extends EventEmitter<{
-  devicesSynced: [UserId];
-  deviceCapabilitiesChanged: [UserId];
-  deviceStateChange: [DeviceStateChangeEvent];
+  devicesUpdated: [UserId];
+  deviceStateChanged: [DeviceStateChangeEvent];
 }> {
   private devices: Record<UserId, Record<ClientId, HomedDevice[]>> = {};
   private deviceState: Record<
@@ -61,7 +60,7 @@ export class DeviceRepository extends EventEmitter<{
     super();
   }
 
-  getClientDevice = (
+  getDevice = (
     userId: UserId,
     clientId: ClientId,
     deviceId: DeviceId
@@ -86,7 +85,7 @@ export class DeviceRepository extends EventEmitter<{
     return result;
   };
 
-  removeDevices = (userId: UserId, clientId?: ClientId): void => {
+  removeClientDevices = (userId: UserId, clientId?: ClientId): void => {
     if (clientId) {
       delete this.devices[userId]?.[clientId];
       delete this.deviceState[userId]?.[clientId];
@@ -117,7 +116,7 @@ export class DeviceRepository extends EventEmitter<{
 
     // Emit device sync event if there were changes
     if (addedDevices.length > 0 || removedDevices.length > 0) {
-      this.emit("devicesSynced", userId);
+      this.emit("devicesUpdated", userId);
     }
 
     return [addedDevices, removedDevices];
@@ -127,16 +126,16 @@ export class DeviceRepository extends EventEmitter<{
    * Update device capabilities (endpoints/exposes)
    * Emits event for Google Home SYNC
    */
-  updateDeviceCapabilities = (
+  updateDevice = (
     userId: UserId,
     clientId: ClientId,
     deviceId: DeviceId,
     endpoints: HomedEndpoint[]
   ): void => {
-    const device = this.getClientDevice(userId, clientId, deviceId);
+    const device = this.getDevice(userId, clientId, deviceId);
     if (device) {
       device.endpoints = endpoints;
-      this.emit("deviceCapabilitiesChanged", userId);
+      this.emit("devicesUpdated", userId);
     }
   };
 
@@ -146,7 +145,7 @@ export class DeviceRepository extends EventEmitter<{
     deviceId: DeviceId,
     available: boolean
   ): void => {
-    const device = this.getClientDevice(userId, clientId, deviceId);
+    const device = this.getDevice(userId, clientId, deviceId);
     if (device && device.available !== available) {
       const prevState =
         this.deviceState[userId]?.[clientId]?.[deviceId] ??
@@ -157,7 +156,7 @@ export class DeviceRepository extends EventEmitter<{
       // currentState remains unchanged - availability is tracked on device object, not in state
       const newState = prevState;
 
-      this.emit("deviceStateChange", {
+      this.emit("deviceStateChanged", {
         userId,
         clientId,
         deviceId,
@@ -168,7 +167,7 @@ export class DeviceRepository extends EventEmitter<{
     }
   };
 
-  setDeviceState = (
+  updateDeviceState = (
     userId: UserId,
     clientId: ClientId,
     deviceId: DeviceId,
@@ -191,9 +190,9 @@ export class DeviceRepository extends EventEmitter<{
     this.deviceState[userId][clientId] ??= {};
     this.deviceState[userId][clientId][deviceId] = newState;
 
-    const device = this.getClientDevice(userId, clientId, deviceId);
+    const device = this.getDevice(userId, clientId, deviceId);
     if (device) {
-      this.emit("deviceStateChange", {
+      this.emit("deviceStateChanged", {
         userId,
         clientId,
         deviceId,

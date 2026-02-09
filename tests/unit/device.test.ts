@@ -142,14 +142,14 @@ describe("DeviceRepository", () => {
       const device = createMockDevice("device1");
       repository.syncClientDevices(userId, uniqueId, [device]);
 
-      const retrieved = repository.getClientDevice(userId, uniqueId, deviceId);
+      const retrieved = repository.getDevice(userId, uniqueId, deviceId);
 
       expect(retrieved).toBeDefined();
       expect(retrieved?.key).toBe("device1");
     });
 
     it("should return undefined for non-existent device", () => {
-      const device = repository.getClientDevice(userId, uniqueId, deviceId);
+      const device = repository.getDevice(userId, uniqueId, deviceId);
 
       expect(device).toBeUndefined();
     });
@@ -161,11 +161,7 @@ describe("DeviceRepository", () => {
       repository.syncClientDevices(userId, uniqueId, [device]);
 
       repository.setDeviceAvailable(userId, uniqueId, deviceId, true);
-      const retrievedDevice = repository.getClientDevice(
-        userId,
-        uniqueId,
-        deviceId
-      );
+      const retrievedDevice = repository.getDevice(userId, uniqueId, deviceId);
 
       expect(retrievedDevice?.available).toBe(true);
     });
@@ -175,20 +171,16 @@ describe("DeviceRepository", () => {
       repository.syncClientDevices(userId, uniqueId, [device]);
 
       repository.setDeviceAvailable(userId, uniqueId, deviceId, false);
-      const retrievedDevice = repository.getClientDevice(
-        userId,
-        uniqueId,
-        deviceId
-      );
+      const retrievedDevice = repository.getDevice(userId, uniqueId, deviceId);
 
       expect(retrievedDevice?.available).toBe(false);
     });
 
     it("should set and merge device state", () => {
-      repository.setDeviceState(userId, uniqueId, deviceId, {
+      repository.updateDeviceState(userId, uniqueId, deviceId, {
         status: "online",
       });
-      repository.setDeviceState(userId, uniqueId, deviceId, {
+      repository.updateDeviceState(userId, uniqueId, deviceId, {
         data: { brightness: 100 },
       });
 
@@ -208,16 +200,8 @@ describe("DeviceRepository", () => {
       repository.setDeviceAvailable(userId, uniqueId, deviceId, true);
       repository.setDeviceAvailable(userId, client2, deviceId, false);
 
-      const retrievedDevice1 = repository.getClientDevice(
-        userId,
-        uniqueId,
-        deviceId
-      );
-      const retrievedDevice2 = repository.getClientDevice(
-        userId,
-        client2,
-        deviceId
-      );
+      const retrievedDevice1 = repository.getDevice(userId, uniqueId, deviceId);
+      const retrievedDevice2 = repository.getDevice(userId, client2, deviceId);
 
       expect(retrievedDevice1?.available).toBe(true);
       expect(retrievedDevice2?.available).toBe(false);
@@ -233,16 +217,8 @@ describe("DeviceRepository", () => {
       repository.setDeviceAvailable(userId, uniqueId, deviceId, true);
       repository.setDeviceAvailable(user2, uniqueId, deviceId, false);
 
-      const retrievedDevice1 = repository.getClientDevice(
-        userId,
-        uniqueId,
-        deviceId
-      );
-      const retrievedDevice2 = repository.getClientDevice(
-        user2,
-        uniqueId,
-        deviceId
-      );
+      const retrievedDevice1 = repository.getDevice(userId, uniqueId, deviceId);
+      const retrievedDevice2 = repository.getDevice(user2, uniqueId, deviceId);
 
       expect(retrievedDevice1?.available).toBe(true);
       expect(retrievedDevice2?.available).toBe(false);
@@ -253,9 +229,11 @@ describe("DeviceRepository", () => {
     it("should remove all devices for specific client", () => {
       const device = createMockDevice("device1");
       repository.syncClientDevices(userId, uniqueId, [device]);
-      repository.setDeviceState(userId, uniqueId, deviceId, { status: "on" });
+      repository.updateDeviceState(userId, uniqueId, deviceId, {
+        status: "on",
+      });
 
-      repository.removeDevices(userId, uniqueId);
+      repository.removeClientDevices(userId, uniqueId);
 
       const state = repository.getDeviceState(userId, deviceId, uniqueId);
       expect(state).toBeUndefined();
@@ -268,10 +246,14 @@ describe("DeviceRepository", () => {
 
       repository.syncClientDevices(userId, uniqueId, [device1]);
       repository.syncClientDevices(userId, client2, [device1]);
-      repository.setDeviceState(userId, uniqueId, deviceId, { status: "on" });
-      repository.setDeviceState(userId, client2, deviceId2, { status: "on" });
+      repository.updateDeviceState(userId, uniqueId, deviceId, {
+        status: "on",
+      });
+      repository.updateDeviceState(userId, client2, deviceId2, {
+        status: "on",
+      });
 
-      repository.removeDevices(userId);
+      repository.removeClientDevices(userId);
 
       const state1 = repository.getDeviceState(userId, deviceId, uniqueId);
       const state2 = repository.getDeviceState(userId, deviceId2, client2);
@@ -286,10 +268,12 @@ describe("DeviceRepository", () => {
 
       repository.syncClientDevices(userId, uniqueId, [device]);
       repository.syncClientDevices(user2, uniqueId, [device]);
-      repository.setDeviceState(userId, uniqueId, deviceId, { status: "on" });
-      repository.setDeviceState(user2, uniqueId, deviceId, { status: "on" });
+      repository.updateDeviceState(userId, uniqueId, deviceId, {
+        status: "on",
+      });
+      repository.updateDeviceState(user2, uniqueId, deviceId, { status: "on" });
 
-      repository.removeDevices(userId, uniqueId);
+      repository.removeClientDevices(userId, uniqueId);
 
       const state1 = repository.getDeviceState(userId, deviceId, uniqueId);
       const state2 = repository.getDeviceState(user2, deviceId, uniqueId);
@@ -301,7 +285,9 @@ describe("DeviceRepository", () => {
 
   describe("getDeviceState", () => {
     it("should get device state with specific client", () => {
-      repository.setDeviceState(userId, uniqueId, deviceId, { status: "on" });
+      repository.updateDeviceState(userId, uniqueId, deviceId, {
+        status: "on",
+      });
 
       const state = repository.getDeviceState(userId, deviceId, uniqueId);
 
@@ -309,7 +295,9 @@ describe("DeviceRepository", () => {
     });
 
     it("should find device state across clients when client not specified", () => {
-      repository.setDeviceState(userId, uniqueId, deviceId, { status: "on" });
+      repository.updateDeviceState(userId, uniqueId, deviceId, {
+        status: "on",
+      });
 
       const state = repository.getDeviceState(userId, deviceId);
 
@@ -402,7 +390,7 @@ describe("DeviceRepository", () => {
 
       repository.syncClientDevices(userId, uniqueId, [device]);
       repository.syncClientDevices(userId, client2, [device]);
-      repository.removeDevices(userId, uniqueId);
+      repository.removeClientDevices(userId, uniqueId);
 
       const clientIds = repository.getConnectedClientIds(userId);
 
@@ -411,18 +399,18 @@ describe("DeviceRepository", () => {
   });
 
   describe("state change events", () => {
-    it("should emit deviceStateChange event when state actually changes", () => {
+    it("should emit deviceStateChanged event when state actually changes", () => {
       const device = createMockDevice("device1");
       repository.syncClientDevices(userId, uniqueId, [device]);
 
       const listener = vi.fn();
-      repository.on("deviceStateChange", listener);
+      repository.on("deviceStateChanged", listener);
 
       const newState: Partial<DeviceState> = {
         status: "on",
         data: { brightness: 50 },
       };
-      repository.setDeviceState(userId, uniqueId, deviceId, newState);
+      repository.updateDeviceState(userId, uniqueId, deviceId, newState);
 
       expect(listener).toHaveBeenCalledTimes(1);
       expect(listener).toHaveBeenCalledWith({
@@ -440,14 +428,14 @@ describe("DeviceRepository", () => {
       repository.syncClientDevices(userId, uniqueId, [device]);
 
       const listener = vi.fn();
-      repository.on("deviceStateChange", listener);
+      repository.on("deviceStateChanged", listener);
 
       const state: Partial<DeviceState> = {
         status: "on",
         data: { brightness: 50 },
       };
-      repository.setDeviceState(userId, uniqueId, deviceId, state);
-      repository.setDeviceState(userId, uniqueId, deviceId, state);
+      repository.updateDeviceState(userId, uniqueId, deviceId, state);
+      repository.updateDeviceState(userId, uniqueId, deviceId, state);
 
       expect(listener).toHaveBeenCalledTimes(1);
     });
@@ -458,13 +446,13 @@ describe("DeviceRepository", () => {
 
       const listener = vi.fn();
 
-      repository.setDeviceState(userId, uniqueId, deviceId, {
+      repository.updateDeviceState(userId, uniqueId, deviceId, {
         status: "on",
         data: { brightness: 50 },
       });
-      repository.on("deviceStateChange", listener);
+      repository.on("deviceStateChanged", listener);
 
-      repository.setDeviceState(userId, uniqueId, deviceId, {
+      repository.updateDeviceState(userId, uniqueId, deviceId, {
         data: { brightness: 75 },
       });
 
@@ -490,19 +478,21 @@ describe("DeviceRepository", () => {
       repository.syncClientDevices(userId, uniqueId, [device]);
 
       const listener = vi.fn();
-      repository.on("deviceStateChange", listener);
+      repository.on("deviceStateChanged", listener);
 
       const newState: Partial<DeviceState> = { status: "on" };
-      repository.setDeviceState(userId, uniqueId, deviceId, newState);
+      repository.updateDeviceState(userId, uniqueId, deviceId, newState);
 
       expect(listener).toHaveBeenCalledTimes(1);
     });
 
     it("should not emit event when device does not exist", () => {
       const listener = vi.fn();
-      repository.on("deviceStateChange", listener);
+      repository.on("deviceStateChanged", listener);
 
-      repository.setDeviceState(userId, uniqueId, deviceId, { status: "on" });
+      repository.updateDeviceState(userId, uniqueId, deviceId, {
+        status: "on",
+      });
 
       expect(listener).not.toHaveBeenCalled();
     });
@@ -512,15 +502,15 @@ describe("DeviceRepository", () => {
       repository.syncClientDevices(userId, uniqueId, [device]);
 
       const listener = vi.fn();
-      repository.setDeviceState(userId, uniqueId, deviceId, {
+      repository.updateDeviceState(userId, uniqueId, deviceId, {
         status: "on",
         data: { brightness: 50, color: { r: 255, g: 0, b: 0 } },
       });
 
-      repository.on("deviceStateChange", listener);
+      repository.on("deviceStateChanged", listener);
 
       // Same values, different object reference
-      repository.setDeviceState(userId, uniqueId, deviceId, {
+      repository.updateDeviceState(userId, uniqueId, deviceId, {
         status: "on",
         data: { brightness: 50, color: { r: 255, g: 0, b: 0 } },
       });
@@ -533,14 +523,14 @@ describe("DeviceRepository", () => {
       repository.syncClientDevices(userId, uniqueId, [device]);
 
       const listener = vi.fn();
-      repository.setDeviceState(userId, uniqueId, deviceId, {
+      repository.updateDeviceState(userId, uniqueId, deviceId, {
         status: "on",
         data: { brightness: 50, color: { r: 255, g: 0, b: 0 } },
       });
 
-      repository.on("deviceStateChange", listener);
+      repository.on("deviceStateChanged", listener);
 
-      repository.setDeviceState(userId, uniqueId, deviceId, {
+      repository.updateDeviceState(userId, uniqueId, deviceId, {
         status: "on",
         data: { brightness: 50, color: { r: 0, g: 255, b: 0 } },
       });

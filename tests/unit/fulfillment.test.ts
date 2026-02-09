@@ -68,9 +68,9 @@ describe("FulfillmentController - State Change Listener", () => {
     );
   });
 
-  it("should register deviceStateChange event listener on construction", () => {
+  it("should register deviceStateChangedd event listener on construction", () => {
     expect(mockDeviceRepository.on).toHaveBeenCalledWith(
-      "deviceStateChange",
+      "deviceStateChanged",
       expect.any(Function)
     );
   });
@@ -79,12 +79,12 @@ describe("FulfillmentController - State Change Listener", () => {
     const device = createMockDevice("device1", "Test Device");
     const newState: DeviceState = { status: "on", data: { brightness: 75 } };
 
-    vi.mocked(mockDeviceRepository.getClientDevice).mockReturnValue(device);
+    vi.mocked(mockDeviceRepository.getDevice).mockReturnValue(device);
 
     // Get the registered event handler
     const eventHandler = vi
       .mocked(mockDeviceRepository.on)
-      .mock.calls.find(call => call[0] === "deviceStateChange")?.[1];
+      .mock.calls.find(call => call[0] === "deviceStateChanged")?.[1];
 
     expect(eventHandler).toBeDefined();
 
@@ -116,7 +116,7 @@ describe("FulfillmentController - State Change Listener", () => {
     // Get the registered event handler
     const eventHandler = vi
       .mocked(mockDeviceRepository.on)
-      .mock.calls.find(call => call[0] === "deviceStateChange")?.[1];
+      .mock.calls.find(call => call[0] === "deviceStateChanged")?.[1];
 
     // Trigger the event
     await eventHandler?.({
@@ -144,7 +144,7 @@ describe("FulfillmentController - State Change Listener", () => {
     // Get the registered event handler
     const eventHandler = vi
       .mocked(mockDeviceRepository.on)
-      .mock.calls.find(call => call[0] === "deviceStateChange")?.[1];
+      .mock.calls.find(call => call[0] === "deviceStateChanged")?.[1];
 
     // Trigger the event
     await eventHandler?.({
@@ -182,7 +182,7 @@ describe("FulfillmentController - State Change Listener", () => {
     // Get the registered event handler
     const eventHandler = vi
       .mocked(mockDeviceRepository.on)
-      .mock.calls.find(call => call[0] === "deviceStateChange")?.[1];
+      .mock.calls.find(call => call[0] === "deviceStateChanged")?.[1];
 
     // Should not throw
     await expect(
@@ -210,7 +210,7 @@ describe("FulfillmentController - State Change Listener", () => {
     // Get the registered event handler
     const eventHandler = vi
       .mocked(mockDeviceRepository.on)
-      .mock.calls.find(call => call[0] === "deviceStateChange")?.[1];
+      .mock.calls.find(call => call[0] === "deviceStateChanged")?.[1];
 
     // Trigger the event
     await eventHandler?.({

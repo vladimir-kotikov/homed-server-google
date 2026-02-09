@@ -171,7 +171,7 @@ describe("Dashboard - Connected Clients", () => {
       deviceRepository.syncClientDevices(userId as any, client2Id, [
         mockDevice,
       ]);
-      deviceRepository.removeDevices(userId as any, client1Id);
+      deviceRepository.removeClientDevices(userId as any, client1Id);
 
       const connectedClients = deviceRepository.getConnectedClientIds(
         userId as any

@@ -85,7 +85,7 @@ describe("HomedServerController", () => {
 
       // Listen for state change events
       const eventSpy = vi.fn();
-      deviceCache.on("deviceStateChange", eventSpy);
+      deviceCache.on("deviceStateChanged", eventSpy);
 
       // Update device data
       (controller as any).deviceDataUpdated(mockClient, deviceId, {

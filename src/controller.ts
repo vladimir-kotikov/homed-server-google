@@ -123,7 +123,7 @@ export class HomedServerController {
   clientDisconnected = (client: ClientConnection<User>) => {
     if (client.user && client.uniqueId) {
       delete this.clients[client.user.id]?.[client.uniqueId];
-      this.deviceCache.removeDevices(client.user.id, client.uniqueId);
+      this.deviceCache.removeClientDevices(client.user.id, client.uniqueId);
       log(`Client disconnected: ${client.uniqueId}`);
     }
   };
@@ -235,7 +235,7 @@ export class HomedServerController {
       `Device exposes update from ${client.uniqueId}. ${deviceId}: ${JSON.stringify(message)}`
     );
 
-    const device = this.deviceCache.getClientDevice(
+    const device = this.deviceCache.getDevice(
       client.user.id,
       client.uniqueId,
       deviceId
@@ -255,7 +255,7 @@ export class HomedServerController {
     );
 
     // Update device capabilities in repository (emits event for Google SYNC)
-    this.deviceCache.updateDeviceCapabilities(
+    this.deviceCache.updateDevice(
       client.user.id,
       client.uniqueId,
       deviceId,
@@ -301,7 +301,7 @@ export class HomedServerController {
     );
 
     // Update device state in cache - state change events handled by DeviceRepository
-    this.deviceCache.setDeviceState(
+    this.deviceCache.updateDeviceState(
       client.user.id,
       client.uniqueId,
       deviceId,
