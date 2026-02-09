@@ -11,6 +11,9 @@ services:
       DATABASE_URL: /app/db/dev.db
       GOOGLE_SSO_CLIENT_ID: ${GOOGLE_SSO_CLIENT_ID}
       GOOGLE_SSO_CLIENT_SECRET: ${GOOGLE_SSO_CLIENT_SECRET}
+      HOMED_USER_ID: ${HOMED_USER_ID}
+      HOMED_CLIENT_ID: ${HOMED_CLIENT_ID}
+      HOMED_CLIENT_TOKEN: ${HOMED_CLIENT_TOKEN}
     command: dev
     volumes:
       - ./public:/app/public
@@ -21,7 +24,7 @@ services:
   homed-service-cloud:
     image: docker.u236.org/homed-cloud
     volumes:
-      - ./homed.prod.conf:/etc/homed/homed-cloud.conf
+      - ./homed.conf:/etc/homed/homed-cloud.conf
     restart: unless-stopped
 
 volumes:

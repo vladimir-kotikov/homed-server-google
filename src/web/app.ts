@@ -12,9 +12,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import passport from "passport";
 import appConfig from "../config.ts";
 import type {
-  ClientToken,
   User as HomedUser,
-  User,
   UserId,
   UserRepository,
 } from "../db/repository.ts";
@@ -22,6 +20,7 @@ import type { DeviceRepository } from "../device.ts";
 import { FulfillmentController } from "../google/fulfillment.ts";
 import {
   clientPasswordOauth20Strategy,
+  debugLoggedIn,
   googleOauth20Strategy,
   jwtStrategy,
   requireLoggedIn,
@@ -144,30 +143,27 @@ export class WebApp {
       .get("/health", (_, res) => res.json({ status: "ok" }))
       .post(
         "/fulfillment",
-        (req, res, next) => {
-          const log = debug("homed:fulfillment");
-
-          // DEV MODE: Skip authentication if NODE_ENV is not production
-          if (process.env.NODE_ENV !== "production") {
-            log("DEV MODE: Skipping JWT authentication");
-            // Create a mock user for testing
-            req.user = {
-              id: (process.env.DEV_USER_ID ||
-                "105970409134870248485") as UserId,
-              username: "dev-user@test.local",
-              clientToken: (process.env.DEV_CLIENT_TOKEN ||
-                "dev-token-123") as ClientToken,
-              createdAt: new Date(),
-            } satisfies User;
-            return next();
-          }
-
-          passport.authenticate("jwt", { session: false })(req, res, next);
-        },
+        passport.authenticate("jwt", { session: false }),
+        debugLoggedIn,
         requireLoggedIn,
         this.handleFulfillment
       )
       .use("/oauth", this.oauthController.routes);
+
+    if (
+      process.env.NODE_ENV !== "production" &&
+      process.env.HOMED_USER_ID &&
+      process.env.HOMED_CLIENT_ID
+    ) {
+      this.app = this.app.use("/inspect", debugLoggedIn, (req, res) =>
+        res.json({
+          user: req.user,
+          session: req.session,
+          devices: this.deviceRepository.getDevices(req.user!.id),
+          state: this.deviceRepository.getDevicesStates(req.user!.id),
+        })
+      );
+    }
 
     Sentry.setupExpressErrorHandler(this.app);
   }
@@ -201,13 +197,10 @@ export class WebApp {
       : res.redirect(redirectUrl);
   };
 
-  private handleFulfillment = async (req: Request, res: Response) => {
-    const data = await this.fulfillmentController.handleFulfillment(
-      (req as Express.AuthenticatedRequest).user,
-      req.body
-    );
-    res.json(data);
-  };
+  private handleFulfillment = (req: Request, res: Response) =>
+    this.fulfillmentController
+      .handleFulfillment((req as Express.AuthenticatedRequest).user, req.body)
+      .then(data => res.json(data));
 
   handleRequest = (request: IncomingMessage, response: ServerResponse) =>
     this.app(request, response);

@@ -4,6 +4,7 @@ import { EventEmitter } from "node:events";
 import { Socket } from "node:net";
 import { match, P } from "ts-pattern";
 import type { ClientToken } from "../db/repository.ts";
+import type { DeviceId } from "../device.ts";
 import { Result, safeParse } from "../utility.ts";
 import { AES128CBC } from "./crypto.ts";
 import { escapePacket, readPacket, unescapePacket } from "./protocol.ts";
@@ -254,8 +255,18 @@ export class ClientConnection<U extends { id: string }> extends EventEmitter<{
   subscribe = (topic: string): void =>
     this.sendMessage({ action: "subscribe", topic });
 
-  publish = (topic: string, message: Record<string, unknown>): void =>
-    this.sendMessage({ action: "publish", topic, message });
+  command = (action: string, deviceId: DeviceId): void =>
+    // device.topic is zigbee/<device_address>, so the command goes to
+    // command/zigbee topic with {device: <device_address>}
+    this.sendMessage({
+      action: "publish",
+      topic: `command/${deviceId.split("/").slice(0, -1).join("/")}`,
+      message: {
+        action,
+        device: deviceId.split("/").slice(-1)[0],
+        service: "cloud",
+      },
+    });
 
   authorize(user: U): void {
     this.user = user;

@@ -17,6 +17,17 @@ if (!databaseUrl) {
   process.exit(1);
 }
 
+if (
+  !process.env.HOMED_USER_ID ||
+  !process.env.HOMED_CLIENT_ID ||
+  !process.env.HOMED_CLIENT_TOKEN
+) {
+  console.error(
+    "HOMED_USER_ID, HOMED_CLIENT_ID, and HOMED_CLIENT_TOKEN environment variables are required for seeding"
+  );
+  process.exit(1);
+}
+
 console.log(`Seeding database at ${databaseUrl}`);
 
 const database = new Database(databaseUrl);
@@ -24,9 +35,9 @@ const client = drizzle(database, { schema });
 
 // Insert test user from homed.conf
 const testUser: User = {
-  id: "test-client" as UserId,
-  username: "test-client",
-  clientToken: "token" as ClientToken,
+  id: process.env.HOMED_USER_ID as UserId,
+  username: "Test user",
+  clientToken: process.env.HOMED_CLIENT_TOKEN as ClientToken,
   createdAt: new Date(),
 };
 
@@ -34,7 +45,14 @@ try {
   const result = await client
     .insert(users)
     .values(testUser)
-    .onConflictDoNothing()
+    .onConflictDoUpdate({
+      target: users.id,
+      set: {
+        username: testUser.username,
+        clientToken: testUser.clientToken,
+        createdAt: testUser.createdAt,
+      },
+    })
     .returning();
 
   if (result.length > 0) {

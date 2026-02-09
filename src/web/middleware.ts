@@ -7,7 +7,7 @@ import {
 } from "passport-google-oauth20";
 import { ExtractJwt, Strategy as JwtStrategy } from "passport-jwt";
 import { Strategy as ClientPasswordStrategy } from "passport-oauth2-client-password";
-import type { User } from "../db/repository.ts";
+import type { ClientToken, User, UserId } from "../db/repository.ts";
 
 declare type Maybe<T> = T | undefined;
 declare type MaybeAsync<T> = T | Promise<T>;
@@ -72,3 +72,28 @@ export const requireLoggedIn = (
   request.isAuthenticated()
     ? next()
     : response.status(401).json({ error: "Unauthorized" });
+
+/**
+ * Middleware to automatically log in a test user in non-production environments
+ * when HOMED_USER_ID and HOMED_CLIENT_ID are set. This allows testing the UI
+ * without going through the Google SSO flow.
+ */
+export const debugLoggedIn = (
+  req: Request,
+  _res: Response,
+  next: NextFunction
+) =>
+  !req.isAuthenticated() &&
+  process.env.NODE_ENV !== "production" &&
+  process.env.HOMED_USER_ID &&
+  process.env.HOMED_CLIENT_ID
+    ? req.login(
+        {
+          id: process.env.HOMED_USER_ID as UserId,
+          username: "Test user",
+          clientToken: "empty" as ClientToken,
+          createdAt: new Date(),
+        },
+        next
+      )
+    : next();

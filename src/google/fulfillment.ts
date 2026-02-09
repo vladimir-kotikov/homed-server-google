@@ -39,7 +39,7 @@ class RequestError extends Error {}
 export class FulfillmentController {
   private userRepository: UserRepository;
   private deviceRepository: DeviceRepository;
-  private homegraph: ReturnType<typeof google.homegraph>;
+  private homegraph?: ReturnType<typeof google.homegraph>;
 
   constructor(
     userRepository: UserRepository,
@@ -50,10 +50,17 @@ export class FulfillmentController {
     const auth = new google.auth.GoogleAuth({
       scopes: ["https://www.googleapis.com/auth/homegraph"],
     });
-    this.homegraph = google.homegraph({
-      version: "v1",
-      auth,
-    });
+    try {
+      this.homegraph = google.homegraph({
+        version: "v1",
+        auth,
+      });
+    } catch (error) {
+      logError("Failed to initialize Google Home Graph API client:", error);
+      if (process.env.NODE_ENV === "production") {
+        throw error;
+      }
+    }
 
     this.deviceRepository
       .on("devicesUpdated", this.requestSync)
@@ -66,7 +73,7 @@ export class FulfillmentController {
    * changed - Google will call back with SYNC intent
    */
   private requestSync = (userId: UserId) =>
-    this.homegraph.devices
+    this.homegraph?.devices
       .requestSync({ requestBody: { agentUserId: userId, async: true } })
       .then(() => logDebug("Device update requested for user %s", userId))
       .catch(error => {
@@ -144,7 +151,7 @@ export class FulfillmentController {
       `Reporting state to Google for ${Object.keys(stateUpdates).length} device(s): ${JSON.stringify(stateUpdates)}`
     );
 
-    return this.homegraph.devices
+    return this.homegraph?.devices
       .reportStateAndNotification({
         requestBody: {
           requestId: crypto.randomUUID(),
