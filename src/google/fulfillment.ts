@@ -1,7 +1,13 @@
+import * as Sentry from "@sentry/node";
 import debug from "debug";
+import { google } from "googleapis";
 import { match, P } from "ts-pattern";
-import type { User, UserRepository } from "../db/repository.ts";
-import type { DeviceId, DeviceRepository } from "../device.ts";
+import type { User, UserId, UserRepository } from "../db/repository.ts";
+import type {
+  DeviceId,
+  DeviceRepository,
+  DeviceStateChangeEvent,
+} from "../device.ts";
 import { safeParse } from "../utility.ts";
 import {
   getEndpointIdFromGoogleDeviceId,
@@ -17,6 +23,8 @@ import {
 } from "./schema.ts";
 import type {
   ExecuteResponsePayload,
+  GoogleDeviceId,
+  GoogleDeviceState,
   QueryResponsePayload,
   SmartHomeResponse,
   SyncResponsePayload,
@@ -30,6 +38,7 @@ class RequestError extends Error {}
 export class FulfillmentController {
   private userRepository: UserRepository;
   private deviceRepository: DeviceRepository;
+  private homegraph: ReturnType<typeof google.homegraph>;
 
   constructor(
     userRepository: UserRepository,
@@ -37,7 +46,89 @@ export class FulfillmentController {
   ) {
     this.userRepository = userRepository;
     this.deviceRepository = deviceRepository;
+    const auth = new google.auth.GoogleAuth({
+      scopes: ["https://www.googleapis.com/auth/homegraph"],
+    });
+    this.homegraph = google.homegraph({
+      version: "v1",
+      auth,
+    });
+
+    this.deviceRepository
+      .on("devicesSynced", this.requestSync)
+      .on("deviceCapabilitiesChanged", this.requestSync)
+      .on("deviceStateChange", this.handleDeviceStateChanged);
   }
+
+  /**
+   * Handle device sync and device capabilities changed events
+   * Triggers REQUEST_SYNC to notify Google Home that device traits
+   * changed - Google will call back with SYNC intent
+   */
+  private requestSync = (userId: UserId) =>
+    this.homegraph.devices
+      .requestSync({ requestBody: { agentUserId: userId, async: true } })
+      .then(() => log("Device update requested for user %s", userId))
+      .catch(error => {
+        logError(
+          "Failed to request device sync for user %s: %O",
+          userId,
+          error
+        );
+        Sentry.captureException(error);
+      });
+
+  /**
+   * Handle device state change events from repository
+   * Maps state to Google format and reports to Home Graph API
+   */
+  private handleDeviceStateChanged = async ({
+    userId,
+    clientId,
+    deviceId,
+    device,
+    newState,
+  }: DeviceStateChangeEvent) => {
+    if (!device.endpoints.some(ep => ep.exposes && ep.exposes.length > 0)) {
+      log(`Skipping Google state report: device has no supported traits`);
+      return;
+    }
+
+    const stateUpdates = mapToGoogleStateReports(
+      device,
+      clientId,
+      deviceId,
+      newState
+    ).reduce(
+      (states, { googleDeviceId, googleState }) => {
+        states[googleDeviceId] = googleState;
+        return states;
+      },
+      {} as Record<GoogleDeviceId, GoogleDeviceState>
+    );
+
+    if (Object.keys(stateUpdates).length === 0) {
+      log(`Skipping Google state report: no state reports generated`);
+      return;
+    }
+
+    log(
+      `Reporting state to Google for ${Object.keys(stateUpdates).length} device(s): ${JSON.stringify(stateUpdates)}`
+    );
+
+    return this.homegraph.devices
+      .reportStateAndNotification({
+        requestBody: {
+          requestId: crypto.randomUUID(),
+          agentUserId: userId,
+          payload: { devices: { states: stateUpdates } },
+        },
+      })
+      .catch(error => {
+        logError("Failed to report state change: %O", error);
+        Sentry.captureException(error);
+      });
+  };
 
   handleFulfillment = async (
     user: User,

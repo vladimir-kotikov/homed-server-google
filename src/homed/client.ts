@@ -169,24 +169,35 @@ export class ClientConnection<U extends { id: string }> extends EventEmitter<{
         {
           forceTransaction: true,
           name: "client message",
-          op: "message.process",
-          attributes: {
-            "client.unique_id": this.uniqueId,
-            "client.user_id": this.user?.id,
-            "messaging.message.body.size": decrypted.length,
-          },
+          op: "queue.process",
+          attributes: { "messaging.message.body.size": decrypted.length },
         },
-        span =>
-          this.parseMessage(message).fold(
+        span => {
+          // Set up Sentry context for the entire transaction
+          Sentry.setContext("client", {
+            userId: this.user?.id,
+            clientId: this.uniqueId,
+          });
+
+          return this.parseMessage(message).fold(
             error => logError(`Invalid message.`, error),
             ([event, topic, data]) => {
               span.setAttributes({
-                "client.message.topic": topic,
-                "messaging.message.topic": topic,
+                "messaging.destination.name": topic,
               });
+
+              // Extract deviceId from topic if present (e.g., "fd/deviceId" -> "deviceId")
+              const topicParts = topic.split("/");
+              if (topicParts.length > 1) {
+                Sentry.setContext("device", {
+                  deviceId: topicParts.slice(1).join("/"),
+                });
+              }
+
               this.emit(event, topic, data);
             }
-          )
+          );
+        }
       );
 
       this.buf = remainder;

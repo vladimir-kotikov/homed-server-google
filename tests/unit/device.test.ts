@@ -1,8 +1,9 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { UserId } from "../../src/db/repository.ts";
 import type { HomedDevice } from "../../src/device.ts";
 import { DeviceRepository, type DeviceId } from "../../src/device.ts";
 import type { ClientId } from "../../src/homed/client.ts";
+import type { DeviceState } from "../../src/homed/types.ts";
 
 const createUserId = (id: string): UserId => id as UserId;
 const createUniqueId = (id: string): ClientId => id as ClientId;
@@ -370,6 +371,140 @@ describe("DeviceRepository", () => {
       const clientIds = repository.getConnectedClientIds(userId);
 
       expect(clientIds).toEqual([client2]);
+    });
+  });
+
+  describe("state change events", () => {
+    it("should emit deviceStateChange event when state actually changes", () => {
+      const device = createMockDevice("device1");
+      repository.syncClientDevices(userId, uniqueId, [device]);
+
+      const listener = vi.fn();
+      repository.on("deviceStateChange", listener);
+
+      const newState: Partial<DeviceState> = {
+        status: "on",
+        data: { brightness: 50 },
+      };
+      repository.setDeviceState(userId, uniqueId, deviceId, newState);
+
+      expect(listener).toHaveBeenCalledTimes(1);
+      expect(listener).toHaveBeenCalledWith({
+        userId,
+        clientId: uniqueId,
+        deviceId,
+        device,
+        newState: expect.objectContaining(newState),
+      });
+    });
+
+    it("should not emit event when state is identical (deduplication)", () => {
+      const device = createMockDevice("device1");
+      repository.syncClientDevices(userId, uniqueId, [device]);
+
+      const listener = vi.fn();
+      repository.on("deviceStateChange", listener);
+
+      const state: Partial<DeviceState> = {
+        status: "on",
+        data: { brightness: 50 },
+      };
+      repository.setDeviceState(userId, uniqueId, deviceId, state);
+      repository.setDeviceState(userId, uniqueId, deviceId, state);
+
+      expect(listener).toHaveBeenCalledTimes(1);
+    });
+
+    it("should emit event when partial state update changes values", () => {
+      const device = createMockDevice("device1");
+      repository.syncClientDevices(userId, uniqueId, [device]);
+
+      const listener = vi.fn();
+
+      repository.setDeviceState(userId, uniqueId, deviceId, {
+        status: "on",
+        data: { brightness: 50 },
+      });
+      repository.on("deviceStateChange", listener);
+
+      repository.setDeviceState(userId, uniqueId, deviceId, {
+        data: { brightness: 75 },
+      });
+
+      expect(listener).toHaveBeenCalledTimes(1);
+      expect(listener).toHaveBeenCalledWith({
+        userId,
+        clientId: uniqueId,
+        deviceId,
+        device,
+        newState: expect.objectContaining({
+          status: "on",
+          data: { brightness: 75 },
+        }),
+      });
+    });
+
+    it("should emit event on first state update (no previous state)", () => {
+      const device = createMockDevice("device1");
+      repository.syncClientDevices(userId, uniqueId, [device]);
+
+      const listener = vi.fn();
+      repository.on("deviceStateChange", listener);
+
+      const newState: Partial<DeviceState> = { status: "on" };
+      repository.setDeviceState(userId, uniqueId, deviceId, newState);
+
+      expect(listener).toHaveBeenCalledTimes(1);
+    });
+
+    it("should not emit event when device does not exist", () => {
+      const listener = vi.fn();
+      repository.on("deviceStateChange", listener);
+
+      repository.setDeviceState(userId, uniqueId, deviceId, { status: "on" });
+
+      expect(listener).not.toHaveBeenCalled();
+    });
+
+    it("should handle deep equality check for nested objects", () => {
+      const device = createMockDevice("device1");
+      repository.syncClientDevices(userId, uniqueId, [device]);
+
+      const listener = vi.fn();
+      repository.setDeviceState(userId, uniqueId, deviceId, {
+        status: "on",
+        data: { brightness: 50, color: { r: 255, g: 0, b: 0 } },
+      });
+
+      repository.on("deviceStateChange", listener);
+
+      // Same values, different object reference
+      repository.setDeviceState(userId, uniqueId, deviceId, {
+        status: "on",
+        data: { brightness: 50, color: { r: 255, g: 0, b: 0 } },
+      });
+
+      expect(listener).not.toHaveBeenCalled();
+    });
+
+    it("should emit event when nested object values change", () => {
+      const device = createMockDevice("device1");
+      repository.syncClientDevices(userId, uniqueId, [device]);
+
+      const listener = vi.fn();
+      repository.setDeviceState(userId, uniqueId, deviceId, {
+        status: "on",
+        data: { brightness: 50, color: { r: 255, g: 0, b: 0 } },
+      });
+
+      repository.on("deviceStateChange", listener);
+
+      repository.setDeviceState(userId, uniqueId, deviceId, {
+        status: "on",
+        data: { brightness: 50, color: { r: 0, g: 255, b: 0 } },
+      });
+
+      expect(listener).toHaveBeenCalledTimes(1);
     });
   });
 });

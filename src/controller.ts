@@ -16,8 +16,6 @@ import type {
   HomedDevice,
   HomedEndpoint,
 } from "./device.ts";
-import type { HomeGraphClient } from "./google/homeGraph.ts";
-import { mapToGoogleStateReports } from "./google/mapper.ts";
 import { ClientConnection, type ClientId } from "./homed/client.ts";
 import type {
   ClientStatusMessage,
@@ -52,7 +50,6 @@ export class HomedServerController {
   private userDb: UserRepository;
   private httpHandler: WebApp;
   private deviceCache: DeviceRepository;
-  private googleHomeGraph?: HomeGraphClient;
 
   private clients: Record<UserId, Record<ClientId, ClientConnection<User>>> =
     {};
@@ -61,13 +58,11 @@ export class HomedServerController {
     userDatabase: UserRepository,
     deviceCache: DeviceRepository,
     httpHandler: WebApp,
-    homeGraphClient?: HomeGraphClient,
     sslOptions?: { cert: string; key: string }
   ) {
     this.userDb = userDatabase;
     this.httpHandler = httpHandler;
     this.deviceCache = deviceCache;
-    this.googleHomeGraph = homeGraphClient;
 
     this.httpServer = sslOptions
       ? https.createServer(sslOptions)
@@ -183,11 +178,10 @@ export class HomedServerController {
       `Client status update from ${client.uniqueId} . Devices: ${message.devices?.length ?? 0}`
     );
 
-    // TODO: This method only concerned with zigbee devices, as others are not
-    // yet supported in the Homed server. Once other device types are supported,
-    // this method should be updated accordingly.
+    // TODO: This method only concerned with zigbee devices, as others
+    // are not yet supported in the Homed server. Once other device types
+    // are supported, this method should be updated accordingly.
     const { devices, names: byName } = message;
-    if (!client.uniqueId) return;
     if (!devices) return;
 
     const homedDevices = devices
@@ -211,7 +205,7 @@ export class HomedServerController {
           }) as HomedDevice
       );
 
-    const [added, removed] = this.deviceCache.syncClientDevices(
+    const [added] = this.deviceCache.syncClientDevices(
       client.user.id,
       client.uniqueId,
       homedDevices
@@ -227,21 +221,7 @@ export class HomedServerController {
       });
     }
 
-    if (added.length > 0 || removed.length > 0) {
-      const userId = client.user.id;
-      const clientId = client.uniqueId;
-      this.googleHomeGraph?.updateDevices(userId).catch(error => {
-        logError(
-          "Failed to request device sync for user %s: %O",
-          userId,
-          error
-        );
-        Sentry.captureException(error, {
-          tags: { component: "google-homegraph" },
-          extra: { userId, clientId },
-        });
-      });
-    }
+    // Device sync event emitted by DeviceRepository, handled by FulfillmentController
   };
 
   clientDeviceUpdated = (
@@ -262,7 +242,7 @@ export class HomedServerController {
     );
     if (!device) return;
 
-    device.endpoints = Object.entries(message).map(
+    const endpoints = Object.entries(message).map(
       ([rawId, { items: exposes, options }]) =>
         ({
           // id can be either "1", "2", ... or some string (usually "common")
@@ -272,6 +252,14 @@ export class HomedServerController {
           exposes,
           options: options as EndpointOptions,
         }) satisfies HomedEndpoint
+    );
+
+    // Update device capabilities in repository (emits event for Google SYNC)
+    this.deviceCache.updateDeviceCapabilities(
+      client.user.id,
+      client.uniqueId,
+      deviceId,
+      endpoints
     );
 
     device.endpoints.forEach(endpoint =>
@@ -284,17 +272,6 @@ export class HomedServerController {
       action: "getProperties",
       device: deviceId,
       service: "cloud",
-    });
-
-    // Notify Google Home that device capabilities have been updated
-    const userId = client.user.id;
-    const clientId = client.uniqueId;
-    this.googleHomeGraph?.updateDevices(userId).catch(error => {
-      logError("Failed to request device sync for user %s: %O", userId, error);
-      Sentry.captureException(error, {
-        tags: { component: "google-homegraph" },
-        extra: { userId, clientId },
-      });
     });
   };
 
@@ -323,73 +300,12 @@ export class HomedServerController {
       `Device data update from ${client.uniqueId}. ${deviceId}: ${JSON.stringify(data)}`
     );
 
-    // Update device state in cache
+    // Update device state in cache - state change events handled by DeviceRepository
     this.deviceCache.setDeviceState(
       client.user.id,
       client.uniqueId,
       deviceId,
       data
     );
-
-    // Report state change to Google Home
-    const device = this.deviceCache.getClientDevice(
-      client.user.id,
-      client.uniqueId,
-      deviceId
-    );
-
-    // Only report if device exists and has traits (endpoints with exposes)
-    if (device && device.endpoints.some(ep => ep.exposes.length > 0)) {
-      const deviceState = this.deviceCache.getDeviceState(
-        client.user.id,
-        deviceId,
-        client.uniqueId
-      );
-
-      if (deviceState) {
-        const userId = client.user.id;
-        const clientId = client.uniqueId;
-
-        // Map device state to Google state reports (handles multi-endpoint logic)
-        const stateReports = mapToGoogleStateReports(
-          device,
-          clientId,
-          deviceId,
-          deviceState
-        );
-
-        // Batch report all state updates in a single API call
-        const stateUpdates = stateReports.map(
-          ({ googleDeviceId, googleState }) => ({
-            googleDeviceId,
-            state: googleState,
-          })
-        );
-
-        log(
-          `Reporting state to Google for ${stateUpdates.length} device(s): ${JSON.stringify(stateUpdates)}`
-        );
-
-        this.googleHomeGraph
-          ?.reportStateChange(userId, stateUpdates)
-          .catch(error => {
-            logError(
-              "Failed to report state for %d device(s): %O",
-              stateUpdates.length,
-              error
-            );
-
-            Sentry.captureException(error, {
-              tags: { component: "google-homegraph" },
-              extra: {
-                userId,
-                clientId,
-                deviceId,
-                deviceCount: stateUpdates.length,
-              },
-            });
-          });
-      }
-    }
   };
 }

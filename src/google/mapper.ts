@@ -223,7 +223,19 @@ const getTraitsForExposes = (
         traits.add("action.devices.traits.OnOff");
         // Check if light has level option (brightness control)
         const lightOptions = options?.light;
-        if (Array.isArray(lightOptions) && lightOptions.includes("level")) {
+        // FIXME: This is a hack for INSPELLNIG sockets from IKEA which do
+        // not currently have good support in Homed and expose "light" with
+        // "level" where level is power measurement, not brightness, so skip
+        // brightness trait if device has power/energy monitoring (indicates
+        // level is power, not brightness)
+        const hasPowerMonitoring = exposes.some(e =>
+          ["power", "energy", "voltage", "current"].includes(e)
+        );
+        if (
+          Array.isArray(lightOptions) &&
+          lightOptions.includes("level") &&
+          !hasPowerMonitoring
+        ) {
           traits.add("action.devices.traits.Brightness");
         }
         // Check if light has color option

@@ -4,8 +4,6 @@ import type { ClientToken, UserId } from "../../src/db/repository.ts";
 import { UserRepository } from "../../src/db/repository.ts";
 import type { DeviceId, HomedDevice } from "../../src/device.ts";
 import { DeviceRepository } from "../../src/device.ts";
-import type { HomeGraphClient } from "../../src/google/homeGraph.ts";
-import { toGoogleDeviceId } from "../../src/google/mapper.ts";
 import type { ClientId } from "../../src/homed/client.ts";
 import { WebApp } from "../../src/web/app.ts";
 
@@ -35,7 +33,6 @@ describe("HomedServerController", () => {
   let controller: HomedServerController;
   let deviceCache: DeviceRepository;
   let userDb: UserRepository;
-  let mockHomeGraph: HomeGraphClient;
   let httpHandler: WebApp;
 
   const userId = createUserId("user1");
@@ -51,22 +48,11 @@ describe("HomedServerController", () => {
     httpHandler = {
       handleRequest: vi.fn(),
     } as unknown as WebApp;
-
-    // Create mock HomeGraphClient
-    mockHomeGraph = {
-      reportStateChange: vi.fn().mockResolvedValue(undefined),
-      updateDevices: vi.fn().mockResolvedValue(undefined),
-    } as unknown as HomeGraphClient;
   });
 
   describe("deviceDataUpdated", () => {
-    it("should batch report state changes to Google HomeGraph", () => {
-      controller = new HomedServerController(
-        userDb,
-        deviceCache,
-        httpHandler,
-        mockHomeGraph
-      );
+    it("should update device state in cache", () => {
+      controller = new HomedServerController(userDb, deviceCache, httpHandler);
 
       // Setup: Add device to cache
       const device = createMockDevice("device1", ["switch"]);
@@ -81,35 +67,47 @@ describe("HomedServerController", () => {
       // Trigger device data update
       (controller as any).deviceDataUpdated(mockClient, deviceId, { on: true });
 
-      const googleDeviceId = toGoogleDeviceId(clientId, deviceId);
-
-      // Verify reportStateChange was called with batched updates
-      expect(mockHomeGraph.reportStateChange).toHaveBeenCalledWith(
-        userId,
-        expect.arrayContaining([
-          expect.objectContaining({
-            googleDeviceId,
-            state: expect.objectContaining({
-              online: true,
-              on: true,
-            }),
-          }),
-        ])
-      );
+      // Verify state was updated in cache
+      const state = deviceCache.getDeviceState(userId, deviceId, clientId);
+      expect(state).toEqual({ on: true });
     });
 
-    it("should not fail when googleHomeGraph is not initialized", () => {
-      // Controller without HomeGraphClient
-      controller = new HomedServerController(
-        userDb,
-        deviceCache,
-        httpHandler,
-        undefined // No HomeGraph
-      );
+    it("should emit state change events via DeviceRepository", () => {
+      controller = new HomedServerController(userDb, deviceCache, httpHandler);
 
       const device = createMockDevice("device1", ["switch"]);
       deviceCache.syncClientDevices(userId, clientId, [device]);
 
+      const mockClient = {
+        user: { id: userId, clientToken },
+        uniqueId: clientId,
+      };
+
+      // Listen for state change events
+      const eventSpy = vi.fn();
+      deviceCache.on("deviceStateChange", eventSpy);
+
+      // Update device data
+      (controller as any).deviceDataUpdated(mockClient, deviceId, {
+        on: true,
+      });
+
+      // Verify event was emitted
+      expect(eventSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId,
+          clientId,
+          deviceId,
+          device,
+          newState: { on: true },
+        })
+      );
+    });
+
+    it("should handle missing device gracefully", () => {
+      controller = new HomedServerController(userDb, deviceCache, httpHandler);
+
+      // No device in cache
       const mockClient = {
         user: { id: userId },
         uniqueId: clientId,
@@ -123,103 +121,8 @@ describe("HomedServerController", () => {
       ).not.toThrow();
     });
 
-    it("should map device state to Google format before reporting", () => {
-      controller = new HomedServerController(
-        userDb,
-        deviceCache,
-        httpHandler,
-        mockHomeGraph
-      );
-
-      // Setup: device with brightness
-      const device = createMockDevice("device1", ["dimmable_light"]);
-      deviceCache.syncClientDevices(userId, clientId, [device]);
-
-      const mockClient = {
-        user: { id: userId, clientToken },
-        uniqueId: clientId,
-      };
-
-      // Update with Homed format
-      (controller as any).deviceDataUpdated(mockClient, deviceId, {
-        brightness: 50,
-        state: "ON",
-      });
-
-      const googleDeviceId = toGoogleDeviceId(clientId, deviceId);
-
-      // Verify state is mapped to Google format
-      expect(mockHomeGraph.reportStateChange).toHaveBeenCalledWith(
-        userId,
-        expect.arrayContaining([
-          expect.objectContaining({
-            googleDeviceId,
-            state: expect.objectContaining({
-              brightness: expect.any(Number),
-              on: expect.any(Boolean),
-            }),
-          }),
-        ])
-      );
-    });
-
-    it("should only report devices with traits", () => {
-      controller = new HomedServerController(
-        userDb,
-        deviceCache,
-        httpHandler,
-        mockHomeGraph
-      );
-
-      // Setup: device without exposes (no traits)
-      const device = createMockDevice("device1", []);
-      deviceCache.syncClientDevices(userId, clientId, [device]);
-
-      const mockClient = {
-        user: { id: userId },
-        uniqueId: clientId,
-      };
-
-      // Update device data
-      (controller as any).deviceDataUpdated(mockClient, deviceId, {
-        someData: "value",
-      });
-
-      // Should not call reportStateChange for devices without traits
-      expect(mockHomeGraph.reportStateChange).not.toHaveBeenCalled();
-    });
-
-    it("should handle missing device gracefully", () => {
-      controller = new HomedServerController(
-        userDb,
-        deviceCache,
-        httpHandler,
-        mockHomeGraph
-      );
-
-      // No device in cache
-      const mockClient = {
-        user: { id: userId },
-        uniqueId: clientId,
-      };
-
-      // Should not throw or call batch reporting
-      expect(() =>
-        (controller as any).deviceDataUpdated(mockClient, deviceId, {
-          on: true,
-        })
-      ).not.toThrow();
-
-      expect(mockHomeGraph.reportStateChange).not.toHaveBeenCalled();
-    });
-
-    it("should not report when client is not authorized", () => {
-      controller = new HomedServerController(
-        userDb,
-        deviceCache,
-        httpHandler,
-        mockHomeGraph
-      );
+    it("should not update when client is not authorized", () => {
+      controller = new HomedServerController(userDb, deviceCache, httpHandler);
 
       const device = createMockDevice("device1", ["switch"]);
       deviceCache.syncClientDevices(userId, clientId, [device]);
@@ -234,8 +137,9 @@ describe("HomedServerController", () => {
         on: true,
       });
 
-      // Should not report
-      expect(mockHomeGraph.reportStateChange).not.toHaveBeenCalled();
+      // State should not be updated
+      const state = deviceCache.getDeviceState(userId, deviceId, clientId);
+      expect(state).toBeUndefined();
     });
   });
 });

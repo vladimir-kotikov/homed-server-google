@@ -5,7 +5,6 @@ import { HomedServerController } from "./controller.ts";
 import { UserRepository } from "./db/repository.ts";
 import { DeviceRepository } from "./device.ts";
 import { FulfillmentController } from "./google/fulfillment.ts";
-import { HomeGraphClient } from "./google/homeGraph.ts";
 import { WebApp } from "./web/app.ts";
 import { OAuthController } from "./web/oauth.ts";
 
@@ -23,6 +22,7 @@ const oauthController = new OAuthController(
   appConfig.googleHomeOAuthClientId,
   appConfig.googleHomeProjectId
 );
+
 const fulfillmentController = new FulfillmentController(
   usersRepository,
   deviceRepository
@@ -34,9 +34,6 @@ const httpHandler = new WebApp(
   deviceRepository
 );
 
-// Initialize HomeGraph client with Application Default Credentials
-const homeGraphClient = new HomeGraphClient();
-
 const sslOptions =
   appConfig.sslCert && appConfig.sslKey
     ? { cert: appConfig.sslCert, key: appConfig.sslKey }
@@ -46,7 +43,6 @@ const mainController = new HomedServerController(
   usersRepository,
   deviceRepository,
   httpHandler,
-  homeGraphClient,
   sslOptions
 );
 
