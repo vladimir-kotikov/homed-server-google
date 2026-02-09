@@ -8,7 +8,7 @@ import type {
   DeviceRepository,
   DeviceStateChangeEvent,
 } from "../device.ts";
-import { safeParse } from "../utility.ts";
+import { fastDeepEqual, safeParse } from "../utility.ts";
 import {
   getEndpointIdFromGoogleDeviceId,
   getGoogleDeviceIds,
@@ -87,6 +87,7 @@ export class FulfillmentController {
     clientId,
     deviceId,
     device,
+    prevState,
     newState,
   }: DeviceStateChangeEvent) => {
     if (!device.endpoints.some(ep => ep.exposes && ep.exposes.length > 0)) {
@@ -94,7 +95,20 @@ export class FulfillmentController {
       return;
     }
 
-    const stateUpdates = mapToGoogleStateReports(
+    const prevStates = mapToGoogleStateReports(
+      device,
+      clientId,
+      deviceId,
+      prevState
+    ).reduce(
+      (states, { googleDeviceId, googleState }) => {
+        states[googleDeviceId] = googleState;
+        return states;
+      },
+      {} as Record<GoogleDeviceId, GoogleDeviceState>
+    );
+
+    const newStates = mapToGoogleStateReports(
       device,
       clientId,
       deviceId,
@@ -105,6 +119,20 @@ export class FulfillmentController {
         return states;
       },
       {} as Record<GoogleDeviceId, GoogleDeviceState>
+    );
+
+    // Only report state changes to Google if there are actual differences in the reported state
+    const stateUpdates = Object.fromEntries(
+      Object.entries(newStates).filter(([googleDeviceId, newState]) => {
+        const prevState = prevStates[googleDeviceId as GoogleDeviceId];
+        const hasChanged = !fastDeepEqual(prevState, newState);
+        if (!hasChanged) {
+          log(
+            `Skipping Google state report for device ${googleDeviceId}: no state change detected`
+          );
+        }
+        return hasChanged;
+      })
     );
 
     if (Object.keys(stateUpdates).length === 0) {

@@ -156,20 +156,32 @@ describe("DeviceRepository", () => {
   });
 
   describe("device state management", () => {
-    it("should set and get device status", () => {
-      repository.setDeviceStatus(userId, uniqueId, deviceId, true);
+    it("should update device availability", () => {
+      const device = createMockDevice("device1");
+      repository.syncClientDevices(userId, uniqueId, [device]);
 
-      const state = repository.getDeviceState(userId, deviceId, uniqueId);
+      repository.setDeviceAvailable(userId, uniqueId, deviceId, true);
+      const retrievedDevice = repository.getClientDevice(
+        userId,
+        uniqueId,
+        deviceId
+      );
 
-      expect(state?.status).toBe("online");
+      expect(retrievedDevice?.available).toBe(true);
     });
 
-    it("should track device as offline", () => {
-      repository.setDeviceStatus(userId, uniqueId, deviceId, false);
+    it("should track device as unavailable", () => {
+      const device = createMockDevice("device1");
+      repository.syncClientDevices(userId, uniqueId, [device]);
 
-      const state = repository.getDeviceState(userId, deviceId, uniqueId);
+      repository.setDeviceAvailable(userId, uniqueId, deviceId, false);
+      const retrievedDevice = repository.getClientDevice(
+        userId,
+        uniqueId,
+        deviceId
+      );
 
-      expect(state?.status).toBe("offline");
+      expect(retrievedDevice?.available).toBe(false);
     });
 
     it("should set and merge device state", () => {
@@ -186,30 +198,54 @@ describe("DeviceRepository", () => {
       expect(state?.data).toEqual({ brightness: 100 });
     });
 
-    it("should keep state separate per client", () => {
+    it("should keep availability separate per client", () => {
       const client2 = createUniqueId("client2");
+      const device1 = createMockDevice("device1");
+      const device2 = createMockDevice("device1");
 
-      repository.setDeviceStatus(userId, uniqueId, deviceId, true);
-      repository.setDeviceStatus(userId, client2, deviceId, false);
+      repository.syncClientDevices(userId, uniqueId, [device1]);
+      repository.syncClientDevices(userId, client2, [device2]);
+      repository.setDeviceAvailable(userId, uniqueId, deviceId, true);
+      repository.setDeviceAvailable(userId, client2, deviceId, false);
 
-      const state1 = repository.getDeviceState(userId, deviceId, uniqueId);
-      const state2 = repository.getDeviceState(userId, deviceId, client2);
+      const retrievedDevice1 = repository.getClientDevice(
+        userId,
+        uniqueId,
+        deviceId
+      );
+      const retrievedDevice2 = repository.getClientDevice(
+        userId,
+        client2,
+        deviceId
+      );
 
-      expect(state1?.status).toBe("online");
-      expect(state2?.status).toBe("offline");
+      expect(retrievedDevice1?.available).toBe(true);
+      expect(retrievedDevice2?.available).toBe(false);
     });
 
-    it("should keep state separate per user", () => {
+    it("should keep availability separate per user", () => {
       const user2 = createUserId("user2");
+      const device1 = createMockDevice("device1");
+      const device2 = createMockDevice("device1");
 
-      repository.setDeviceStatus(userId, uniqueId, deviceId, true);
-      repository.setDeviceStatus(user2, uniqueId, deviceId, false);
+      repository.syncClientDevices(userId, uniqueId, [device1]);
+      repository.syncClientDevices(user2, uniqueId, [device2]);
+      repository.setDeviceAvailable(userId, uniqueId, deviceId, true);
+      repository.setDeviceAvailable(user2, uniqueId, deviceId, false);
 
-      const state1 = repository.getDeviceState(userId, deviceId, uniqueId);
-      const state2 = repository.getDeviceState(user2, deviceId, uniqueId);
+      const retrievedDevice1 = repository.getClientDevice(
+        userId,
+        uniqueId,
+        deviceId
+      );
+      const retrievedDevice2 = repository.getClientDevice(
+        user2,
+        uniqueId,
+        deviceId
+      );
 
-      expect(state1?.status).toBe("online");
-      expect(state2?.status).toBe("offline");
+      expect(retrievedDevice1?.available).toBe(true);
+      expect(retrievedDevice2?.available).toBe(false);
     });
   });
 
@@ -217,7 +253,7 @@ describe("DeviceRepository", () => {
     it("should remove all devices for specific client", () => {
       const device = createMockDevice("device1");
       repository.syncClientDevices(userId, uniqueId, [device]);
-      repository.setDeviceStatus(userId, uniqueId, deviceId, true);
+      repository.setDeviceState(userId, uniqueId, deviceId, { status: "on" });
 
       repository.removeDevices(userId, uniqueId);
 
@@ -232,8 +268,8 @@ describe("DeviceRepository", () => {
 
       repository.syncClientDevices(userId, uniqueId, [device1]);
       repository.syncClientDevices(userId, client2, [device1]);
-      repository.setDeviceStatus(userId, uniqueId, deviceId, true);
-      repository.setDeviceStatus(userId, client2, deviceId2, true);
+      repository.setDeviceState(userId, uniqueId, deviceId, { status: "on" });
+      repository.setDeviceState(userId, client2, deviceId2, { status: "on" });
 
       repository.removeDevices(userId);
 
@@ -250,8 +286,8 @@ describe("DeviceRepository", () => {
 
       repository.syncClientDevices(userId, uniqueId, [device]);
       repository.syncClientDevices(user2, uniqueId, [device]);
-      repository.setDeviceStatus(userId, uniqueId, deviceId, true);
-      repository.setDeviceStatus(user2, uniqueId, deviceId, true);
+      repository.setDeviceState(userId, uniqueId, deviceId, { status: "on" });
+      repository.setDeviceState(user2, uniqueId, deviceId, { status: "on" });
 
       repository.removeDevices(userId, uniqueId);
 
@@ -265,19 +301,19 @@ describe("DeviceRepository", () => {
 
   describe("getDeviceState", () => {
     it("should get device state with specific client", () => {
-      repository.setDeviceStatus(userId, uniqueId, deviceId, true);
+      repository.setDeviceState(userId, uniqueId, deviceId, { status: "on" });
 
       const state = repository.getDeviceState(userId, deviceId, uniqueId);
 
-      expect(state?.status).toBe("online");
+      expect(state?.status).toBe("on");
     });
 
     it("should find device state across clients when client not specified", () => {
-      repository.setDeviceStatus(userId, uniqueId, deviceId, true);
+      repository.setDeviceState(userId, uniqueId, deviceId, { status: "on" });
 
       const state = repository.getDeviceState(userId, deviceId);
 
-      expect(state?.status).toBe("online");
+      expect(state?.status).toBe("on");
     });
 
     it("should return undefined for non-existent device state", () => {
@@ -394,6 +430,7 @@ describe("DeviceRepository", () => {
         clientId: uniqueId,
         deviceId,
         device,
+        prevState: {},
         newState: expect.objectContaining(newState),
       });
     });
@@ -437,6 +474,10 @@ describe("DeviceRepository", () => {
         clientId: uniqueId,
         deviceId,
         device,
+        prevState: {
+          status: "on",
+          data: { brightness: 50 },
+        },
         newState: expect.objectContaining({
           status: "on",
           data: { brightness: 75 },

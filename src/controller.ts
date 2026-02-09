@@ -282,7 +282,7 @@ export class HomedServerController {
   ) =>
     client.user &&
     client.uniqueId &&
-    this.deviceCache.setDeviceStatus(
+    this.deviceCache.setDeviceAvailable(
       client.user.id,
       client.uniqueId,
       deviceId,

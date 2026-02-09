@@ -3,6 +3,7 @@ import type { UserId } from "./db/repository.ts";
 import type { ClientId } from "./homed/client.ts";
 import type { EndpointOptions } from "./homed/schema.ts";
 import type { DeviceState } from "./homed/types.ts";
+import { fastDeepEqual } from "./utility.ts";
 
 export type DeviceId = string & { readonly __deviceId: unique symbol };
 
@@ -38,6 +39,7 @@ export interface DeviceStateChangeEvent {
   clientId: ClientId;
   deviceId: DeviceId;
   device: HomedDevice;
+  prevState: DeviceState;
   newState: DeviceState;
 }
 
@@ -57,19 +59,6 @@ export class DeviceRepository extends EventEmitter<{
 
   constructor() {
     super();
-  }
-
-  /**
-   * Deep equality check for state comparison
-   * Handles nested objects and arrays
-   */
-  private isStateEqual(
-    oldState: DeviceState | undefined,
-    newState: DeviceState
-  ): boolean {
-    if (oldState === undefined) return false;
-
-    return JSON.stringify(oldState) === JSON.stringify(newState);
   }
 
   getClientDevice = (
@@ -151,38 +140,32 @@ export class DeviceRepository extends EventEmitter<{
     }
   };
 
-  setDeviceStatus = (
+  setDeviceAvailable = (
     userId: UserId,
     clientId: ClientId,
     deviceId: DeviceId,
-    online: boolean
+    available: boolean
   ): void => {
-    const state =
-      this.deviceState[userId]?.[clientId]?.[deviceId] ??
-      ({} satisfies DeviceState);
-
-    state.status = online ? "online" : "offline";
-    this.deviceState[userId] ??= {};
-    this.deviceState[userId][clientId] ??= {};
-    this.deviceState[userId][clientId][deviceId] = state;
-
-    // Also update the device's available field so QUERY returns correct online status
     const device = this.getClientDevice(userId, clientId, deviceId);
-    if (device) {
-      device.available = online;
-    }
+    if (device && device.available !== available) {
+      const prevState =
+        this.deviceState[userId]?.[clientId]?.[deviceId] ??
+        ({} satisfies DeviceState);
 
-    // TODO: Add event emission for status changes when ready
-    // This is a stub for future implementation to emit device-status-changed events
-    // if (device && previousStatus !== state.status) {
-    //   this.emit("device-status-changed", {
-    //     userId,
-    //     clientId,
-    //     deviceId,
-    //     device,
-    //     online,
-    //   });
-    // }
+      device.available = available;
+
+      // currentState remains unchanged - availability is tracked on device object, not in state
+      const newState = prevState;
+
+      this.emit("deviceStateChange", {
+        userId,
+        clientId,
+        deviceId,
+        device,
+        prevState,
+        newState,
+      });
+    }
   };
 
   setDeviceState = (
@@ -192,15 +175,15 @@ export class DeviceRepository extends EventEmitter<{
     state: Partial<DeviceState>
   ): void => {
     // Get current state
-    const currentState =
+    const prevState =
       this.deviceState[userId]?.[clientId]?.[deviceId] ??
       ({} satisfies DeviceState);
 
     // Merge with new state
-    const newState = { ...currentState, ...state };
+    const newState = { ...prevState, ...state };
 
     // Check if state actually changed
-    if (this.isStateEqual(currentState, newState)) {
+    if (fastDeepEqual(prevState, newState)) {
       return;
     }
 
@@ -215,6 +198,7 @@ export class DeviceRepository extends EventEmitter<{
         clientId,
         deviceId,
         device,
+        prevState,
         newState,
       });
     }
