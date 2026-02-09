@@ -477,7 +477,7 @@ const buildGoogleDevice = (
       name,
       nicknames,
     },
-    willReportState: true,
+    willReportState: false,
     attributes: Object.keys(attributes).length > 0 ? attributes : undefined,
     deviceInfo: {
       manufacturer: homedDevice.manufacturer ?? "Unknown Manufacturer",

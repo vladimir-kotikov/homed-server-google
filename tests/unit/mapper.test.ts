@@ -410,7 +410,7 @@ describe("CapabilityMapper", () => {
       // Manufacturer/model and description should be in nicknames for voice commands
       expect(google.name.nicknames).toContain("Main light");
       expect(google.name.nicknames).toContain("IKEA TRADFRI bulb E27");
-      expect(google.willReportState).toBe(true);
+      expect(google.willReportState).toBe(false);
       expect(google.deviceInfo?.manufacturer).toBe("IKEA");
       expect(google.deviceInfo?.model).toBe("TRADFRI bulb E27");
       expect(google.customData?.homedKey).toBe("0x123456");

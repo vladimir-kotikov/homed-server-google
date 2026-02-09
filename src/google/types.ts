@@ -6,8 +6,10 @@ import type { UserId } from "../db/repository.ts";
 
 /**
  * Branded type for Google device IDs
- * Format: ${clientId}-${homedDeviceKey}
- * Example: "service-123-zigbee/04:cf:8c:df:3c:7c:3b:97"
+ * Format: ${clientId}/${homedDeviceKey} or ${clientId}/${homedDeviceKey}:${endpointId}
+ * Examples:
+ *  - Single device: "user_35917c3a30/zigbee/84:fd:27:ff:fe:75:bf:44"
+ *  - Multi-endpoint: "user_35917c3a30/0x00124b0024c4f355:2"
  */
 export type GoogleDeviceId = string & {
   readonly __googleDeviceId: unique symbol;

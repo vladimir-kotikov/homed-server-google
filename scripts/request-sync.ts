@@ -7,7 +7,7 @@
 
 import { google } from "googleapis";
 
-const [userId] = process.argv.slice(2);
+const userId = process.argv[2] ?? process.env.HOMED_USER_ID;
 
 if (!userId) {
   console.error("Usage: npx tsx scripts/request-sync.ts <userId>");

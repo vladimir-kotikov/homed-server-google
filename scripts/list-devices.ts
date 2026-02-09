@@ -6,7 +6,8 @@
 
 import { google } from "googleapis";
 
-const [userId, clientIdFilter] = process.argv.slice(2);
+const userId = process.argv[2] ?? process.env.HOMED_USER_ID;
+const clientIdFilter = process.argv[3] ?? process.env.HOMED_CLIENT_ID;
 
 if (!userId) {
   console.error("Usage: npx tsx scripts/list-devices.ts <userId> [clientId]");

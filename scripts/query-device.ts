@@ -6,7 +6,9 @@
 
 import { google } from "googleapis";
 
-const [userId, clientId, deviceKey] = process.argv.slice(2);
+const deviceKey = process.argv[2];
+const userId = process.argv[3] ?? process.env.HOMED_USER_ID;
+const clientId = process.argv[4] ?? process.env.HOMED_CLIENT_ID;
 
 if (!userId || !clientId || !deviceKey) {
   console.error(

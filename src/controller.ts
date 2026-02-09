@@ -104,7 +104,10 @@ export class HomedServerController {
     ]).then(() => this.userDb.close());
 
   clientConnected = (socket: net.Socket) => {
-    if (this.healthcheckIps.has(socket.remoteAddress)) {
+    if (
+      !socket.remoteAddress ||
+      this.healthcheckIps.has(socket.remoteAddress)
+    ) {
       logDebug(`Ignoring healthcheck connection from ${socket.remoteAddress}`);
       socket.write("OK");
       socket.end();
