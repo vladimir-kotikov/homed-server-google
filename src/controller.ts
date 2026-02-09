@@ -221,6 +221,7 @@ export class HomedServerController {
       added.forEach(({ topic }) => {
         client.subscribe(`expose/${topic}`);
         client.subscribe(`device/${topic}`);
+        client.subscribe(`fd/${topic}`); // Subscribe to device state updates
         // Request device exposes immediately
         client.publish(`command/${topic}`, {
           action: "getDeviceInfo",
@@ -321,6 +322,10 @@ export class HomedServerController {
   ) => {
     if (!client.user || !client.uniqueId) return;
 
+    log(
+      `Device data update from ${client.uniqueId}. ${deviceId}: ${JSON.stringify(data)}`
+    );
+
     // Update device state in cache
     this.deviceCache.setDeviceState(
       client.user.id,
@@ -362,6 +367,10 @@ export class HomedServerController {
             googleDeviceId,
             state: googleState,
           })
+        );
+
+        log(
+          `Reporting state to Google for ${stateUpdates.length} device(s): ${JSON.stringify(stateUpdates)}`
         );
 
         this.googleHomeGraph
