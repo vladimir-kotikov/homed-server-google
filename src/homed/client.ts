@@ -20,7 +20,7 @@ import {
   type ServerMessage,
 } from "./schema.ts";
 
-const log = debug("homed:client");
+const logDebug = debug("homed:client:debug");
 const logError = debug("homed:client:error");
 
 export type ClientId = string & { readonly __uniqueId: unique symbol };
@@ -242,7 +242,10 @@ export class ClientConnection<U extends { id: string }> extends EventEmitter<{
       this.socket.write(
         Buffer.concat([Buffer.from([0x42]), packet, Buffer.from([0x43])])
       );
-      log(`Sent message to ${this.uniqueId ?? "unknown client"}:`, message);
+      logDebug(
+        `Sent message to ${this.uniqueId ?? "unknown client"}:`,
+        message
+      );
     } catch (error) {
       this.emit("error", new Error(`Failed to send message: ${error}`));
     }

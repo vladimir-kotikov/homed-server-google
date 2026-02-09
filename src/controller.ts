@@ -184,7 +184,7 @@ export class HomedServerController {
   ) => {
     if (!client.uniqueId || !client.user) return;
 
-    log(
+    logDebug(
       `Client status update from ${client.uniqueId} . Devices: ${message.devices?.length ?? 0}`
     );
 

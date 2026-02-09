@@ -68,7 +68,7 @@ export class FulfillmentController {
   private requestSync = (userId: UserId) =>
     this.homegraph.devices
       .requestSync({ requestBody: { agentUserId: userId, async: true } })
-      .then(() => log("Device update requested for user %s", userId))
+      .then(() => logDebug("Device update requested for user %s", userId))
       .catch(error => {
         logError(
           "Failed to request device sync for user %s: %O",
