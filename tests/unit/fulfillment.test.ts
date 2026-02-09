@@ -1,12 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { UserId, UserRepository } from "../../src/db/repository.ts";
-import type {
-  DeviceId,
-  DeviceRepository,
-  HomedDevice,
-} from "../../src/device.ts";
-import type { ClientId } from "../../src/homed/client.ts";
+import type { UserRepository } from "../../src/db/repository.ts";
+import type { DeviceId, DeviceRepository } from "../../src/device.ts";
 import type { DeviceState } from "../../src/homed/types.ts";
+import {
+  createClientId,
+  createDeviceId,
+  createMockDevice,
+  createUserId,
+} from "../factories.ts";
 
 // Create the spy outside and reference it in the mock
 const reportStateAndNotificationSpy = vi.fn().mockResolvedValue(undefined);
@@ -30,24 +31,6 @@ vi.mock("googleapis", () => ({
 // Import after mocking
 const { FulfillmentController } =
   await import("../../src/google/fulfillment.ts");
-
-const createUserId = (id: string): UserId => id as UserId;
-const createClientId = (id: string): ClientId => id as ClientId;
-const createDeviceId = (id: string): DeviceId => id as DeviceId;
-
-const createMockDevice = (key: string, name?: string): HomedDevice => ({
-  key,
-  topic: `test/${key}`,
-  name: name ?? `Device ${key}`,
-  available: true,
-  endpoints: [
-    {
-      id: 0,
-      exposes: ["switch"],
-      options: {},
-    },
-  ],
-});
 
 describe("FulfillmentController - State Change Listener", () => {
   let _fulfillmentController: InstanceType<typeof FulfillmentController>;
@@ -97,7 +80,10 @@ describe("FulfillmentController - State Change Listener", () => {
   });
 
   it("should report state changes to Google Home Graph when event is received", async () => {
-    const device = createMockDevice("device1", "Test Device");
+    const device = createMockDevice(
+      "/zigbee/device1" as DeviceId,
+      "Test Device"
+    );
     const prevState: DeviceState = { status: "off" };
     const newState: DeviceState = { status: "on", data: { brightness: 75 } };
 
@@ -136,7 +122,7 @@ describe("FulfillmentController - State Change Listener", () => {
   });
 
   it("should not report devices without traits", async () => {
-    const device = createMockDevice("device1", "Test Device");
+    const device = createMockDevice();
     device.endpoints = [{ id: 0, exposes: [], options: {} }]; // No exposes = no traits
 
     const prevState: DeviceState = { status: "off" };
@@ -162,7 +148,7 @@ describe("FulfillmentController - State Change Listener", () => {
   });
 
   it("should handle multi-endpoint devices correctly", async () => {
-    const device = createMockDevice("device1", "Multi Switch");
+    const device = createMockDevice();
     device.endpoints = [
       { id: 1, exposes: ["switch"], options: {} },
       { id: 2, exposes: ["switch"], options: {} },
@@ -200,7 +186,7 @@ describe("FulfillmentController - State Change Listener", () => {
   });
 
   it("should handle errors gracefully and not throw", async () => {
-    const device = createMockDevice("device1");
+    const device = createMockDevice();
     const prevState: DeviceState = { status: "off" };
     const newState: DeviceState = { status: "on" };
 
@@ -225,7 +211,7 @@ describe("FulfillmentController - State Change Listener", () => {
   });
 
   it("should batch multiple device reports in single API call", async () => {
-    const device = createMockDevice("device1");
+    const device = createMockDevice();
     device.endpoints = [
       { id: 0, exposes: ["switch", "brightness"], options: {} },
     ];

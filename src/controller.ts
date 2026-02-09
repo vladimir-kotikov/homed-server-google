@@ -205,7 +205,7 @@ export class HomedServerController {
       .map(
         device =>
           ({
-            key: `zigbee/${device.ieeeAddress}`,
+            key: `zigbee/${device.ieeeAddress}` as DeviceId,
             topic: `zigbee/${byName ? device.name : device.ieeeAddress}`,
             name: device.name,
             description: device.description,

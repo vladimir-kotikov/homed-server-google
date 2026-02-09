@@ -1,27 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { UserId } from "../../src/db/repository.ts";
-import type { HomedDevice } from "../../src/device.ts";
 import { DeviceRepository, type DeviceId } from "../../src/device.ts";
-import type { ClientId } from "../../src/homed/client.ts";
 import type { DeviceState } from "../../src/homed/types.ts";
-
-const createUserId = (id: string): UserId => id as UserId;
-const createUniqueId = (id: string): ClientId => id as ClientId;
-const createDeviceId = (id: string): DeviceId => id as DeviceId;
-
-const createMockDevice = (key: string, name?: string): HomedDevice => ({
-  key,
-  topic: `test/${key}`,
-  name: name ?? `Device ${key}`,
-  available: true,
-  endpoints: [],
-});
+import {
+  createClientId,
+  createDeviceId,
+  createMockDevice,
+  createUserId,
+} from "../factories.ts";
 
 describe("DeviceRepository", () => {
   let repository: DeviceRepository;
   const userId = createUserId("user1");
-  const uniqueId = createUniqueId("client1");
-  const deviceId = createDeviceId("device1");
+  const uniqueId = createClientId("client1");
+  const deviceId = createDeviceId();
 
   beforeEach(() => {
     repository = new DeviceRepository();
@@ -29,18 +20,18 @@ describe("DeviceRepository", () => {
 
   describe("syncClientDevices", () => {
     it("should track added devices", () => {
-      const device = createMockDevice("device1");
+      const device = createMockDevice();
       const [added, removed] = repository.syncClientDevices(userId, uniqueId, [
         device,
       ]);
 
       expect(added).toHaveLength(1);
-      expect(added[0].key).toBe("device1");
+      expect(added[0].key).toBe("zigbee/device1");
       expect(removed).toHaveLength(0);
     });
 
     it("should track removed devices", () => {
-      const device = createMockDevice("device1");
+      const device = createMockDevice();
       repository.syncClientDevices(userId, uniqueId, [device]);
 
       const [added, removed] = repository.syncClientDevices(
@@ -51,12 +42,12 @@ describe("DeviceRepository", () => {
 
       expect(added).toHaveLength(0);
       expect(removed).toHaveLength(1);
-      expect(removed[0].key).toBe("device1");
+      expect(removed[0].key).toBe("zigbee/device1");
     });
 
     it("should detect changed devices", () => {
-      const device1 = createMockDevice("device1");
-      const device2 = createMockDevice("device2");
+      const device1 = createMockDevice();
+      const device2 = createMockDevice("zigbee/device2" as DeviceId);
 
       repository.syncClientDevices(userId, uniqueId, [device1]);
       const [added, removed] = repository.syncClientDevices(userId, uniqueId, [
@@ -65,13 +56,13 @@ describe("DeviceRepository", () => {
       ]);
 
       expect(added).toHaveLength(1);
-      expect(added[0].key).toBe("device2");
+      expect(added[0].key).toBe("zigbee/device2");
       expect(removed).toHaveLength(0);
     });
 
     it("should handle multiple clients separately", () => {
-      const client2 = createUniqueId("client2");
-      const device = createMockDevice("device1");
+      const client2 = createClientId("client2");
+      const device = createMockDevice();
 
       repository.syncClientDevices(userId, uniqueId, [device]);
       repository.syncClientDevices(userId, client2, []);
@@ -86,7 +77,7 @@ describe("DeviceRepository", () => {
 
     it("should handle multiple users separately", () => {
       const user2 = createUserId("user2");
-      const device = createMockDevice("device1");
+      const device = createMockDevice();
 
       repository.syncClientDevices(userId, uniqueId, [device]);
       repository.syncClientDevices(user2, uniqueId, []);
@@ -105,20 +96,20 @@ describe("DeviceRepository", () => {
 
   describe("getDevicesWithClientId", () => {
     it("should get devices for specific client", () => {
-      const device = createMockDevice("device1");
+      const device = createMockDevice();
       repository.syncClientDevices(userId, uniqueId, [device]);
 
       const allDevices = repository.getDevices(userId);
       const devices = allDevices.filter(d => d.clientId === uniqueId);
 
       expect(devices).toHaveLength(1);
-      expect(devices[0].device.key).toBe("device1");
+      expect(devices[0].device.key).toBe("zigbee/device1");
     });
 
     it("should get all devices for user across all clients", () => {
-      const client2 = createUniqueId("client2");
-      const device1 = createMockDevice("device1");
-      const device2 = createMockDevice("device2");
+      const client2 = createClientId("client2");
+      const device1 = createMockDevice();
+      const device2 = createMockDevice("zigbee/device2" as DeviceId);
 
       repository.syncClientDevices(userId, uniqueId, [device1]);
       repository.syncClientDevices(userId, client2, [device2]);
@@ -126,8 +117,8 @@ describe("DeviceRepository", () => {
       const allDevices = repository.getDevices(userId);
 
       expect(allDevices).toHaveLength(2);
-      expect(allDevices.map(d => d.device.key)).toContain("device1");
-      expect(allDevices.map(d => d.device.key)).toContain("device2");
+      expect(allDevices.map(d => d.device.key)).toContain("zigbee/device1");
+      expect(allDevices.map(d => d.device.key)).toContain("zigbee/device2");
     });
 
     it("should return empty array for non-existent client", () => {
@@ -139,13 +130,13 @@ describe("DeviceRepository", () => {
 
   describe("getClientDevice", () => {
     it("should get specific device", () => {
-      const device = createMockDevice("device1");
+      const device = createMockDevice();
       repository.syncClientDevices(userId, uniqueId, [device]);
 
       const retrieved = repository.getDevice(userId, uniqueId, deviceId);
 
       expect(retrieved).toBeDefined();
-      expect(retrieved?.key).toBe("device1");
+      expect(retrieved?.key).toBe("zigbee/device1");
     });
 
     it("should return undefined for non-existent device", () => {
@@ -157,7 +148,7 @@ describe("DeviceRepository", () => {
 
   describe("device state management", () => {
     it("should update device availability", () => {
-      const device = createMockDevice("device1");
+      const device = createMockDevice();
       repository.syncClientDevices(userId, uniqueId, [device]);
 
       repository.setDeviceAvailable(userId, uniqueId, deviceId, true);
@@ -167,7 +158,7 @@ describe("DeviceRepository", () => {
     });
 
     it("should track device as unavailable", () => {
-      const device = createMockDevice("device1");
+      const device = createMockDevice();
       repository.syncClientDevices(userId, uniqueId, [device]);
 
       repository.setDeviceAvailable(userId, uniqueId, deviceId, false);
@@ -191,9 +182,9 @@ describe("DeviceRepository", () => {
     });
 
     it("should keep availability separate per client", () => {
-      const client2 = createUniqueId("client2");
-      const device1 = createMockDevice("device1");
-      const device2 = createMockDevice("device1");
+      const client2 = createClientId("client2");
+      const device1 = createMockDevice();
+      const device2 = createMockDevice();
 
       repository.syncClientDevices(userId, uniqueId, [device1]);
       repository.syncClientDevices(userId, client2, [device2]);
@@ -209,8 +200,8 @@ describe("DeviceRepository", () => {
 
     it("should keep availability separate per user", () => {
       const user2 = createUserId("user2");
-      const device1 = createMockDevice("device1");
-      const device2 = createMockDevice("device1");
+      const device1 = createMockDevice();
+      const device2 = createMockDevice();
 
       repository.syncClientDevices(userId, uniqueId, [device1]);
       repository.syncClientDevices(user2, uniqueId, [device2]);
@@ -227,7 +218,7 @@ describe("DeviceRepository", () => {
 
   describe("removeDevices", () => {
     it("should remove all devices for specific client", () => {
-      const device = createMockDevice("device1");
+      const device = createMockDevice();
       repository.syncClientDevices(userId, uniqueId, [device]);
       repository.updateDeviceState(userId, uniqueId, deviceId, {
         status: "on",
@@ -240,8 +231,8 @@ describe("DeviceRepository", () => {
     });
 
     it("should remove all devices for user across all clients", () => {
-      const client2 = createUniqueId("client2");
-      const device1 = createMockDevice("device1");
+      const client2 = createClientId("client2");
+      const device1 = createMockDevice();
       const deviceId2 = createDeviceId("device2");
 
       repository.syncClientDevices(userId, uniqueId, [device1]);
@@ -264,7 +255,7 @@ describe("DeviceRepository", () => {
 
     it("should only remove devices for specific user", () => {
       const user2 = createUserId("user2");
-      const device = createMockDevice("device1");
+      const device = createMockDevice();
 
       repository.syncClientDevices(userId, uniqueId, [device]);
       repository.syncClientDevices(user2, uniqueId, [device]);
@@ -319,7 +310,7 @@ describe("DeviceRepository", () => {
     });
 
     it("should return single client ID when one client has devices", () => {
-      const device = createMockDevice("device1");
+      const device = createMockDevice();
       repository.syncClientDevices(userId, uniqueId, [device]);
 
       const clientIds = repository.getConnectedClientIds(userId);
@@ -329,9 +320,9 @@ describe("DeviceRepository", () => {
     });
 
     it("should return multiple client IDs when multiple clients have devices", () => {
-      const client2 = createUniqueId("client2");
-      const client3 = createUniqueId("client3");
-      const device = createMockDevice("device1");
+      const client2 = createClientId("client2");
+      const client3 = createClientId("client3");
+      const device = createMockDevice();
 
       repository.syncClientDevices(userId, uniqueId, [device]);
       repository.syncClientDevices(userId, client2, [device]);
@@ -346,8 +337,8 @@ describe("DeviceRepository", () => {
     });
 
     it("should return each client ID only once", () => {
-      const device1 = createMockDevice("device1");
-      const device2 = createMockDevice("device2");
+      const device1 = createMockDevice();
+      const device2 = createMockDevice("zigbee/device2" as DeviceId);
 
       repository.syncClientDevices(userId, uniqueId, [device1, device2]);
 
@@ -359,8 +350,8 @@ describe("DeviceRepository", () => {
 
     it("should not include clients from other users", () => {
       const user2 = createUserId("user2");
-      const client2 = createUniqueId("client2");
-      const device = createMockDevice("device1");
+      const client2 = createClientId("client2");
+      const device = createMockDevice();
 
       repository.syncClientDevices(userId, uniqueId, [device]);
       repository.syncClientDevices(user2, client2, [device]);
@@ -375,7 +366,7 @@ describe("DeviceRepository", () => {
     });
 
     it("should remove client when all devices are removed", () => {
-      const device = createMockDevice("device1");
+      const device = createMockDevice();
       repository.syncClientDevices(userId, uniqueId, [device]);
       repository.syncClientDevices(userId, uniqueId, []);
 
@@ -385,8 +376,8 @@ describe("DeviceRepository", () => {
     });
 
     it("should maintain correct set after device removals", () => {
-      const client2 = createUniqueId("client2");
-      const device = createMockDevice("device1");
+      const client2 = createClientId("client2");
+      const device = createMockDevice();
 
       repository.syncClientDevices(userId, uniqueId, [device]);
       repository.syncClientDevices(userId, client2, [device]);
@@ -400,7 +391,7 @@ describe("DeviceRepository", () => {
 
   describe("state change events", () => {
     it("should emit deviceStateChanged event when state actually changes", () => {
-      const device = createMockDevice("device1");
+      const device = createMockDevice();
       repository.syncClientDevices(userId, uniqueId, [device]);
 
       const listener = vi.fn();
@@ -424,7 +415,7 @@ describe("DeviceRepository", () => {
     });
 
     it("should not emit event when state is identical (deduplication)", () => {
-      const device = createMockDevice("device1");
+      const device = createMockDevice();
       repository.syncClientDevices(userId, uniqueId, [device]);
 
       const listener = vi.fn();
@@ -441,7 +432,7 @@ describe("DeviceRepository", () => {
     });
 
     it("should emit event when partial state update changes values", () => {
-      const device = createMockDevice("device1");
+      const device = createMockDevice();
       repository.syncClientDevices(userId, uniqueId, [device]);
 
       const listener = vi.fn();
@@ -474,7 +465,7 @@ describe("DeviceRepository", () => {
     });
 
     it("should emit event on first state update (no previous state)", () => {
-      const device = createMockDevice("device1");
+      const device = createMockDevice();
       repository.syncClientDevices(userId, uniqueId, [device]);
 
       const listener = vi.fn();
@@ -498,7 +489,7 @@ describe("DeviceRepository", () => {
     });
 
     it("should handle deep equality check for nested objects", () => {
-      const device = createMockDevice("device1");
+      const device = createMockDevice();
       repository.syncClientDevices(userId, uniqueId, [device]);
 
       const listener = vi.fn();
@@ -519,7 +510,7 @@ describe("DeviceRepository", () => {
     });
 
     it("should emit event when nested object values change", () => {
-      const device = createMockDevice("device1");
+      const device = createMockDevice();
       repository.syncClientDevices(userId, uniqueId, [device]);
 
       const listener = vi.fn();

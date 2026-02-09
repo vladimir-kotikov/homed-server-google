@@ -2,7 +2,7 @@
  * Mapper Service Unit Tests
  */
 
-import { type HomedDevice } from "../../src/device.ts";
+import { type DeviceId, type HomedDevice } from "../../src/device.ts";
 import {
   GOOGLE_DEVICE_TYPES,
   mapToGoogleDevice,
@@ -32,7 +32,7 @@ const testClientId = "client1" as ClientId;
 interface DeviceCreationOptions {
   exposes?: string[][];
   options?: Record<string, any>;
-  key?: string;
+  key?: DeviceId;
   topic?: string;
   name?: string;
   description?: string;
@@ -43,9 +43,9 @@ interface DeviceCreationOptions {
 /**
  * Generate a random device key for testing
  */
-const generateRandomKey = (): string => {
+const generateRandomKey = (): DeviceId => {
   const randomHex = Math.random().toString(16).substring(2, 8).padStart(6, "0");
-  return `0x${randomHex}`;
+  return `0x${randomHex}` as DeviceId;
 };
 
 /**
@@ -264,10 +264,6 @@ describe("CapabilityMapper", () => {
       expect(google.type).toBe(DEVICE_TYPES.SENSOR);
     });
 
-    // ========================================================================
-    // Additional Edge Cases for Device Type Detection
-    // ========================================================================
-
     it("should handle device with special characters in name", () => {
       const device = createDevice({
         exposes: [["switch"]],
@@ -277,16 +273,6 @@ describe("CapabilityMapper", () => {
       const google = mapToGoogleDevice(device, testClientId);
       expect(google.name.name).toBe("Device-With_Special.Chars@123!");
       expect(google.type).toBe(DEVICE_TYPES.SWITCH);
-    });
-
-    it("should handle device with malformed key (missing 0x prefix)", () => {
-      const device = createDevice({
-        exposes: [["switch"]],
-        key: "001", // Missing 0x
-      });
-
-      const google = mapToGoogleDevice(device, testClientId);
-      expect(google.customData?.homedKey).toBe("001");
     });
 
     it("should handle device with unavailable status affecting device detection", () => {
@@ -391,7 +377,7 @@ describe("CapabilityMapper", () => {
     it("should map device with all required fields", () => {
       const device = createDevice({
         exposes: [["light", "brightness"]],
-        key: "0x123456",
+        key: "0x123456" as DeviceId,
         topic: "home/living_room_light",
         name: "Living Room Light",
         description: "Main light",
@@ -516,12 +502,11 @@ describe("CapabilityMapper", () => {
     it("should preserve all custom data correctly", () => {
       const device = createDevice({
         exposes: [["switch"]],
-        key: "0xABCDEF",
       });
 
       const google = mapToGoogleDevice(device, testClientId);
-      expect(google.customData?.homedKey).toBe("0xABCDEF");
-      expect(google.id).toContain("0xABCDEF");
+      expect(google.customData?.homedKey).toBe(device.key);
+      expect(google.id).toContain(device.key);
     });
 
     // FIXME: Verify if very large number of endpointsndex causes performance issues

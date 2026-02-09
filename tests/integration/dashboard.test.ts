@@ -4,7 +4,7 @@
  */
 import request from "supertest";
 import { beforeEach, describe, expect, it } from "vitest";
-import type { HomedDevice } from "../../src/device.ts";
+import type { DeviceId, HomedDevice } from "../../src/device.ts";
 import { DeviceRepository } from "../../src/device.ts";
 import type { ClientId } from "../../src/homed/client.ts";
 import { WebApp } from "../../src/web/app.ts";
@@ -61,7 +61,7 @@ describe("Dashboard - Connected Clients", () => {
     it("should track client when devices are synced", () => {
       const clientId = "test-client" as ClientId;
       const mockDevice: HomedDevice = {
-        key: "device-1",
+        key: "device-1" as DeviceId,
         topic: "device/1",
         name: "Test Device",
         available: true,
@@ -80,7 +80,7 @@ describe("Dashboard - Connected Clients", () => {
     it("should list all connected clients for a user", () => {
       const clientIds = ["client-1", "client-2", "client-3"] as ClientId[];
       const mockDevice: HomedDevice = {
-        key: "test-device",
+        key: "test-device" as DeviceId,
         topic: "test/device",
         name: "Device",
         available: true,
@@ -107,7 +107,7 @@ describe("Dashboard - Connected Clients", () => {
       const clientId2 = "client-2" as ClientId;
 
       const mockDevice: HomedDevice = {
-        key: "test-device",
+        key: "test-device" as DeviceId,
         topic: "test/device",
         name: "Device",
         available: true,
@@ -137,7 +137,7 @@ describe("Dashboard - Connected Clients", () => {
     it("should remove client when all devices are removed", () => {
       const clientId = "test-client" as ClientId;
       const mockDevice: HomedDevice = {
-        key: "device-1",
+        key: "device-1" as DeviceId,
         topic: "device/1",
         name: "Test Device",
         available: true,
@@ -158,7 +158,7 @@ describe("Dashboard - Connected Clients", () => {
       const client1Id = "client-1" as ClientId;
       const client2Id = "client-2" as ClientId;
       const mockDevice: HomedDevice = {
-        key: "device-1",
+        key: "device-1" as DeviceId,
         topic: "device/1",
         name: "Device",
         available: true,
@@ -184,14 +184,14 @@ describe("Dashboard - Connected Clients", () => {
       const clientId = "test-client" as ClientId;
       const devices: HomedDevice[] = [
         {
-          key: "device-1",
+          key: "device-1" as DeviceId,
           topic: "device/1",
           name: "Light 1",
           available: true,
           endpoints: [],
         },
         {
-          key: "device-2",
+          key: "device-2" as DeviceId,
           topic: "device/2",
           name: "Light 2",
           available: true,

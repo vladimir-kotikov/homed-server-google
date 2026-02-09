@@ -11,7 +11,7 @@ export type DeviceId = string & { readonly __deviceId: unique symbol };
  * Homed device structure as received from TCP clients
  */
 export interface HomedDevice {
-  key: string; // Device identifier (e.g., "0x123456")
+  key: DeviceId; // Device identifier <deviceType>/<deviceAddress> (e.g. zigbee/84:fd:27:ff:fe:75:bf:44)
   topic: string; // MQTT topic for the device
   name: string; // Human-readable name
   description?: string; // Optional description
@@ -25,8 +25,6 @@ export interface HomedDevice {
 
 export interface HomedEndpoint {
   id: number;
-  // Optional to avoid circular references during serialization
-  device?: HomedDevice;
   exposes: string[];
   options?: EndpointOptions;
 }

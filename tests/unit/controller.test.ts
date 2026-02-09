@@ -1,33 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { HomedServerController } from "../../src/controller.ts";
-import type { ClientToken, UserId } from "../../src/db/repository.ts";
 import { UserRepository } from "../../src/db/repository.ts";
-import type { DeviceId, HomedDevice } from "../../src/device.ts";
-import { DeviceRepository } from "../../src/device.ts";
-import type { ClientId } from "../../src/homed/client.ts";
+import { DeviceRepository, type DeviceId } from "../../src/device.ts";
 import { WebApp } from "../../src/web/app.ts";
-
-const createUserId = (id: string): UserId => id as UserId;
-const createClientId = (id: string): ClientId => id as ClientId;
-const createDeviceId = (id: string): DeviceId => id as DeviceId;
-const createClientToken = (token: string): ClientToken => token as ClientToken;
-
-const createMockDevice = (
-  key: string,
-  exposes: string[] = []
-): HomedDevice => ({
-  key,
-  topic: `test/${key}`,
-  name: `Device ${key}`,
-  available: true,
-  endpoints: [
-    {
-      id: 0,
-      exposes,
-      options: {},
-    },
-  ],
-});
+import {
+  createClientId,
+  createClientToken,
+  createDeviceId,
+  createMockDevice,
+  createUserId,
+} from "../factories.ts";
 
 describe("HomedServerController", () => {
   let controller: HomedServerController;
@@ -38,7 +20,7 @@ describe("HomedServerController", () => {
   const userId = createUserId("user1");
   const clientId = createClientId("client1");
   const clientToken = createClientToken("test-client-token");
-  const deviceId = createDeviceId("device1");
+  const deviceId = createDeviceId("zigbee/device1");
 
   beforeEach(() => {
     deviceCache = new DeviceRepository();
@@ -55,7 +37,8 @@ describe("HomedServerController", () => {
       controller = new HomedServerController(userDb, deviceCache, httpHandler);
 
       // Setup: Add device to cache
-      const device = createMockDevice("device1", ["switch"]);
+      const device = createMockDevice("zigbee/device1" as DeviceId);
+      device.endpoints = [{ id: 1, exposes: ["switch"] }];
       deviceCache.syncClientDevices(userId, clientId, [device]);
 
       // Create a mock client connection
@@ -75,7 +58,8 @@ describe("HomedServerController", () => {
     it("should emit state change events via DeviceRepository", () => {
       controller = new HomedServerController(userDb, deviceCache, httpHandler);
 
-      const device = createMockDevice("device1", ["switch"]);
+      const device = createMockDevice("zigbee/device1" as DeviceId);
+      device.endpoints = [{ id: 1, exposes: ["switch"] }];
       deviceCache.syncClientDevices(userId, clientId, [device]);
 
       const mockClient = {
@@ -124,7 +108,8 @@ describe("HomedServerController", () => {
     it("should not update when client is not authorized", () => {
       controller = new HomedServerController(userDb, deviceCache, httpHandler);
 
-      const device = createMockDevice("device1", ["switch"]);
+      const device = createMockDevice("zigbee/device1" as DeviceId);
+      device.endpoints = [{ id: 1, exposes: ["switch"] }];
       deviceCache.syncClientDevices(userId, clientId, [device]);
 
       // Client without user
