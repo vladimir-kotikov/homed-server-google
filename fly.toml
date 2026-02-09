@@ -4,9 +4,12 @@ primary_region = 'cdg'
 [env]
   DATABASE_URL = '/data/user.db'
   GOOGLE_APPLICATION_CREDENTIALS = '/tmp/gcloud/key.json'
-  DEBUG = '*,-router*,-require-in-the-middle,-send,-body-parser*,-esbuild-register,-express-session,-homed:*:debug'
+  DEBUG = '*,-router*,-require-in-the-middle,-send,-body-parser*,-esbuild-register,-express*,-homed:*:debug'
   DEBUG_HIDE_DATE = "1"
   NODE_ENV = 'production'
+  # These will be used to ignore and close early the healtcheck connections
+  # from fly.io, which are not expected to do anything and just consume resources
+  HEALTHCHECK_IPS='::ffff:172.19.14.153'
 
 [[files]]
   secret_name = 'GOOGLE_APPLICATION_CREDENTIALS_JSON'

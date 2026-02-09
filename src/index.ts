@@ -43,7 +43,8 @@ const mainController = new HomedServerController(
   usersRepository,
   deviceRepository,
   httpHandler,
-  sslOptions
+  sslOptions,
+  appConfig.healthcheckIps
 );
 
 const shutdown = (signal: string) => {

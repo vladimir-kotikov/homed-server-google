@@ -68,6 +68,7 @@ export class WebApp {
     const logging = logger({
       ignore: ["/health"],
       output: { callback: debug("homed:request"), color: false },
+      ip: true,
     });
     const SessionStore = SqliteStore(sessionMiddleware);
     const session = sessionMiddleware({
@@ -114,12 +115,12 @@ export class WebApp {
       .initialize();
 
     this.app = express()
-      .use(logging)
       .disable("x-powered-by")
       .set("trust proxy", 2)
       .set("views", "templates")
       .set("view engine", "html")
       .engine("html", ejs.renderFile)
+      .use(logging)
       .use(express.static("public"))
       .use(express.json())
       .use(session)

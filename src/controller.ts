@@ -50,6 +50,7 @@ export class HomedServerController {
   private tcpServer: net.Server;
   private userDb: UserRepository;
   private httpHandler: WebApp;
+  private healthcheckIps: Set<string>;
   private deviceCache: DeviceRepository;
 
   private clients: Record<UserId, Record<ClientId, ClientConnection<User>>> =
@@ -59,11 +60,13 @@ export class HomedServerController {
     userDatabase: UserRepository,
     deviceCache: DeviceRepository,
     httpHandler: WebApp,
-    sslOptions?: { cert: string; key: string }
+    sslOptions?: { cert: string; key: string },
+    healtcheckIps: string[] = []
   ) {
     this.userDb = userDatabase;
     this.httpHandler = httpHandler;
     this.deviceCache = deviceCache;
+    this.healthcheckIps = new Set(healtcheckIps);
 
     this.httpServer = sslOptions
       ? https.createServer(sslOptions)
@@ -101,6 +104,14 @@ export class HomedServerController {
     ]).then(() => this.userDb.close());
 
   clientConnected = (socket: net.Socket) => {
+    if (this.healthcheckIps.has(socket.remoteAddress)) {
+      logDebug(`Ignoring healthcheck connection from ${socket.remoteAddress}`);
+      socket.write("OK");
+      socket.end();
+      return;
+    }
+
+    log(`New connection from ${socket.remoteAddress}:${socket.remotePort}`);
     const client = new ClientConnection<User>(socket)
       .on("close", () => this.clientDisconnected(client))
       .on("token", token => this.clientTokenReceived(client, token))
@@ -117,8 +128,6 @@ export class HomedServerController {
       .on("fd", (topic, data) =>
         this.deviceDataUpdated(client, topicToDeviceId(topic), data)
       );
-
-    log(`New connection from ${socket.remoteAddress}:${socket.remotePort}`);
   };
 
   clientDisconnected = (client: ClientConnection<User>) => {

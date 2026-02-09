@@ -22,6 +22,13 @@ const stringEnvironment = (value: string, fallback?: string): string => {
   );
 };
 
+const optStringArrayEnvironment = (value: string): string[] | undefined => {
+  const envValue = process.env[value];
+  if (envValue) {
+    return envValue.split(",").map(s => s.trim());
+  }
+};
+
 export default {
   env: (process.env.NODE_ENV || "production").toLowerCase(),
   sentryDsn: stringEnvironment("SENTRY_DSN", ""),
@@ -43,4 +50,5 @@ export default {
     "OAUTH_REFRESH_TOKEN_EXPIRES_IN",
     1_209_600
   ),
+  healthcheckIps: optStringArrayEnvironment("HEALTHCHECK_IPS"),
 };
