@@ -49,7 +49,10 @@ describe("HomeGraphClient", () => {
 
       new HomeGraphClient();
 
-      expect(google.homegraph).toHaveBeenCalledWith("v1");
+      expect(google.homegraph).toHaveBeenCalledWith({
+        version: "v1",
+        auth: expect.any(Object),
+      });
     });
   });
 

@@ -26,7 +26,7 @@ export const toGoogleDeviceId = (
   homedDeviceKey: string,
   endpointId?: number
 ): GoogleDeviceId => {
-  const base = `${clientId}#${homedDeviceKey}`;
+  const base = `${clientId}/${homedDeviceKey}`;
   return (
     endpointId !== undefined ? `${base}:${endpointId}` : base
   ) as GoogleDeviceId;
@@ -36,9 +36,9 @@ export const toGoogleDeviceId = (
  * Extracts the homed device key from a Google device ID
  */
 export const fromGoogleDeviceId = (googleDeviceId: GoogleDeviceId): string => {
-  const parts = googleDeviceId.split("#");
-  // Device key is everything after the first hash
-  const withEndpoint = parts.slice(1).join("#");
+  const parts = googleDeviceId.split("/");
+  // Device key is everything after the first slash
+  const withEndpoint = parts.slice(1).join("/");
   // Remove endpoint ID if present
   return withEndpoint.split(":")[0];
 };
@@ -49,7 +49,7 @@ export const fromGoogleDeviceId = (googleDeviceId: GoogleDeviceId): string => {
 export const getClientIdFromGoogleDeviceId = (
   googleDeviceId: GoogleDeviceId
 ): ClientId => {
-  return googleDeviceId.split("#")[0] as ClientId;
+  return googleDeviceId.split("/")[0] as ClientId;
 };
 
 /**
@@ -365,6 +365,107 @@ const areAllSameDeviceType = (endpoints: HomedEndpoint[]): boolean => {
 };
 
 /**
+ * Build device name arrays for Google Smart Home
+ * Returns defaultNames (what Google displays) and nicknames (alternative names)
+ */
+const buildDeviceNames = (
+  name: string,
+  description: string | undefined,
+  manufacturer: string | undefined,
+  model: string | undefined,
+  suffix = ""
+): { defaultNames: string[]; nicknames: string[] } => {
+  const nicknames: string[] = [];
+  if (description) {
+    nicknames.push(description + suffix);
+  }
+
+  // Use user-friendly name for defaultNames (what Google displays)
+  const defaultNames: string[] = [name + suffix];
+  // Add manufacturer info as additional default names for reference
+  if (manufacturer && model) {
+    defaultNames.push(`${manufacturer} ${model}${suffix}`);
+  } else if (model) {
+    defaultNames.push(model + suffix);
+  } else if (manufacturer) {
+    defaultNames.push(manufacturer + suffix);
+  }
+
+  return { defaultNames, nicknames };
+};
+
+/**
+ * Build a complete Google Smart Home device object
+ * Consolidates device type detection, trait mapping, attribute collection, and structure building
+ */
+const buildGoogleDevice = (
+  homedDevice: HomedDevice,
+  clientId: ClientId,
+  exposes: string[],
+  options: EndpointOptions,
+  endpoint?: HomedEndpoint
+): GoogleDevice => {
+  const deviceType = detectDeviceType(exposes);
+  const traits = getTraitsForExposes(exposes);
+  const googleDeviceId = toGoogleDeviceId(
+    clientId,
+    homedDevice.key,
+    endpoint?.id
+  );
+
+  // Build name suffix for multi-endpoint devices
+  const suffix = endpoint?.id !== undefined ? ` - Switch ${endpoint?.id}` : "";
+  const name = homedDevice.name + suffix;
+
+  const { defaultNames, nicknames } = buildDeviceNames(
+    homedDevice.name,
+    homedDevice.description,
+    homedDevice.manufacturer,
+    homedDevice.model,
+    suffix
+  );
+
+  // Collect trait attributes
+  const attributes: GoogleDeviceAttributes = {};
+  for (const trait of TRAIT_MAPPERS) {
+    if (traits.includes(trait.trait)) {
+      const traitAttributes = trait.getAttributes(exposes, options);
+      Object.assign(attributes, traitAttributes);
+    }
+  }
+
+  return {
+    id: googleDeviceId,
+    type: deviceType,
+    traits,
+    name: {
+      defaultNames,
+      name,
+      nicknames,
+    },
+    willReportState: true,
+    attributes: Object.keys(attributes).length > 0 ? attributes : undefined,
+    deviceInfo: {
+      manufacturer: homedDevice.manufacturer ?? "Unknown Manufacturer",
+      model: homedDevice.model ?? "Unknown Model",
+      hwVersion: homedDevice.version ?? "unknown",
+      swVersion: homedDevice.firmware ?? "unknown",
+    },
+    customData: {
+      homedKey: homedDevice.key,
+      clientId,
+      endpointId: endpoint?.id,
+      endpoints: endpoint
+        ? [{ id: endpoint.id, exposes: endpoint.exposes }]
+        : homedDevice.endpoints.map(ep => ({
+            id: ep.id,
+            exposes: ep.exposes,
+          })),
+    },
+  };
+};
+
+/**
  * Get all Google device IDs for a Homed device
  * Returns array of IDs based on whether the device should be split into multiple Google devices
  *
@@ -425,128 +526,32 @@ export const mapToGoogleDevices = (
       .flatMap(ep => ep.exposes)
       .filter((expose, index, array) => array.indexOf(expose) === index);
 
-    const deviceType = detectDeviceType(allExposes);
-    const traits = getTraitsForExposes(allExposes);
-
-    const googleDeviceId = toGoogleDeviceId(clientId, homedDevice.key);
-
-    const nicknames: string[] = [];
-    if (homedDevice.description) {
-      nicknames.push(homedDevice.description);
-    }
-
-    // Collect all trait attributes
-    const attributes: GoogleDeviceAttributes = {};
-    for (const trait of TRAIT_MAPPERS) {
-      if (traits.includes(trait.trait)) {
-        const traitAttributes = trait.getAttributes(
-          allExposes,
-          mergeEndpointOptions(homedDevice.endpoints)
-        );
-        Object.assign(attributes, traitAttributes);
-      }
-    }
-
     return [
-      {
-        id: googleDeviceId,
-        type: deviceType,
-        traits,
-        name: {
-          defaultNames: [homedDevice.name],
-          name: homedDevice.name,
-          nicknames,
-        },
-        willReportState: true,
-        attributes: Object.keys(attributes).length > 0 ? attributes : undefined,
-        deviceInfo: {
-          manufacturer: homedDevice.manufacturer ?? "Unknown Manufacturer",
-          model: homedDevice.model ?? "Unknown Model",
-          hwVersion: homedDevice.version ?? "unknown",
-          swVersion: homedDevice.firmware ?? "unknown",
-        },
-        customData: {
-          homedKey: homedDevice.key,
-          clientId,
-          endpoints: homedDevice.endpoints.map(ep => ({
-            id: ep.id,
-            exposes: ep.exposes,
-          })),
-        },
-      },
+      buildGoogleDevice(
+        homedDevice,
+        clientId,
+        allExposes,
+        mergeEndpointOptions(homedDevice.endpoints)
+      ),
     ];
   }
 
-  // Multiple control endpoints of the same type - create separate Google device for each
+  // Multiple control endpoints of same type - create separate Google device for each
   return controlEndpoints
     .map(endpoint => {
-      const exposes = endpoint.exposes;
-      const deviceType = detectDeviceType(exposes);
-      const traits = getTraitsForExposes(exposes);
-
+      const traits = getTraitsForExposes(endpoint.exposes);
       // Skip if no traits (shouldn't happen for control endpoints)
       if (traits.length === 0) {
         return undefined;
       }
 
-      const googleDeviceId = toGoogleDeviceId(
+      return buildGoogleDevice(
+        homedDevice,
         clientId,
-        homedDevice.key,
-        endpoint.id
+        endpoint.exposes,
+        endpoint.options ?? {},
+        endpoint
       );
-
-      // Add endpoint number to device name
-      const endpointSuffix = ` - Switch ${endpoint.id}`;
-      const name = homedDevice.name + endpointSuffix;
-
-      const nicknames: string[] = [];
-      if (homedDevice.description) {
-        nicknames.push(homedDevice.description + endpointSuffix);
-      }
-
-      // Collect trait attributes for this specific endpoint
-      const attributes: GoogleDeviceAttributes = {};
-      for (const trait of TRAIT_MAPPERS) {
-        if (traits.includes(trait.trait)) {
-          const traitAttributes = trait.getAttributes(
-            exposes,
-            endpoint.options ?? {}
-          );
-          Object.assign(attributes, traitAttributes);
-        }
-      }
-
-      const googleDevice: GoogleDevice = {
-        id: googleDeviceId,
-        type: deviceType,
-        traits,
-        name: {
-          defaultNames: [name],
-          name,
-          nicknames,
-        },
-        willReportState: true,
-        attributes: Object.keys(attributes).length > 0 ? attributes : undefined,
-        deviceInfo: {
-          manufacturer: homedDevice.manufacturer ?? "Unknown Manufacturer",
-          model: homedDevice.model ?? "Unknown Model",
-          hwVersion: homedDevice.version ?? "unknown",
-          swVersion: homedDevice.firmware ?? "unknown",
-        },
-        customData: {
-          homedKey: homedDevice.key,
-          clientId,
-          endpointId: endpoint.id,
-          endpoints: [
-            {
-              id: endpoint.id,
-              exposes: endpoint.exposes,
-            },
-          ],
-        },
-      };
-
-      return googleDevice;
     })
     .filter((device): device is GoogleDevice => device !== undefined);
 };
@@ -584,7 +589,6 @@ export const mapToGoogleState = (
   const traits = getTraitsForExposes(allExposes);
   const state: GoogleDeviceState = {
     online: homedDevice.available,
-    status: homedDevice.available ? "SUCCESS" : "OFFLINE",
   };
 
   // Get state for each supported trait - use properly typed TraitState union

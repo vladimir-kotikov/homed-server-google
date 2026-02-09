@@ -248,8 +248,20 @@ export type SmartHomeResponse = SmartHomeResponseBase<
 >;
 
 export interface GoogleDeviceName {
-  defaultNames: string[];
+  /**
+   * Primary name of the device, generally provided by the user. Names
+   * be truncated if over the 60 Unicode code point (character) limit and no
+   * errors will be thrown.
+   */
   name: string;
+  /**
+   * List of names provided by the manufacturer rather than the user, such as
+   * serial numbers, SKUs, etc.
+   */
+  defaultNames: string[];
+  /**
+   * Additional names provided by the user for the device.
+   */
   nicknames: string[];
 }
 

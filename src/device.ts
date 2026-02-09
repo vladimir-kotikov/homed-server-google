@@ -107,6 +107,12 @@ export class DeviceRepository {
     this.deviceState[userId] ??= {};
     this.deviceState[userId][clientId] ??= {};
     this.deviceState[userId][clientId][deviceId] = state;
+
+    // Also update the device's available field so QUERY returns correct online status
+    const device = this.getClientDevice(userId, clientId, deviceId);
+    if (device) {
+      device.available = online;
+    }
   };
 
   setDeviceState = (

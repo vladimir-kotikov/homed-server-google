@@ -366,16 +366,23 @@ describe("CapabilityMapper", () => {
         topic: "home/living_room_light",
         name: "Living Room Light",
         description: "Main light",
+        deviceOverrides: {
+          manufacturer: "IKEA",
+          model: "TRADFRI bulb E27",
+        },
       });
 
       const google = mapToGoogleDevice(device, "client-001" as ClientId);
 
-      expect(google.id).toBe("client-001#0x123456");
+      expect(google.id).toBe("client-001/0x123456");
       expect(google.name.name).toBe("Living Room Light");
-      expect(google.name.defaultNames).toContain("Living Room Light");
-      // If description becomes a nickname, it would be here, otherwise it's just in the device
+      // defaultNames should contain manufacturer + model, not user-friendly name
+      expect(google.name.defaultNames).toContain("IKEA TRADFRI bulb E27");
+      // Description should be in nicknames
+      expect(google.name.nicknames).toContain("Main light");
       expect(google.willReportState).toBe(true);
-      expect(google.deviceInfo?.manufacturer).toBe("Unknown Manufacturer");
+      expect(google.deviceInfo?.manufacturer).toBe("IKEA");
+      expect(google.deviceInfo?.model).toBe("TRADFRI bulb E27");
       expect(google.customData?.homedKey).toBe("0x123456");
       expect(google.type).toBe(DEVICE_TYPES.LIGHT);
     });
@@ -551,7 +558,6 @@ describe("CapabilityMapper", () => {
         expect(state).toEqual(
           expect.objectContaining({
             online: true,
-            status: "SUCCESS",
           })
         );
       });
@@ -565,7 +571,6 @@ describe("CapabilityMapper", () => {
 
       const state = mapToGoogleState(device, { on: true });
       expect(state.online).toBe(false);
-      expect(state.status).toBe("OFFLINE");
     });
 
     // FIXME: Verify behavior when on property is already set in input state
@@ -587,7 +592,6 @@ describe("CapabilityMapper", () => {
       const state = mapToGoogleState(device, { brightness: 75 });
       expect(state.brightness).toBe(75);
       expect(state.online).toBe(true);
-      expect(state.status).toBe("SUCCESS");
     });
 
     const brightnessTestCases = [
@@ -650,7 +654,6 @@ describe("CapabilityMapper", () => {
       expect(state1).toEqual(
         expect.objectContaining({
           online: true,
-          status: "SUCCESS",
         })
       );
 
@@ -659,7 +662,6 @@ describe("CapabilityMapper", () => {
       expect(state2).toEqual(
         expect.objectContaining({
           online: true,
-          status: "SUCCESS",
         })
       );
       expect(state2.brightness).toBe(100);
@@ -670,7 +672,6 @@ describe("CapabilityMapper", () => {
       expect(state3).toEqual(
         expect.objectContaining({
           online: true,
-          status: "SUCCESS",
         })
       );
     });
@@ -723,7 +724,6 @@ describe("CapabilityMapper", () => {
       expect(state1).toEqual(
         expect.objectContaining({
           online: true,
-          status: "SUCCESS",
         })
       );
 
@@ -732,7 +732,6 @@ describe("CapabilityMapper", () => {
       expect(state2).toEqual(
         expect.objectContaining({
           online: true,
-          status: "SUCCESS",
         })
       );
 
@@ -741,7 +740,6 @@ describe("CapabilityMapper", () => {
       expect(state3).toEqual(
         expect.objectContaining({
           online: true,
-          status: "SUCCESS",
         })
       );
     });
@@ -869,7 +867,6 @@ describe("CapabilityMapper", () => {
           expect(result).toEqual(
             expect.objectContaining({
               online: true,
-              status: "SUCCESS",
             })
           );
         });
@@ -953,7 +950,6 @@ describe("CapabilityMapper", () => {
           mapping.expectedTrue
         );
         expect(stateTrue.online).toBe(true);
-        expect(stateTrue.status).toBe("SUCCESS");
 
         // Test false state
         const stateFalse = mapToGoogleState(device, mapping.falseState);
@@ -1295,7 +1291,6 @@ describe("CapabilityMapper", () => {
       expect(state1).toEqual(
         expect.objectContaining({
           online: true,
-          status: "SUCCESS",
         })
       );
 
@@ -1304,7 +1299,6 @@ describe("CapabilityMapper", () => {
       expect(state2).toEqual(
         expect.objectContaining({
           online: true,
-          status: "SUCCESS",
         })
       );
 
@@ -1313,7 +1307,6 @@ describe("CapabilityMapper", () => {
       expect(state3).toEqual(
         expect.objectContaining({
           online: true,
-          status: "SUCCESS",
         })
       );
     });
@@ -1327,7 +1320,6 @@ describe("CapabilityMapper", () => {
       expect(state1).toEqual(
         expect.objectContaining({
           online: true,
-          status: "SUCCESS",
         })
       );
 
@@ -1336,7 +1328,6 @@ describe("CapabilityMapper", () => {
       expect(state2).toEqual(
         expect.objectContaining({
           online: true,
-          status: "SUCCESS",
         })
       );
 
@@ -1353,7 +1344,6 @@ describe("CapabilityMapper", () => {
       expect(state1).toEqual(
         expect.objectContaining({
           online: true,
-          status: "SUCCESS",
         })
       );
 
@@ -1362,7 +1352,6 @@ describe("CapabilityMapper", () => {
       expect(state2).toEqual(
         expect.objectContaining({
           online: true,
-          status: "SUCCESS",
         })
       );
 
@@ -1374,7 +1363,6 @@ describe("CapabilityMapper", () => {
       expect(state3).toEqual(
         expect.objectContaining({
           online: true,
-          status: "SUCCESS",
         })
       );
     });
@@ -1391,7 +1379,6 @@ describe("CapabilityMapper", () => {
       expect(state).toEqual(
         expect.objectContaining({
           online: true,
-          status: "SUCCESS",
         })
       );
       expect(state.color).toBeDefined();
@@ -1412,7 +1399,6 @@ describe("CapabilityMapper", () => {
       expect(state).toEqual(
         expect.objectContaining({
           online: true,
-          status: "SUCCESS",
         })
       );
       if (state.brightness !== undefined) {
@@ -1431,7 +1417,6 @@ describe("CapabilityMapper", () => {
       expect(state3).toEqual(
         expect.objectContaining({
           online: true,
-          status: "SUCCESS",
         })
       );
     });
@@ -1462,7 +1447,6 @@ describe("CapabilityMapper", () => {
       expect(state1).toEqual(
         expect.objectContaining({
           online: true,
-          status: "SUCCESS",
         })
       );
 
@@ -1471,7 +1455,6 @@ describe("CapabilityMapper", () => {
       expect(state2).toEqual(
         expect.objectContaining({
           online: true,
-          status: "SUCCESS",
         })
       );
 
@@ -1480,7 +1463,6 @@ describe("CapabilityMapper", () => {
       expect(state3).toEqual(
         expect.objectContaining({
           online: true,
-          status: "SUCCESS",
         })
       );
     });
@@ -1775,7 +1757,6 @@ describe("CapabilityMapper", () => {
           expect(result).toEqual(
             expect.objectContaining({
               online: true,
-              status: "SUCCESS",
             })
           );
           if (expectValue !== undefined) {
@@ -1793,7 +1774,6 @@ describe("CapabilityMapper", () => {
       expect(state1).toEqual(
         expect.objectContaining({
           online: true,
-          status: "SUCCESS",
         })
       );
 
@@ -1801,7 +1781,6 @@ describe("CapabilityMapper", () => {
       expect(state2).toEqual(
         expect.objectContaining({
           online: true,
-          status: "SUCCESS",
         })
       );
     });
@@ -1813,7 +1792,6 @@ describe("CapabilityMapper", () => {
       expect(state1).toEqual(
         expect.objectContaining({
           online: true,
-          status: "SUCCESS",
         })
       );
 
@@ -1823,7 +1801,6 @@ describe("CapabilityMapper", () => {
       expect(state2).toEqual(
         expect.objectContaining({
           online: true,
-          status: "SUCCESS",
         })
       );
     });
@@ -1841,7 +1818,6 @@ describe("CapabilityMapper", () => {
 
       expect(state.on).toBe(true);
       expect(state.online).toBe(true);
-      expect(state.status).toBe("SUCCESS");
     });
   });
 
@@ -1927,7 +1903,6 @@ describe("CapabilityMapper", () => {
       expect(state).toEqual(
         expect.objectContaining({
           online: true,
-          status: "SUCCESS",
         })
       );
       expect(state.on).toBeUndefined();
