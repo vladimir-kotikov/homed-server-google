@@ -91,7 +91,7 @@ export class FulfillmentController {
     newState,
   }: DeviceStateChangeEvent) => {
     if (!device.endpoints.some(ep => ep.exposes && ep.exposes.length > 0)) {
-      log(`Skipping Google state report: device has no supported traits`);
+      logDebug(`Skipping Google state report: device has no supported traits`);
       return;
     }
 
@@ -136,7 +136,7 @@ export class FulfillmentController {
     );
 
     if (Object.keys(stateUpdates).length === 0) {
-      log(`Skipping Google state report: no state reports generated`);
+      logDebug(`Skipping Google state report: no state reports generated`);
       return;
     }
 
