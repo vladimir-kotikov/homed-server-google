@@ -26,6 +26,7 @@ import type {
 import { WebApp } from "./web/app.ts";
 
 const log = debug("homed:controller");
+const logDebug = debug("homed:controller:debug");
 const logError = debug("homed:controller:error");
 
 const topicToDeviceId = (topic: string): DeviceId =>
@@ -296,7 +297,7 @@ export class HomedServerController {
   ) => {
     if (!client.user || !client.uniqueId) return;
 
-    log(
+    logDebug(
       `Device data update from ${client.uniqueId}. ${deviceId}: ${JSON.stringify(data)}`
     );
 

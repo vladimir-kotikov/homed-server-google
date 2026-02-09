@@ -30,6 +30,7 @@ import type {
   SyncResponsePayload,
 } from "./types.ts";
 
+const logDebug = debug("homed:google:fulfillment:debug");
 const logError = debug("homed:google:fulfillment:error");
 const log = debug("homed:google:fulfillment");
 
@@ -126,7 +127,7 @@ export class FulfillmentController {
         const prevState = prevStates[googleDeviceId as GoogleDeviceId];
         const hasChanged = !fastDeepEqual(prevState, newState);
         if (!hasChanged) {
-          log(
+          logDebug(
             `Skipping Google state report for device ${googleDeviceId}: no state change detected`
           );
         }
