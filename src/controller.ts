@@ -224,17 +224,10 @@ export class HomedServerController {
       homedDevices
     );
 
-    if (added.length > 0) {
-      added.forEach(({ topic }) => {
-        client.subscribe(`expose/${topic}`);
-        client.subscribe(`device/${topic}`);
-        client.subscribe(`fd/${topic}`); // Subscribe to device state updates
-        // Note: Homed client proactively publishes data to these topics
-        // No need to request - just wait for the client to publish
-      });
-    }
-
-    // Device sync event emitted by DeviceRepository, handled by FulfillmentController
+    added.forEach(({ topic }) => {
+      client.subscribe(`expose/${topic}`);
+      client.subscribe(`device/${topic}`);
+    });
   };
 
   clientDeviceUpdated = (
@@ -261,11 +254,17 @@ export class HomedServerController {
           // id can be either "1", "2", ... or some string (usually "common")
           // meaning the device exposes some of the capabilities "directly"
           id: isNaN(parseInt(rawId, 10)) ? 0 : parseInt(rawId, 10),
-          device,
           exposes,
           options: options as EndpointOptions,
         }) satisfies HomedEndpoint
     );
+
+    device.endpoints.forEach(endpoint =>
+      client.subscribe(
+        endpoint.id ? `status/${deviceId}/${endpoint.id}` : `status/${deviceId}`
+      )
+    );
+    client.command("getProperties", device.key);
 
     // Update device capabilities in repository (emits event for Google SYNC)
     this.deviceCache.updateDevice(
@@ -274,18 +273,6 @@ export class HomedServerController {
       deviceId,
       endpoints
     );
-
-    device.endpoints.forEach(endpoint =>
-      client.subscribe(
-        endpoint.id ? `status/${deviceId}/${endpoint.id}` : `status/${deviceId}`
-      )
-    );
-
-    client.publish(`command/${device.topic}`, {
-      action: "getProperties",
-      device: deviceId,
-      service: "cloud",
-    });
   };
 
   deviceStatusUpdated = (

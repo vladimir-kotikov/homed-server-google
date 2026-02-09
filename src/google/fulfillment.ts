@@ -34,6 +34,22 @@ const logDebug = debug("homed:google:fulfillment:debug");
 const logError = debug("homed:google:fulfillment:error");
 const log = debug("homed:google:fulfillment");
 
+const debounce = <T extends (...args: unknown[]) => unknown>(
+  fn: T,
+  delayMs: number
+): ((...args: Parameters<T>) => void) => {
+  let timeoutId: NodeJS.Timeout | undefined;
+
+  return (...args: Parameters<T>) => {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+    timeoutId = setTimeout(() => {
+      fn(...args);
+    }, delayMs);
+  };
+};
+
 class RequestError extends Error {}
 
 export class FulfillmentController {
@@ -63,7 +79,9 @@ export class FulfillmentController {
     }
 
     this.deviceRepository
-      .on("devicesUpdated", this.requestSync)
+      // device updates trigger for each device, so debounce to avoid multiple
+      // rapid sync requests
+      .on("devicesUpdated", debounce(this.requestSync, 300))
       .on("deviceStateChanged", this.handleDeviceStateChanged);
   }
 
