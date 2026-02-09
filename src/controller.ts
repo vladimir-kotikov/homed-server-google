@@ -222,11 +222,8 @@ export class HomedServerController {
         client.subscribe(`expose/${topic}`);
         client.subscribe(`device/${topic}`);
         client.subscribe(`fd/${topic}`); // Subscribe to device state updates
-        // Request device exposes immediately
-        client.publish(`command/${topic}`, {
-          action: "getDeviceInfo",
-          service: "cloud",
-        });
+        // Note: Homed client proactively publishes data to these topics
+        // No need to request - just wait for the client to publish
       });
     }
 
@@ -255,7 +252,7 @@ export class HomedServerController {
     if (!client.uniqueId || !client.user) return;
 
     log(
-      `Device exposes update from ${client.uniqueId}. ${deviceId}: ${message.items}`
+      `Device exposes update from ${client.uniqueId}. ${deviceId}: ${JSON.stringify(message)}`
     );
 
     const device = this.deviceCache.getClientDevice(

@@ -127,6 +127,35 @@ describe("CapabilityMapper", () => {
       expect(google.type).toBe(DEVICE_TYPES.LIGHT);
     });
 
+    it("should map light with level option to include Brightness trait", () => {
+      const device = createDevice({
+        exposes: [["light"]],
+        options: { light: ["level"] },
+        topic: "home/dimmable_bulb",
+        name: "Dimmable Bulb",
+      });
+
+      const google = mapToGoogleDevice(device, testClientId);
+      expect(google.type).toBe(DEVICE_TYPES.LIGHT);
+      expect(google.traits).toContain(TRAITS.ON_OFF);
+      expect(google.traits).toContain(TRAITS.BRIGHTNESS);
+    });
+
+    it("should map light with level and color options to include all traits", () => {
+      const device = createDevice({
+        exposes: [["light"]],
+        options: { light: ["level", "color"] },
+        topic: "home/rgb_bulb",
+        name: "RGB Bulb",
+      });
+
+      const google = mapToGoogleDevice(device, testClientId);
+      expect(google.type).toBe(DEVICE_TYPES.LIGHT);
+      expect(google.traits).toContain(TRAITS.ON_OFF);
+      expect(google.traits).toContain(TRAITS.BRIGHTNESS);
+      expect(google.traits).toContain(TRAITS.COLOR_SETTING);
+    });
+
     it("should map dimmable light with brightness trait", () => {
       const device = createDevice({
         exposes: [["light", "brightness"]],
@@ -376,10 +405,11 @@ describe("CapabilityMapper", () => {
 
       expect(google.id).toBe("client-001/0x123456");
       expect(google.name.name).toBe("Living Room Light");
-      // defaultNames should contain manufacturer + model, not user-friendly name
-      expect(google.name.defaultNames).toContain("IKEA TRADFRI bulb E27");
-      // Description should be in nicknames
+      // defaultNames should contain only user-friendly name (what Google displays)
+      expect(google.name.defaultNames).toEqual(["Living Room Light"]);
+      // Manufacturer/model and description should be in nicknames for voice commands
       expect(google.name.nicknames).toContain("Main light");
+      expect(google.name.nicknames).toContain("IKEA TRADFRI bulb E27");
       expect(google.willReportState).toBe(true);
       expect(google.deviceInfo?.manufacturer).toBe("IKEA");
       expect(google.deviceInfo?.model).toBe("TRADFRI bulb E27");
@@ -615,7 +645,7 @@ describe("CapabilityMapper", () => {
       },
       {
         property: "level",
-        value: 50,
+        value: 127,
         expected: 50,
         description: "with level property (50)",
       },
@@ -1332,7 +1362,8 @@ describe("CapabilityMapper", () => {
       );
 
       // Only one present - should still work
-      const state3 = mapToGoogleState(device, { level: 60 });
+      // level: 153 (60% of 255) should map to brightness: 60
+      const state3 = mapToGoogleState(device, { level: 153 });
       expect(state3.brightness).toBe(60);
     });
 

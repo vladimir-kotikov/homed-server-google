@@ -113,12 +113,23 @@ export const OnOffTrait: GenericTraitMapper<
   },
 
   getState(deviceData: DeviceState): OnOffState | undefined {
-    // Look for on/off state
+    // Look for on/off state - check multiple possible property names
     if (deviceData.on !== undefined) {
       return { on: Boolean(deviceData.on) };
     }
+    if (deviceData.status !== undefined) {
+      // Handle both boolean and string values
+      const status = deviceData.status;
+      return {
+        on: typeof status === "string" ? status === "on" : Boolean(status),
+      };
+    }
     if (deviceData.state !== undefined) {
-      return { on: Boolean(deviceData.state) };
+      // Handle both boolean and string values
+      const state = deviceData.state;
+      return {
+        on: typeof state === "string" ? state === "on" : Boolean(state),
+      };
     }
     if (deviceData.power !== undefined) {
       return { on: Boolean(deviceData.power) };
@@ -173,8 +184,10 @@ export const BrightnessTrait: GenericTraitMapper<
       };
     }
     if (deviceData.level !== undefined) {
+      // Homed sends level in 0-255 range, convert to 0-100 for Google
+      const level = Number(deviceData.level);
       return {
-        brightness: Math.max(0, Math.min(100, Number(deviceData.level))),
+        brightness: Math.round(Math.max(0, Math.min(255, level)) * (100 / 255)),
       };
     }
     return;

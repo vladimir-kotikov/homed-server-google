@@ -75,12 +75,24 @@ export class FulfillmentController {
       .filter(({ device }) => device.endpoints.length > 0);
 
     const googleDevices = allDevices
-      .flatMap(({ device, clientId }) => mapToGoogleDevices(device, clientId))
+      .flatMap(({ device, clientId }) => {
+        const allExposes = device.endpoints
+          .flatMap(ep => ep.exposes)
+          .filter((e, i, a) => a.indexOf(e) === i);
+        log(
+          `Homed device: name="${device.name}", exposes=${JSON.stringify(allExposes)}, manufacturer="${device.manufacturer}", model="${device.model}"`
+        );
+        return mapToGoogleDevices(device, clientId);
+      })
       .filter(device => {
         const hasTraits = device.traits.length > 0;
         if (!hasTraits) {
           log(
             `Excluding device "${device.name.name}" (${device.id}): no supported traits`
+          );
+        } else {
+          log(
+            `Google device: id="${device.id}", type="${device.type}", traits=${JSON.stringify(device.traits)}, name.name="${device.name.name}"`
           );
         }
         return hasTraits;

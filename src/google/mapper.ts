@@ -195,10 +195,14 @@ const detectDeviceType = (exposes: string[]): string => {
 };
 
 /**
- * Get device type traits based on exposes
+ * Get device type traits based on exposes and options
  * Different traits work with different device types
+ * Options are checked for additional capabilities (e.g., light with level = brightness)
  */
-const getTraitsForExposes = (exposes: string[]): string[] => {
+const getTraitsForExposes = (
+  exposes: string[],
+  options?: EndpointOptions
+): string[] => {
   const traits = new Set<string>();
 
   if (!exposes) {
@@ -210,9 +214,26 @@ const getTraitsForExposes = (exposes: string[]): string[] => {
       case "switch":
       case "relay":
       case "outlet":
-      case "light":
       case "lock": {
         traits.add("action.devices.traits.OnOff");
+        break;
+      }
+
+      case "light": {
+        traits.add("action.devices.traits.OnOff");
+        // Check if light has level option (brightness control)
+        const lightOptions = options?.light;
+        if (Array.isArray(lightOptions) && lightOptions.includes("level")) {
+          traits.add("action.devices.traits.Brightness");
+        }
+        // Check if light has color option
+        if (
+          Array.isArray(lightOptions) &&
+          (lightOptions.includes("color") ||
+            lightOptions.includes("colorTemperature"))
+        ) {
+          traits.add("action.devices.traits.ColorSetting");
+        }
         break;
       }
 
@@ -375,20 +396,21 @@ const buildDeviceNames = (
   model: string | undefined,
   suffix = ""
 ): { defaultNames: string[]; nicknames: string[] } => {
+  // Use only user-friendly name for defaultNames (what Google displays)
+  // Google Home may use alternative names from the array, causing confusion
+  const defaultNames: string[] = [name + suffix];
+
+  // Put description and manufacturer info in nicknames for voice commands
   const nicknames: string[] = [];
   if (description) {
     nicknames.push(description + suffix);
   }
-
-  // Use user-friendly name for defaultNames (what Google displays)
-  const defaultNames: string[] = [name + suffix];
-  // Add manufacturer info as additional default names for reference
   if (manufacturer && model) {
-    defaultNames.push(`${manufacturer} ${model}${suffix}`);
+    nicknames.push(`${manufacturer} ${model}${suffix}`);
   } else if (model) {
-    defaultNames.push(model + suffix);
+    nicknames.push(model + suffix);
   } else if (manufacturer) {
-    defaultNames.push(manufacturer + suffix);
+    nicknames.push(manufacturer + suffix);
   }
 
   return { defaultNames, nicknames };
@@ -406,7 +428,7 @@ const buildGoogleDevice = (
   endpoint?: HomedEndpoint
 ): GoogleDevice => {
   const deviceType = detectDeviceType(exposes);
-  const traits = getTraitsForExposes(exposes);
+  const traits = getTraitsForExposes(exposes, options);
   const googleDeviceId = toGoogleDeviceId(
     clientId,
     homedDevice.key,
@@ -539,7 +561,7 @@ export const mapToGoogleDevices = (
   // Multiple control endpoints of same type - create separate Google device for each
   return controlEndpoints
     .map(endpoint => {
-      const traits = getTraitsForExposes(endpoint.exposes);
+      const traits = getTraitsForExposes(endpoint.exposes, endpoint.options);
       // Skip if no traits (shouldn't happen for control endpoints)
       if (traits.length === 0) {
         return undefined;
@@ -586,7 +608,8 @@ export const mapToGoogleState = (
     .flatMap(endpoint => endpoint.exposes)
     .filter((expose, index, array) => array.indexOf(expose) === index);
 
-  const traits = getTraitsForExposes(allExposes);
+  const mergedOptions = mergeEndpointOptions(homedDevice.endpoints);
+  const traits = getTraitsForExposes(allExposes, mergedOptions);
   const state: GoogleDeviceState = {
     online: homedDevice.available,
   };
@@ -664,7 +687,8 @@ export const mapToHomedCommand = (
     .flatMap(ep => ep.exposes)
     .filter((expose, index, array) => array.indexOf(expose) === index);
 
-  const traits = getTraitsForExposes(allExposes);
+  const mergedOptions = mergeEndpointOptions(homedDevice.endpoints);
+  const traits = getTraitsForExposes(allExposes, mergedOptions);
 
   // Find matching trait mapper
   for (const trait of TRAIT_MAPPERS) {
