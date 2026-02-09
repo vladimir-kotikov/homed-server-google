@@ -80,7 +80,7 @@
     "vitest": "^4.0.18"
   },
   "lint-staged": {
-    "*.ts": [
+    "{src,tests}/**/*.ts": [
       "prettier --write",
       "eslint --fix"
     ]
