@@ -182,17 +182,16 @@ export class ClientConnection<U extends { id: string }> extends EventEmitter<{
           return this.parseMessage(message).fold(
             error => logError(`Invalid message.`, error),
             ([event, topic, data]) => {
-              span.setAttributes({
-                "messaging.destination.name": topic,
-              });
-
               // Extract deviceId from topic if present (e.g., "fd/deviceId" -> "deviceId")
+              let topicName = topic;
               const topicParts = topic.split("/");
               if (topicParts.length > 1) {
                 Sentry.setContext("device", {
                   deviceId: topicParts.slice(1).join("/"),
                 });
+                topicName = topicParts.slice(0, 2).join("/") + "/{deviceId}";
               }
+              span.setAttributes({ "messaging.destination.name": topicName });
 
               this.emit(event, topic, data);
             }
