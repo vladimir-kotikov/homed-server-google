@@ -52,10 +52,7 @@ const shutdown = (signal: string) => {
   return mainController
     .stop()
     .then(() => Sentry.close(2000))
-    .then(() => {
-      log("Shutdown complete");
-      process.exit(0);
-    })
+    .then(() => process.exit(0))
     .catch(error => {
       logError("Error during shutdown:", error);
       process.exit(1);

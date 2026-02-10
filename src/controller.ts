@@ -98,7 +98,10 @@ export class HomedServerController {
   }
 
   stop = () =>
-    Promise.all([
+    Promise.allSettled([
+      ...Object.entries(this.clients)
+        .flatMap(([, clients]) => Object.values(clients))
+        .map(client => client.close()),
       promisify(this.httpServer.close.bind(this.httpServer))(),
       promisify(this.tcpServer.close.bind(this.tcpServer))(),
     ]).then(() => this.userDb.close());
