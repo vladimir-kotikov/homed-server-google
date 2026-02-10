@@ -9,9 +9,9 @@ import {
   createUserId,
 } from "../factories.ts";
 
-// Create the spy outside and reference it in the mock
-const reportStateAndNotificationSpy = vi.fn().mockResolvedValue(undefined);
-const requestSyncSpy = vi.fn().mockResolvedValue(undefined);
+// Declare spies at module scope that will be reassigned in beforeEach
+let reportStateAndNotificationSpy: ReturnType<typeof vi.fn>;
+let requestSyncSpy: ReturnType<typeof vi.fn>;
 
 // Mock googleapis before importing FulfillmentController
 vi.mock("googleapis", () => ({
@@ -21,8 +21,12 @@ vi.mock("googleapis", () => ({
     },
     homegraph: vi.fn(() => ({
       devices: {
-        requestSync: requestSyncSpy,
-        reportStateAndNotification: reportStateAndNotificationSpy,
+        get requestSync() {
+          return requestSyncSpy;
+        },
+        get reportStateAndNotification() {
+          return reportStateAndNotificationSpy;
+        },
       },
     })),
   },
@@ -42,7 +46,13 @@ describe("FulfillmentController - State Change Listener", () => {
   const deviceId = createDeviceId("device1");
 
   beforeEach(() => {
-    // Reset all mocks
+    // Create fresh spies for each test with proper mock implementations
+    reportStateAndNotificationSpy = vi.fn().mockResolvedValue(undefined);
+    requestSyncSpy = vi.fn().mockResolvedValue(undefined);
+
+    // Stub environment variable to ensure GoogleAuth initialization in constructor
+    vi.stubEnv("GOOGLE_APPLICATION_CREDENTIALS", "/path/to/credentials.json");
+    // Clear call history for mocks (doesn't clear across module scope)
     vi.clearAllMocks();
 
     // Create mock repositories
