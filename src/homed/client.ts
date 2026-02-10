@@ -280,6 +280,6 @@ export class ClientConnection<U extends { id: string }> extends EventEmitter<{
 
   close = () => {
     clearTimeout(this.timeout);
-    return new Promise(resolve => this.socket.end(() => resolve()));
+    return new Promise<void>(resolve => this.socket.end(() => resolve()));
   };
 }

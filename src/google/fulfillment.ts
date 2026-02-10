@@ -34,13 +34,13 @@ const logDebug = debug("homed:google:fulfillment:debug");
 const logError = debug("homed:google:fulfillment:error");
 const log = debug("homed:google:fulfillment");
 
-const debounce = <T extends (...args: unknown[]) => unknown>(
-  fn: T,
+const debounce = <Args extends unknown[], R>(
+  fn: (...args: Args) => R,
   delayMs: number
-): ((...args: Parameters<T>) => void) => {
+): ((...args: Args) => void) => {
   let timeoutId: NodeJS.Timeout | undefined;
 
-  return (...args: Parameters<T>) => {
+  return (...args: Args) => {
     if (timeoutId) {
       clearTimeout(timeoutId);
     }
