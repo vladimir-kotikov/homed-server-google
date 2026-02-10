@@ -63,18 +63,20 @@ export class FulfillmentController {
   ) {
     this.userRepository = userRepository;
     this.deviceRepository = deviceRepository;
-    const auth = new google.auth.GoogleAuth({
-      scopes: ["https://www.googleapis.com/auth/homegraph"],
-    });
-    try {
+    if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+      const auth = new google.auth.GoogleAuth({
+        scopes: ["https://www.googleapis.com/auth/homegraph"],
+      });
       this.homegraph = google.homegraph({
         version: "v1",
         auth,
       });
-    } catch (error) {
-      logError("Failed to initialize Google Home Graph API client:", error);
+    } else {
+      const message = "Failed to initialize Google Home Graph API client:";
       if (process.env.NODE_ENV === "production") {
-        throw error;
+        throw new Error(message);
+      } else {
+        logError(message);
       }
     }
 
@@ -161,7 +163,6 @@ export class FulfillmentController {
     );
 
     if (Object.keys(stateUpdates).length === 0) {
-      logDebug(`Skipping Google state report: no state reports generated`);
       return;
     }
 

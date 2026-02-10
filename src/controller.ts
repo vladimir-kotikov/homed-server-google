@@ -25,7 +25,7 @@ import type {
 } from "./homed/schema.ts";
 import { WebApp } from "./web/app.ts";
 
-const log = debug("homed:controller");
+const logInfo = debug("homed:controller");
 const logDebug = debug("homed:controller:debug");
 const logError = debug("homed:controller:error");
 
@@ -93,8 +93,8 @@ export class HomedServerController {
     this.tcpServer.listen(tcpPort);
 
     const protocol = this.httpServer instanceof https.Server ? "https" : "http";
-    log(`HTTP Server listening on port ${protocol}://0.0.0.0:${httpPort}`);
-    log(`TCP Server listening on port tcp://0.0.0.0:${tcpPort}`);
+    logInfo(`HTTP Server listening on port ${protocol}://0.0.0.0:${httpPort}`);
+    logInfo(`TCP Server listening on port tcp://0.0.0.0:${tcpPort}`);
   }
 
   stop = () =>
@@ -117,7 +117,9 @@ export class HomedServerController {
       return;
     }
 
-    log(`New connection from ${socket.remoteAddress}:${socket.remotePort}`);
+    logDebug(
+      `New connection from ${socket.remoteAddress}:${socket.remotePort}`
+    );
     const client = new ClientConnection<User>(socket)
       .on("close", () => this.clientDisconnected(client))
       .on("token", token => this.clientTokenReceived(client, token))
@@ -140,7 +142,7 @@ export class HomedServerController {
     if (client.user && client.uniqueId) {
       delete this.clients[client.user.id]?.[client.uniqueId];
       this.deviceCache.removeClientDevices(client.user.id, client.uniqueId);
-      log(`Client disconnected: ${client.uniqueId}`);
+      logDebug(`Client disconnected: ${client.uniqueId}`);
     }
   };
 
@@ -167,7 +169,7 @@ export class HomedServerController {
         client.authorize(user);
         this.clients[user.id] = this.clients[user.id] || {};
         this.clients[user.id][uniqueId] = client;
-        log(`Client ${uniqueId} authorized for ${user.username}`);
+        logDebug(`Client ${uniqueId} authorized for ${user.username}`);
       })
       .catch(error => {
         logError(
@@ -240,7 +242,7 @@ export class HomedServerController {
   ) => {
     if (!client.uniqueId || !client.user) return;
 
-    log(
+    logDebug(
       `Device exposes update from ${client.uniqueId}. ${deviceId}: ${JSON.stringify(message)}`
     );
 
@@ -262,11 +264,15 @@ export class HomedServerController {
         }) satisfies HomedEndpoint
     );
 
-    device.endpoints.forEach(endpoint =>
-      client.subscribe(
-        endpoint.id ? `status/${deviceId}/${endpoint.id}` : `status/${deviceId}`
-      )
-    );
+    endpoints.forEach(endpoint => {
+      const topic = endpoint.id
+        ? `fd/${deviceId}/${endpoint.id}`
+        : `fd/${deviceId}`;
+
+      logDebug(`Subscribing to device data topic: ${topic}`);
+      client.subscribe(topic);
+    });
+
     client.command("getProperties", device.key);
 
     // Update device capabilities in repository (emits event for Google SYNC)

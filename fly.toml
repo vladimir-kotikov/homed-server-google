@@ -4,7 +4,7 @@ primary_region = 'cdg'
 [env]
   DATABASE_URL = '/data/user.db'
   GOOGLE_APPLICATION_CREDENTIALS = '/tmp/gcloud/key.json'
-  DEBUG = '*,-router*,-require-in-the-middle,-send,-body-parser*,-esbuild-register,-express*,-homed:*:debug'
+  DEBUG = 'homed:*,-homed:*:debug'
   DEBUG_HIDE_DATE = "1"
   NODE_ENV = 'production'
   # These will be used to ignore and close early the healtcheck connections

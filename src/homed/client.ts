@@ -138,6 +138,10 @@ export class ClientConnection<U extends { id: string }> extends EventEmitter<{
       try {
         decrypted = this.cipher!.decrypt(unescapePacket(packet));
         message = JSON.parse(decrypted.toString("utf8"));
+        logDebug(
+          `Received message from ${this.uniqueId ?? "unknown client"}`,
+          message
+        );
       } catch (error) {
         logError(`Failed to decrypt or parse message: ${error}`);
         Sentry.captureException(error, {
