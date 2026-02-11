@@ -7,7 +7,12 @@ import {
 } from "passport-google-oauth20";
 import { ExtractJwt, Strategy as JwtStrategy } from "passport-jwt";
 import { Strategy as ClientPasswordStrategy } from "passport-oauth2-client-password";
-import type { ClientToken, User, UserId } from "../db/repository.ts";
+import {
+  JWT_ALGORITHM,
+  type ClientToken,
+  type User,
+  type UserId,
+} from "../db/repository.ts";
 
 declare type Maybe<T> = T | undefined;
 declare type MaybeAsync<T> = T | Promise<T>;
@@ -21,6 +26,7 @@ export const jwtStrategy = (
     {
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       secretOrKey: jwtSecret,
+      algorithms: [JWT_ALGORITHM],
     },
     async (payload, done) =>
       Promise.try(() => verifyToken(payload))

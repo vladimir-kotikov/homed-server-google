@@ -15,6 +15,8 @@ const { databaseUrl, tcpPort, httpPort } = appConfig;
 const deviceRepository = new DeviceRepository();
 const usersRepository = UserRepository.open(databaseUrl, appConfig.jwtSecret, {
   create: true,
+  accessTokenLifetime: appConfig.accessTokenLifetime,
+  refreshTokenLifetime: appConfig.refreshTokenLifetime,
 });
 
 const oauthController = new OAuthController(

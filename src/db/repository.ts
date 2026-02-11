@@ -3,12 +3,13 @@ import debug from "debug";
 import { eq } from "drizzle-orm";
 import { BetterSQLite3Database, drizzle } from "drizzle-orm/better-sqlite3";
 import jwt from "jsonwebtoken";
+import crypto from "node:crypto";
 import * as schema from "./schema.ts";
 import { users } from "./schema.ts";
 
-import crypto from "node:crypto";
-
 const log = debug("homed:user");
+
+export const JWT_ALGORITHM = "HS256" as const;
 
 const newClientToken = () =>
   crypto.randomBytes(32).toString("hex") as ClientToken;
@@ -23,28 +24,49 @@ export interface User {
   createdAt: Date;
 }
 
+type UserRepositoryOptions = {
+  accessTokenLifetime?: number;
+  refreshTokenLifetime?: number;
+};
+
 export class UserRepository {
   readonly database: Database.Database;
   private readonly client: BetterSQLite3Database<typeof schema>;
   private readonly jwtSecret: string;
+  private accessTokenLifetime: number;
+  private refreshTokenLifetime: number;
 
-  constructor(database: Database.Database, jwtSecret: string) {
+  constructor(
+    database: Database.Database,
+    jwtSecret: string,
+    options?: UserRepositoryOptions
+  ) {
     this.database = database;
     this.client = drizzle(database, { schema });
     this.jwtSecret = jwtSecret;
+    this.accessTokenLifetime = options?.accessTokenLifetime ?? 15 * 60; // 15 minutes
+    this.refreshTokenLifetime =
+      options?.refreshTokenLifetime ?? 7 * 24 * 60 * 60; // 7 days
   }
 
   static open(
     databasePath: string = ":memory:",
     jwtSecret: string,
-    { create = false }: { create: boolean }
+    {
+      create = false,
+      accessTokenLifetime,
+      refreshTokenLifetime,
+    }: { create: boolean } & Partial<UserRepositoryOptions>
   ): UserRepository {
     log(
       `Opening database at ${databasePath} (create: ${create ? "yes" : "no"})`
     );
     const database = new Database(databasePath, { fileMustExist: !create });
     database.pragma("journal_mode = WAL");
-    return new UserRepository(database, jwtSecret);
+    return new UserRepository(database, jwtSecret, {
+      accessTokenLifetime,
+      refreshTokenLifetime,
+    });
   }
 
   close() {
@@ -70,7 +92,7 @@ export class UserRepository {
     clientId?: string,
     redirectUri?: string
   ) => {
-    const options = {} as jwt.VerifyOptions;
+    const options = { algorithms: [JWT_ALGORITHM] } as jwt.VerifyOptions;
     if (clientId) {
       options.issuer = clientId;
     }
@@ -92,7 +114,7 @@ export class UserRepository {
   // This can be made private and is public only for testing purposes
   issueToken = (
     typ: "code" | "access" | "refresh",
-    expiresIn: string,
+    expiresIn: string | number,
     userId: UserId,
     clientId?: string,
     redirectUri?: string
@@ -100,6 +122,7 @@ export class UserRepository {
     const options = {
       subject: userId,
       expiresIn,
+      algorithm: JWT_ALGORITHM,
     } as jwt.SignOptions;
     if (clientId) {
       options.issuer = clientId;
@@ -117,8 +140,8 @@ export class UserRepository {
     this.verifyToken(code, "code", clientId, redirectUri).then(user =>
       user
         ? [
-            this.issueToken("access", "1h", user.id),
-            this.issueToken("refresh", "7d", user.id),
+            this.issueToken("access", this.accessTokenLifetime, user.id),
+            this.issueToken("refresh", this.refreshTokenLifetime, user.id),
           ]
         : undefined
     );
@@ -127,8 +150,8 @@ export class UserRepository {
     this.verifyToken(token, "refresh").then(user =>
       user
         ? [
-            this.issueToken("access", "1h", user.id),
-            this.issueToken("refresh", "7d", user.id),
+            this.issueToken("access", this.accessTokenLifetime, user.id),
+            this.issueToken("refresh", this.refreshTokenLifetime, user.id),
           ]
         : undefined
     );
