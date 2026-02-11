@@ -34,6 +34,7 @@ export default {
   sentryDsn: stringEnvironment("SENTRY_DSN", ""),
   tcpPort: intEnvironment("TCP_PORT", 8042),
   httpPort: intEnvironment("HTTP_PORT", 8080),
+  tcpMaxBufferSize: intEnvironment("TCP_MAX_BUFFER_SIZE", 1048576), // 1 MB
   databaseUrl: stringEnvironment("DATABASE_URL"),
   jwtSecret: stringEnvironment("JWT_SECRET"),
   cookieSecret: stringEnvironment("COOKIE_SECRET"),

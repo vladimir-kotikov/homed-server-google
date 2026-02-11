@@ -44,11 +44,17 @@ export class ClientConnection<U extends { id: string }> extends EventEmitter<{
   private socket: Socket;
   private cipher?: AES128CBC;
   private timeout: NodeJS.Timeout;
+  private maxBufferSize: number;
   uniqueId?: ClientId;
   user?: U;
 
-  constructor(socket: Socket, timeout: number = 10_000) {
+  constructor(
+    socket: Socket,
+    timeout: number = 10_000,
+    maxBufferSize: number = 10 * 2 ** 10 // 10 kB
+  ) {
     super();
+    this.maxBufferSize = maxBufferSize;
     this.socket = socket
       .on("data", (data: Buffer) => {
         this.receiveData(data);
@@ -99,35 +105,15 @@ export class ClientConnection<U extends { id: string }> extends EventEmitter<{
     return false;
   }
 
-  private ensureAuthenticated(): boolean {
-    if (this.user) {
-      return true;
-    }
-
-    if (this.uniqueId) {
-      // Short-circuit if token is sent by the client but
-      // authorization is not yet confirmed by the server
-      return false;
-    }
-
-    const [packet, remainder] = readPacket(this.buf);
-    if (packet) {
-      const decrypted = this.cipher!.decrypt(unescapePacket(packet));
-      const message = JSON.parse(decrypted.toString("utf8"));
-      if (message && message.token && message.uniqueId) {
-        this.uniqueId = message.uniqueId;
-        this.emit("token", message.token);
-        this.buf = remainder;
-      }
-    }
-
-    return false;
-  }
-
   private receiveData(data: Buffer): void {
     this.buf = Buffer.concat([this.buf, data]);
+    if (this.buf.length > this.maxBufferSize) {
+      logError(`Buffer size exceeded limit`);
+      this.close();
+      return;
+    }
 
-    if (!this.ensureHandshakePerformed() || !this.ensureAuthenticated()) {
+    if (!this.ensureHandshakePerformed()) {
       return;
     }
 
