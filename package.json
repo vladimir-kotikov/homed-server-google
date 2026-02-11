@@ -17,8 +17,6 @@
     "lint": "eslint src tests && tsc",
     "format": "prettier --write src tests; eslint src tests --fix",
     "test": "DEBUG=-* vitest run --globals tests",
-    "test:unit": "DEBUG=-* vitest run --globals tests/unit",
-    "test:integration": "vitest run --no-file-parallelism --globals tests/integration",
     "prepare": "husky || true",
     "migrations": "drizzle-kit push --dialect sqlite --schema src/db/schema.ts --url ${DATABASE_URL}",
     "node": "node"

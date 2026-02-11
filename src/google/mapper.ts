@@ -3,10 +3,17 @@
  * Converts between Homed device capabilities and Google Smart Home format
  */
 
-import type { DeviceId, HomedDevice, HomedEndpoint } from "../device.ts";
+import type { UserId } from "../db/repository.ts";
+import type {
+  DeviceId,
+  DeviceWithState,
+  HomedDevice,
+  HomedEndpoint,
+} from "../device.ts";
 import type { ClientId } from "../homed/client.ts";
 import type { EndpointOptions } from "../homed/schema.ts";
 import type { CommandMessage, DeviceState } from "../homed/types.ts";
+import { fastDeepEqual } from "../utility.ts";
 import type { GoogleCommand } from "./schema.ts";
 import { TRAIT_MAPPERS } from "./traits.ts";
 import type {
@@ -14,11 +21,22 @@ import type {
   GoogleDeviceAttributes,
   GoogleDeviceId,
   GoogleDeviceState,
+  QueryResponsePayload,
+  SyncResponsePayload,
 } from "./types.ts";
+
+const filterDict = <K extends PropertyKey, V>(
+  obj: Record<K, V>,
+  predicate: (key: K, value: V) => boolean
+): Record<K, V> =>
+  Object.fromEntries(
+    Object.entries(obj).filter(([key, value]) =>
+      predicate(key as K, value as V)
+    )
+  ) as Record<K, V>;
 
 /**
  * Creates a Google device ID from clientId (unique client identifier) and homed device key
- * Uses clientId instead of clientToken to avoid exposing secrets
  * Optionally includes endpoint ID for multi-endpoint devices
  */
 export const toGoogleDeviceId = (
@@ -28,45 +46,56 @@ export const toGoogleDeviceId = (
 ): GoogleDeviceId => {
   const base = `${clientId}/${homedDeviceKey}`;
   return (
-    endpointId !== undefined ? `${base}:${endpointId}` : base
+    endpointId !== undefined ? `${base}#${endpointId}` : base
   ) as GoogleDeviceId;
 };
 
-/**
- * Extracts the homed device key from a Google device ID
- */
-export const fromGoogleDeviceId = (googleDeviceId: GoogleDeviceId): string => {
-  const parts = googleDeviceId.split("/");
-  // Device key is everything after the first slash
-  const withEndpoint = parts.slice(1).join("/");
-  // Remove endpoint ID if present
-  return withEndpoint.split(":")[0];
-};
-
-/**
- * Extracts the clientId from a Google device ID
- */
-export const getClientIdFromGoogleDeviceId = (
-  googleDeviceId: GoogleDeviceId
-): ClientId => {
-  return googleDeviceId.split("/")[0] as ClientId;
+export const fromGoogleDeviceId = (
+  googleId: GoogleDeviceId
+): {
+  clientId: ClientId;
+  deviceId: DeviceId;
+  endpointId?: number;
+} => {
+  const [clientId, devicePart] = googleId.split("/");
+  const [deviceId, endpointPart] = devicePart.split("#");
+  const endpointId = endpointPart ? parseInt(endpointPart, 10) : undefined;
+  return {
+    clientId: clientId as ClientId,
+    deviceId: deviceId as DeviceId,
+    endpointId,
+  };
 };
 
 /**
  * Extracts the endpoint ID from a Google device ID (if present)
+ * Format: clientId/deviceKey or clientId/deviceKey#<number>
  */
 export const getEndpointIdFromGoogleDeviceId = (
   googleDeviceId: GoogleDeviceId
 ): number | undefined => {
-  const parts = googleDeviceId.split(":");
-  return parts.length > 1 ? parseInt(parts[1], 10) : undefined;
+  const match = googleDeviceId.match(/#(\d+)$/);
+  return match ? parseInt(match[1], 10) : undefined;
 };
 
 /**
- * Command structure for execution
+ * Execution request context with device and command info
  */
-export interface HomedCommand {
-  topic: string;
+export interface ExecutionRequest {
+  userId: UserId;
+  googleDeviceIds: GoogleDeviceId[];
+  commands: GoogleCommand[];
+}
+
+/**
+ * Command ready to send to a Homed device
+ */
+export interface CommandToSend {
+  userId: UserId;
+  clientId: ClientId;
+  deviceId: DeviceId;
+  endpointId?: number;
+  googleDeviceIds: GoogleDeviceId[]; // Google devices this command affects
   message: CommandMessage;
 }
 
@@ -310,15 +339,8 @@ const getTraitsForExposes = (
   return [...traits];
 };
 
-const mergeEndpointOptions = (endpoints: HomedEndpoint[]): EndpointOptions => {
-  const merged: EndpointOptions = {};
-  for (const ep of endpoints) {
-    if (ep.options) {
-      Object.assign(merged, ep.options);
-    }
-  }
-  return merged;
-};
+const mergeEndpointOptions = (endpoints: HomedEndpoint[]): EndpointOptions =>
+  Object.assign({}, ...endpoints.map(ep => ep.options ?? {}));
 
 /**
  * Determines if an endpoint has control capabilities (vs just metadata)
@@ -591,21 +613,6 @@ export const mapToGoogleDevices = (
 };
 
 /**
- * Convert a Homed device to Google Smart Home device format
- * Legacy function for backward compatibility - simply returns the first device from mapToGoogleDevices
- *
- * @param homedDevice - Homed device data
- * @param clientId - Unique client/service identifier
- * @returns Google device ready for SYNC intent
- */
-export const mapToGoogleDevice = (
-  homedDevice: HomedDevice,
-  clientId: ClientId
-): GoogleDevice => {
-  return mapToGoogleDevices(homedDevice, clientId)[0];
-};
-
-/**
  * Convert Homed device state to Google state
  *
  * @param homedDevice - Homed device (for trait info)
@@ -645,19 +652,14 @@ export const mapToGoogleState = (
  *
  * @param homedDevice - Homed device (for trait info)
  * @param clientId - Unique client/service identifier
- * @param deviceId - Device ID for building Google device ID
  * @param deviceState - Current device state
  * @returns Array of {googleDeviceId, googleState} tuples for state reporting
  */
-export const mapToGoogleStateReports = (
+export const mapToGoogleStates = (
   homedDevice: HomedDevice,
   clientId: ClientId,
-  deviceId: DeviceId,
   deviceState: DeviceState
-): Array<{
-  googleDeviceId: GoogleDeviceId;
-  googleState: GoogleDeviceState;
-}> => {
+): Record<GoogleDeviceId, GoogleDeviceState> => {
   // Find all endpoints with control capabilities
   const controlEndpoints = homedDevice.endpoints.filter(ep =>
     hasControlCapabilities(ep.exposes)
@@ -667,21 +669,74 @@ export const mapToGoogleStateReports = (
   const shouldSplit =
     controlEndpoints.length > 1 && areAllSameDeviceType(controlEndpoints);
 
-  // Multiple control endpoints of same type - report state for each separately
-  if (shouldSplit) {
-    return controlEndpoints.map(endpoint => {
-      // Create filtered device with only this endpoint for accurate state mapping
-      const endpointDevice = { ...homedDevice, endpoints: [endpoint] };
-      const googleState = mapToGoogleState(endpointDevice, deviceState);
-      const googleDeviceId = toGoogleDeviceId(clientId, deviceId, endpoint.id);
-      return { googleDeviceId, googleState };
-    });
+  if (!shouldSplit) {
+    // Single device - report state once
+    const googleState = mapToGoogleState(homedDevice, deviceState);
+    const googleDeviceId = toGoogleDeviceId(clientId, homedDevice.key);
+    return { [googleDeviceId]: googleState };
   }
 
-  // Single device - report state once
-  const googleState = mapToGoogleState(homedDevice, deviceState);
-  const googleDeviceId = toGoogleDeviceId(clientId, deviceId);
-  return [{ googleDeviceId, googleState }];
+  // Multiple control endpoints of same type - report state for each separately
+  return controlEndpoints.reduce((acc, endpoint) => {
+    // Create filtered device with only this endpoint for accurate state mapping
+    const endpointDevice = { ...homedDevice, endpoints: [endpoint] };
+
+    // Extract endpoint-specific state from nested structure
+    const endpointState: DeviceState =
+      endpoint.id && deviceState.endpoints
+        ? ((deviceState.endpoints as Record<number, DeviceState>)[
+            endpoint.id
+          ] ?? deviceState)
+        : deviceState;
+
+    const googleState = mapToGoogleState(endpointDevice, endpointState);
+    const googleDeviceId = toGoogleDeviceId(
+      clientId,
+      homedDevice.key,
+      endpoint.id
+    );
+    return { ...acc, [googleDeviceId]: googleState };
+  }, {});
+};
+
+/**
+ * Prepare state report for Google Home Graph
+ * Compares previous and new states, returns only changed states
+ * Used by handleDeviceStateChanged to determine what to report
+ *
+ * @param device - Homed device
+ * @param clientId - Client ID
+ * @param prevState - Previous device state
+ * @param newState - New device state
+ * @returns Record of Google device IDs to states, or null if no changes
+ */
+export const getStateUpdates = (
+  device: HomedDevice,
+  clientId: ClientId,
+  prevState: DeviceState,
+  newState: DeviceState
+): Record<GoogleDeviceId, GoogleDeviceState> | undefined => {
+  // Skip devices without traits
+  if (!device.endpoints.some(ep => ep.exposes && ep.exposes.length > 0)) {
+    return undefined;
+  }
+
+  // Map both states to Google format
+  const prevStates = mapToGoogleStates(device, clientId, prevState);
+  const newStates = mapToGoogleStates(device, clientId, newState);
+
+  // Only return state changes - filter out unchanged states
+  const stateUpdates = filterDict(
+    newStates,
+    (googleDeviceId, newGoogleState) =>
+      !fastDeepEqual(
+        newGoogleState,
+        prevStates[googleDeviceId as GoogleDeviceId]
+      )
+  );
+
+  // Return undefined if no changes
+  return Object.keys(stateUpdates).length > 0 ? stateUpdates : undefined;
 };
 
 /**
@@ -694,7 +749,7 @@ export const mapToGoogleStateReports = (
 export const mapToHomedCommand = (
   homedDevice: HomedDevice,
   googleCommand: GoogleCommand
-): HomedCommand | undefined => {
+): CommandMessage | undefined => {
   const allExposes = homedDevice.endpoints
     .flatMap(ep => ep.exposes)
     .filter((expose, index, array) => array.indexOf(expose) === index);
@@ -702,10 +757,24 @@ export const mapToHomedCommand = (
   const mergedOptions = mergeEndpointOptions(homedDevice.endpoints);
   const traits = getTraitsForExposes(allExposes, mergedOptions);
 
+  // Extract endpoint ID if device has been filtered to single endpoint
+  // Only use endpoint ID in topic if its a truly multi-endpoint scenario
+  // (endpoint ID > 0 or undefined endpoint IDs exist alongside numbered ones)
+  const endpointId =
+    homedDevice.endpoints.length === 1 &&
+    homedDevice.endpoints[0].id &&
+    homedDevice.endpoints[0].id > 0
+      ? homedDevice.endpoints[0].id
+      : undefined;
+
   // Find matching trait mapper
   for (const trait of TRAIT_MAPPERS) {
     if (traits.includes(trait.trait)) {
-      const command = trait.mapCommand(homedDevice.key, googleCommand);
+      const command = trait.mapCommand(
+        homedDevice.key,
+        googleCommand,
+        endpointId
+      );
       if (command) {
         return command;
       }
@@ -713,4 +782,120 @@ export const mapToHomedCommand = (
   }
 
   return;
+};
+
+/**
+ * Map a Google execution request to Homed commands
+ * Handles all mapping logic: device ID resolution, endpoint filtering, command mapping
+ *
+ * @param request - Execution request with Google device IDs and commands
+ * @param allDevices - All devices for the user
+ * @returns Array of commands ready to send to Homed devices
+ */
+export const mapExecutionRequest = (
+  request: ExecutionRequest,
+  allDevices: Array<{ device: HomedDevice; clientId: ClientId }>
+): CommandToSend[] => {
+  const { userId, googleDeviceIds, commands } = request;
+  const requestedDeviceIds = new Set(googleDeviceIds);
+  const commandsToSend: CommandToSend[] = [];
+
+  // Map Google device IDs to Homed devices with context
+  const deviceCommandContexts = allDevices.flatMap(({ device, clientId }) => {
+    // Get all Google device IDs that exist for this Homed device
+    const googleIds = getGoogleDeviceIds(device, clientId);
+
+    return googleIds
+      .filter(googleId => requestedDeviceIds.has(googleId))
+      .map(googleId => ({
+        device,
+        clientId,
+        googleId,
+        endpointId: getEndpointIdFromGoogleDeviceId(googleId),
+      }));
+  });
+
+  // Process each matched device
+  for (const {
+    device,
+    clientId,
+    googleId,
+    endpointId,
+  } of deviceCommandContexts) {
+    // For multi-endpoint devices, filter to only the requested endpoint
+    const deviceForCommand =
+      endpointId !== undefined
+        ? {
+            ...device,
+            endpoints: device.endpoints.filter(ep => ep.id === endpointId),
+          }
+        : device;
+
+    // Map each Google command to Homed command
+    for (const command of commands) {
+      const message = mapToHomedCommand(deviceForCommand, command);
+
+      if (message) {
+        commandsToSend.push({
+          userId,
+          clientId,
+          deviceId: device.key as DeviceId,
+          endpointId,
+          googleDeviceIds: [googleId],
+          message,
+        });
+      }
+    }
+  }
+
+  return commandsToSend;
+};
+
+/**
+ * Map devices and states to Google SYNC response payload
+ * Handles filtering out devices without endpoints/traits
+ *
+ * @param userId - User ID for the agent
+ * @param devicesWithStates - Array of devices with their current states and client IDs
+ * @returns SYNC response payload ready to send to Google
+ */
+export const mapSyncResponse = (
+  userId: UserId,
+  devicesWithStates: DeviceWithState[]
+): SyncResponsePayload => ({
+  agentUserId: userId,
+  devices: devicesWithStates
+    // Map all devices to Google format (may create multiple Google devices per Homed device)
+    .flatMap(({ device, clientId }) => mapToGoogleDevices(device, clientId))
+    // Filter out devices without traits (Google requirement)
+    .filter(device => device.traits.length > 0),
+});
+
+/**
+ * Map devices and states to Google QUERY response payload
+ * Returns only requested device states
+ *
+ * @param requestedDeviceIds - Set of Google device IDs requested by Google
+ * @param devicesWithStates - Array of devices with their current states and client IDs
+ * @returns QUERY response payload with device states
+ */
+export const mapQueryResponse = (
+  requestedDeviceIds: Set<GoogleDeviceId>,
+  devicesWithStates: DeviceWithState[]
+): QueryResponsePayload => {
+  // Map Homed devices to Google device states
+  const devices = devicesWithStates.reduce(
+    // Use mapper to get all Google device IDs and states for this Homed device
+    (acc, { device, clientId, state }) => ({
+      ...acc,
+      // Filter to only requested device IDs
+      ...filterDict(
+        mapToGoogleStates(device, clientId, state),
+        googleDeviceId => requestedDeviceIds.has(googleDeviceId)
+      ),
+    }),
+    {} as Record<GoogleDeviceId, GoogleDeviceState>
+  );
+
+  return { devices };
 };

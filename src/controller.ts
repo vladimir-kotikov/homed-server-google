@@ -23,14 +23,37 @@ import type {
   DeviceStatusMessage,
   EndpointOptions,
 } from "./homed/schema.ts";
+import type { CommandMessage } from "./homed/types.ts";
 import { WebApp } from "./web/app.ts";
 
 const logInfo = debug("homed:controller");
 const logDebug = debug("homed:controller:debug");
 const logError = debug("homed:controller:error");
 
+/**
+ * Parse device ID and optional endpoint ID from topic
+ * Examples:
+ *   - "fd/zigbee/device" → {deviceId: "zigbee/device", endpointId: undefined}
+ *   - "fd/zigbee/device/1" → {deviceId: "zigbee/device", endpointId: 1}
+ */
+const parseTopicDeviceId = (
+  topic: string
+): { deviceId: DeviceId; endpointId?: number } => {
+  const parts = topic.split("/").slice(1); // Remove topic prefix (fd, device, etc)
+
+  // Check if last part is a numeric endpoint ID
+  const lastPart = parts[parts.length - 1];
+  if (lastPart && /^\d+$/.test(lastPart)) {
+    const endpointId = parseInt(lastPart, 10);
+    const deviceId = parts.slice(0, -1).join("/") as DeviceId;
+    return { deviceId, endpointId };
+  }
+
+  return { deviceId: parts.join("/") as DeviceId };
+};
+
 const topicToDeviceId = (topic: string): DeviceId =>
-  topic.split("/").slice(1).join("/") as DeviceId;
+  parseTopicDeviceId(topic).deviceId;
 
 /**
  * A main controller that wires up HTTP and TCP servers and manages clients and
@@ -86,7 +109,61 @@ export class HomedServerController {
         logError("TCP Server error:", error);
         this.stop();
       });
+
+    // Subscribe to command execution events from device repository
+    this.deviceCache.on("executeCommand", this.handleExecuteCommand);
   }
+
+  /**
+   * Handle command execution events from device repository
+   * Constructs topic from deviceId and endpointId, then sends to TCP client
+   */
+  private handleExecuteCommand = ({
+    userId,
+    clientId,
+    deviceId,
+    endpointId,
+    message,
+  }: {
+    userId: UserId;
+    clientId: ClientId;
+    deviceId: DeviceId;
+    endpointId?: number;
+    message: CommandMessage;
+  }): void => {
+    const client = this.clients[userId]?.[clientId];
+
+    if (!client) {
+      logError(
+        `Cannot execute command: client ${clientId} not found for user ${userId}`
+      );
+      return;
+    }
+
+    // Construct topic: td/{deviceId} or td/{deviceId}/{endpointId}
+    const topic =
+      endpointId !== undefined
+        ? `td/${deviceId}/${endpointId}`
+        : `td/${deviceId}`;
+
+    logDebug(
+      `Executing command on device ${deviceId}${endpointId !== undefined ? `/${endpointId}` : ""} via client ${clientId}: topic=${topic}, message=${JSON.stringify(message)}`
+    );
+
+    try {
+      client.sendMessage({
+        action: "publish",
+        topic,
+        message,
+      });
+    } catch (error) {
+      logError(`Error executing command on ${deviceId}:`, error);
+      Sentry.captureException(error, {
+        tags: { component: "command-execution" },
+        extra: { userId, clientId, deviceId, endpointId, message },
+      });
+    }
+  };
 
   start(httpPort: number, tcpPort: number) {
     this.httpServer.listen(httpPort);
@@ -133,9 +210,7 @@ export class HomedServerController {
       .on("expose", (topic, devices) =>
         this.clientDeviceUpdated(client, topicToDeviceId(topic), devices)
       )
-      .on("fd", (topic, data) =>
-        this.deviceDataUpdated(client, topicToDeviceId(topic), data)
-      );
+      .on("fd", (topic, data) => this.deviceDataUpdated(client, topic, data));
   };
 
   clientDisconnected = (client: ClientConnection<User>) => {
@@ -300,21 +375,24 @@ export class HomedServerController {
 
   deviceDataUpdated = (
     client: ClientConnection<User>,
-    deviceId: DeviceId,
+    topic: string,
     data: Record<string, unknown>
   ) => {
     if (!client.user || !client.uniqueId) return;
 
+    const { deviceId, endpointId } = parseTopicDeviceId(topic);
+
     logDebug(
-      `Device data update from ${client.uniqueId}. ${deviceId}: ${JSON.stringify(data)}`
+      `Device data update from ${client.uniqueId}. ${deviceId}${endpointId !== undefined ? `/${endpointId}` : ""}: ${JSON.stringify(data)}`
     );
 
-    // Update device state in cache - state change events handled by DeviceRepository
+    // Update device state in cache with endpoint-specific data
     this.deviceCache.updateDeviceState(
       client.user.id,
       client.uniqueId,
       deviceId,
-      data
+      data,
+      endpointId
     );
   };
 }

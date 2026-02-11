@@ -389,6 +389,95 @@ describe("DeviceRepository", () => {
     });
   });
 
+  describe("getDevicesWithState", () => {
+    it("should return devices with their current states", () => {
+      const device1 = createMockDevice();
+      const device2 = createMockDevice("zigbee/device2" as DeviceId);
+
+      repository.syncClientDevices(userId, uniqueId, [device1, device2]);
+      repository.updateDeviceState(userId, uniqueId, deviceId, {
+        status: "on",
+        data: { brightness: 75 },
+      });
+      repository.updateDeviceState(
+        userId,
+        uniqueId,
+        "zigbee/device2" as DeviceId,
+        { status: "off" }
+      );
+
+      const devicesWithState = repository.getDevicesWithState(userId);
+
+      expect(devicesWithState).toHaveLength(2);
+      expect(devicesWithState[0]).toMatchObject({
+        device: device1,
+        clientId: uniqueId,
+        state: { status: "on", data: { brightness: 75 } },
+      });
+      expect(devicesWithState[1]).toMatchObject({
+        device: device2,
+        clientId: uniqueId,
+        state: { status: "off" },
+      });
+    });
+
+    it("should return empty state for devices without state updates", () => {
+      const device = createMockDevice();
+      repository.syncClientDevices(userId, uniqueId, [device]);
+
+      const devicesWithState = repository.getDevicesWithState(userId);
+
+      expect(devicesWithState).toHaveLength(1);
+      expect(devicesWithState[0]).toMatchObject({
+        device,
+        clientId: uniqueId,
+        state: {},
+      });
+    });
+
+    it("should include devices from multiple clients", () => {
+      const client2 = createClientId("client2");
+      const device1 = createMockDevice();
+      const device2 = createMockDevice("zigbee/device2" as DeviceId);
+
+      repository.syncClientDevices(userId, uniqueId, [device1]);
+      repository.syncClientDevices(userId, client2, [device2]);
+      repository.updateDeviceState(userId, uniqueId, deviceId, {
+        status: "on",
+      });
+      repository.updateDeviceState(
+        userId,
+        client2,
+        "zigbee/device2" as DeviceId,
+        { status: "off" }
+      );
+
+      const devicesWithState = repository.getDevicesWithState(userId);
+
+      expect(devicesWithState).toHaveLength(2);
+      expect(devicesWithState.map(d => d.clientId)).toContain(uniqueId);
+      expect(devicesWithState.map(d => d.clientId)).toContain(client2);
+    });
+
+    it("should return empty array for user with no devices", () => {
+      const devicesWithState = repository.getDevicesWithState(userId);
+
+      expect(devicesWithState).toEqual([]);
+    });
+
+    it("should not filter out devices without endpoints (provider-agnostic)", () => {
+      const device = createMockDevice();
+      device.endpoints = []; // Device with no endpoints
+
+      repository.syncClientDevices(userId, uniqueId, [device]);
+
+      const devicesWithState = repository.getDevicesWithState(userId);
+
+      expect(devicesWithState).toHaveLength(1);
+      expect(devicesWithState[0].device.endpoints).toEqual([]);
+    });
+  });
+
   describe("state change events", () => {
     it("should emit deviceStateChanged event when state actually changes", () => {
       const device = createMockDevice();
@@ -407,7 +496,6 @@ describe("DeviceRepository", () => {
       expect(listener).toHaveBeenCalledWith({
         userId,
         clientId: uniqueId,
-        deviceId,
         device,
         prevState: {},
         newState: expect.objectContaining(newState),
@@ -451,7 +539,6 @@ describe("DeviceRepository", () => {
       expect(listener).toHaveBeenCalledWith({
         userId,
         clientId: uniqueId,
-        deviceId,
         device,
         prevState: {
           status: "on",

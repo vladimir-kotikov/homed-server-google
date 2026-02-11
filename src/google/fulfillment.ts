@@ -3,18 +3,13 @@ import debug from "debug";
 import { google } from "googleapis";
 import { match, P } from "ts-pattern";
 import type { User, UserId, UserRepository } from "../db/repository.ts";
-import type {
-  DeviceId,
-  DeviceRepository,
-  DeviceStateChangeEvent,
-} from "../device.ts";
-import { fastDeepEqual, safeParse } from "../utility.ts";
+import type { DeviceRepository, DeviceStateChangeEvent } from "../device.ts";
+import { safeParse } from "../utility.ts";
 import {
-  getEndpointIdFromGoogleDeviceId,
-  getGoogleDeviceIds,
-  mapToGoogleDevices,
-  mapToGoogleStateReports,
-  mapToHomedCommand,
+  getStateUpdates,
+  mapExecutionRequest,
+  mapQueryResponse,
+  mapSyncResponse,
 } from "./mapper.ts";
 import {
   SmartHomeRequestSchema,
@@ -22,9 +17,8 @@ import {
   type QueryRequestPayload,
 } from "./schema.ts";
 import type {
+  ExecuteResponseCommand,
   ExecuteResponsePayload,
-  GoogleDeviceId,
-  GoogleDeviceState,
   QueryResponsePayload,
   SmartHomeResponse,
   SyncResponsePayload,
@@ -32,7 +26,6 @@ import type {
 
 const logDebug = debug("homed:google:fulfillment:debug");
 const logError = debug("homed:google:fulfillment:error");
-const log = debug("homed:google:fulfillment");
 
 const debounce = <Args extends unknown[], R>(
   fn: (...args: Args) => R,
@@ -51,6 +44,12 @@ const debounce = <Args extends unknown[], R>(
 };
 
 class RequestError extends Error {}
+
+const reportError =
+  (message: string, extra?: Record<string, unknown>) => (error: unknown) => {
+    logError(message, error, extra);
+    Sentry.captureException(error, { extra });
+  };
 
 export class FulfillmentController {
   private userRepository: UserRepository;
@@ -81,8 +80,8 @@ export class FulfillmentController {
     }
 
     this.deviceRepository
-      // device updates trigger for each device, so debounce to avoid multiple
-      // rapid sync requests
+      // device updates trigger for each device, so debounce
+      // to avoid multiple rapid sync requests
       .on("devicesUpdated", debounce(this.requestSync, 300))
       .on("deviceStateChanged", this.handleDeviceStateChanged);
   }
@@ -96,14 +95,7 @@ export class FulfillmentController {
     this.homegraph?.devices
       .requestSync({ requestBody: { agentUserId: userId, async: true } })
       .then(() => logDebug("Device update requested for user %s", userId))
-      .catch(error => {
-        logError(
-          "Failed to request device sync for user %s: %O",
-          userId,
-          error
-        );
-        Sentry.captureException(error);
-      });
+      .catch(reportError("requestSync", { userId }));
 
   /**
    * Handle device state change events from repository
@@ -112,62 +104,17 @@ export class FulfillmentController {
   private handleDeviceStateChanged = async ({
     userId,
     clientId,
-    deviceId,
     device,
     prevState,
     newState,
   }: DeviceStateChangeEvent) => {
-    if (!device.endpoints.some(ep => ep.exposes && ep.exposes.length > 0)) {
-      logDebug(`Skipping Google state report: device has no supported traits`);
+    const states = getStateUpdates(device, clientId, prevState, newState);
+    if (!states) {
       return;
     }
 
-    const prevStates = mapToGoogleStateReports(
-      device,
-      clientId,
-      deviceId,
-      prevState
-    ).reduce(
-      (states, { googleDeviceId, googleState }) => {
-        states[googleDeviceId] = googleState;
-        return states;
-      },
-      {} as Record<GoogleDeviceId, GoogleDeviceState>
-    );
-
-    const newStates = mapToGoogleStateReports(
-      device,
-      clientId,
-      deviceId,
-      newState
-    ).reduce(
-      (states, { googleDeviceId, googleState }) => {
-        states[googleDeviceId] = googleState;
-        return states;
-      },
-      {} as Record<GoogleDeviceId, GoogleDeviceState>
-    );
-
-    // Only report state changes to Google if there are actual differences in the reported state
-    const stateUpdates = Object.fromEntries(
-      Object.entries(newStates).filter(([googleDeviceId, newState]) => {
-        const prevState = prevStates[googleDeviceId as GoogleDeviceId];
-        const hasChanged = !fastDeepEqual(prevState, newState);
-        if (!hasChanged) {
-          logDebug(
-            `Skipping Google state report for device ${googleDeviceId}: no state change detected`
-          );
-        }
-        return hasChanged;
-      })
-    );
-
-    if (Object.keys(stateUpdates).length === 0) {
-      return;
-    }
-
-    log(
-      `Reporting state to Google for ${Object.keys(stateUpdates).length} device(s): ${JSON.stringify(stateUpdates)}`
+    logDebug(
+      `Reporting state to Google for ${Object.keys(states).length} device(s): ${JSON.stringify(states)}`
     );
 
     return this.homegraph?.devices
@@ -175,13 +122,12 @@ export class FulfillmentController {
         requestBody: {
           requestId: crypto.randomUUID(),
           agentUserId: userId,
-          payload: { devices: { states: stateUpdates } },
+          payload: { devices: { states } },
         },
       })
-      .catch(error => {
-        logError("Failed to report state change: %O", error);
-        Sentry.captureException(error);
-      });
+      .catch(
+        reportError("reportStateChange", { userId, deviceId: device.key })
+      );
   };
 
   handleFulfillment = async (
@@ -191,7 +137,7 @@ export class FulfillmentController {
     safeParse(requestData, SmartHomeRequestSchema)
       .toPromise()
       .then(
-        async ({ requestId, inputs: [input] }) =>
+        ({ requestId, inputs: [input] }) =>
           match(input)
             .with({ intent: "action.devices.SYNC" }, () =>
               this.handleSync(user)
@@ -215,123 +161,74 @@ export class FulfillmentController {
       );
 
   private handleSync = async (user: User): Promise<SyncResponsePayload> => {
-    const allDevices = this.deviceRepository
-      .getDevices(user.id)
+    const devicesWithStates = this.deviceRepository
+      .getDevicesWithState(user.id)
       .filter(({ device }) => device.endpoints.length > 0);
 
-    const googleDevices = allDevices
-      .flatMap(({ device, clientId }) => {
-        const allExposes = device.endpoints
-          .flatMap(ep => ep.exposes)
-          .filter((e, i, a) => a.indexOf(e) === i);
-        log(
-          `Homed device: name="${device.name}", exposes=${JSON.stringify(allExposes)}, manufacturer="${device.manufacturer}", model="${device.model}"`
-        );
-        return mapToGoogleDevices(device, clientId);
-      })
-      .filter(device => {
-        const hasTraits = device.traits.length > 0;
-        if (!hasTraits) {
-          log(
-            `Excluding device "${device.name.name}" (${device.id}): no supported traits`
-          );
-        } else {
-          log(
-            `Google device: id="${device.id}", type="${device.type}", traits=${JSON.stringify(device.traits)}, name.name="${device.name.name}"`
-          );
-        }
-        return hasTraits;
-      });
+    const response = mapSyncResponse(user.id, devicesWithStates);
 
-    log(
-      `Syncing ${googleDevices.length} Google devices from ${allDevices.length} Homed devices`
+    logDebug(
+      `Syncing ${response.devices.length} Google devices from ${devicesWithStates.length} Homed devices`
     );
 
-    return {
-      agentUserId: user.id,
-      devices: googleDevices,
-    };
+    return response;
   };
 
   private handleQuery = async (
     request: QueryRequestPayload,
     user: User
-  ): Promise<QueryResponsePayload> => {
-    const requestedDeviceIds = new Set(request.devices.map(d => d.id));
-
-    const mappedStates = this.deviceRepository
-      .getDevices(user.id)
-      .flatMap(({ device, clientId }) => {
-        const state = this.deviceRepository.getDeviceState(
-          user.id,
-          device.key as DeviceId,
-          clientId
-        );
-
-        // Use mapper to get all Google device IDs and states for this Homed device
-        const stateReports = mapToGoogleStateReports(
-          device,
-          clientId,
-          device.key as DeviceId,
-          state ?? {}
-        );
-
-        // Filter to only requested device IDs
-        return stateReports
-          .filter(({ googleDeviceId }) =>
-            requestedDeviceIds.has(googleDeviceId)
-          )
-          .map(
-            ({ googleDeviceId, googleState }) =>
-              [googleDeviceId, googleState] as const
-          );
-      });
-
-    return { devices: Object.fromEntries(mappedStates) };
-  };
+  ): Promise<QueryResponsePayload> =>
+    mapQueryResponse(
+      new Set(request.devices.map(d => d.id)),
+      this.deviceRepository.getDevicesWithState(user.id)
+    );
 
   private handleExecute = async (
     request: ExecuteRequestPayload,
     user: User
   ): Promise<ExecuteResponsePayload> => {
-    const homedCommands = request.commands.flatMap(({ devices, execution }) => {
-      const requestedDeviceIds = new Set(devices.map(d => d.id));
+    const commandResults: ExecuteResponseCommand[] = [];
+    const allDevices = this.deviceRepository.getDevices(user.id);
 
-      return this.deviceRepository
-        .getDevices(user.id)
-        .flatMap(({ device, clientId }) => {
-          // Get all Google device IDs that exist for this Homed device
-          const googleDeviceIds = getGoogleDeviceIds(device, clientId);
+    for (const { devices, execution } of request.commands) {
+      const commandsToSend = mapExecutionRequest(
+        {
+          userId: user.id,
+          googleDeviceIds: devices.map(d => d.id),
+          commands: execution,
+        },
+        allDevices
+      );
 
-          return googleDeviceIds
-            .filter(googleId => requestedDeviceIds.has(googleId))
-            .map(googleId => ({
-              device,
-              googleId,
-              endpointId: getEndpointIdFromGoogleDeviceId(googleId),
-            }));
-        })
-        .flatMap(({ device, endpointId }) => {
-          // For multi-endpoint devices, filter to only the requested endpoint
-          const deviceForCommand =
-            endpointId !== undefined
-              ? {
-                  ...device,
-                  endpoints: device.endpoints.filter(
-                    ep => ep.id === endpointId
-                  ),
-                }
-              : device;
+      for (const {
+        userId,
+        clientId,
+        deviceId,
+        endpointId,
+        googleDeviceIds,
+        message,
+      } of commandsToSend) {
+        logDebug(
+          `Executing command on device ${googleDeviceIds[0]}${endpointId !== undefined ? `/${endpointId}` : ""}: message=${JSON.stringify(message)}`
+        );
 
-          return execution.map(command =>
-            mapToHomedCommand(deviceForCommand, command)
-          );
+        const executed = this.deviceRepository.executeCommand(
+          userId,
+          clientId,
+          deviceId,
+          endpointId,
+          message
+        );
+
+        commandResults.push({
+          ids: googleDeviceIds,
+          status: executed ? "SUCCESS" : "OFFLINE",
+          ...(executed ? {} : { errorCode: "deviceOffline" }),
         });
-    });
+      }
+    }
 
-    console.log("Homed commands to execute:", homedCommands);
-    // FIXME: implement proper command result handling
-    return { commands: [] };
+    return { commands: commandResults };
   };
 
   private handleDisconnect = (user: User) =>

@@ -2,7 +2,7 @@ import { EventEmitter } from "node:events";
 import type { UserId } from "./db/repository.ts";
 import type { ClientId } from "./homed/client.ts";
 import type { EndpointOptions } from "./homed/schema.ts";
-import type { DeviceState } from "./homed/types.ts";
+import type { CommandMessage, DeviceState } from "./homed/types.ts";
 import { fastDeepEqual } from "./utility.ts";
 
 export type DeviceId = string & { readonly __deviceId: unique symbol };
@@ -29,16 +29,32 @@ export interface HomedEndpoint {
   options?: EndpointOptions;
 }
 
+export type DeviceWithState = {
+  clientId: ClientId;
+  device: HomedDevice;
+  state: DeviceState;
+};
+
 /**
  * Event payload for device state changes
  */
 export interface DeviceStateChangeEvent {
   userId: UserId;
   clientId: ClientId;
-  deviceId: DeviceId;
   device: HomedDevice;
   prevState: DeviceState;
   newState: DeviceState;
+}
+
+/**
+ * Event payload for command execution requests
+ */
+export interface ExecuteCommandEvent {
+  userId: UserId;
+  clientId: ClientId;
+  deviceId: DeviceId;
+  endpointId?: number;
+  message: CommandMessage;
 }
 
 /**
@@ -47,6 +63,7 @@ export interface DeviceStateChangeEvent {
 export class DeviceRepository extends EventEmitter<{
   devicesUpdated: [UserId];
   deviceStateChanged: [DeviceStateChangeEvent];
+  executeCommand: [ExecuteCommandEvent];
 }> {
   private devices: Record<UserId, Record<ClientId, HomedDevice[]>> = {};
   private deviceState: Record<
@@ -82,6 +99,27 @@ export class DeviceRepository extends EventEmitter<{
 
     return result;
   };
+
+  /**
+   * Get all devices for a user with their current state
+   * Returns devices from all connected clients with their state data
+   * Provider-agnostic: does not filter by capabilities
+   */
+  getDevicesWithState = (
+    userId: UserId
+  ): Array<{
+    clientId: ClientId;
+    device: HomedDevice;
+    state: DeviceState;
+  }> =>
+    Object.entries(this.devices[userId] ?? {}).flatMap(([clientId, devices]) =>
+      devices.map(device => ({
+        clientId: clientId as ClientId,
+        device,
+        state:
+          this.getDeviceState(userId, device.key, clientId as ClientId) ?? {},
+      }))
+    );
 
   removeClientDevices = (userId: UserId, clientId?: ClientId): void => {
     if (clientId) {
@@ -157,7 +195,6 @@ export class DeviceRepository extends EventEmitter<{
       this.emit("deviceStateChanged", {
         userId,
         clientId,
-        deviceId,
         device,
         prevState,
         newState,
@@ -169,7 +206,8 @@ export class DeviceRepository extends EventEmitter<{
     userId: UserId,
     clientId: ClientId,
     deviceId: DeviceId,
-    state: Partial<DeviceState>
+    state: Partial<DeviceState>,
+    endpointId?: number
   ): void => {
     // Get current state
     const prevState =
@@ -177,7 +215,23 @@ export class DeviceRepository extends EventEmitter<{
       ({} satisfies DeviceState);
 
     // Merge with new state
-    const newState = { ...prevState, ...state };
+    let newState: DeviceState;
+
+    if (endpointId !== undefined) {
+      // Store endpoint-specific state nested under endpoint number
+      const prevStateWithEndpoints = prevState as DeviceState & {
+        endpoints?: Record<number, Partial<DeviceState>>;
+      };
+      const endpoints = { ...prevStateWithEndpoints.endpoints };
+      endpoints[endpointId] = {
+        ...(endpoints[endpointId] ?? {}),
+        ...state,
+      };
+      newState = { ...prevState, endpoints } as DeviceState;
+    } else {
+      // Merge at root level for non-endpoint state
+      newState = { ...prevState, ...state };
+    }
 
     // Check if state actually changed
     if (fastDeepEqual(prevState, newState)) {
@@ -193,7 +247,6 @@ export class DeviceRepository extends EventEmitter<{
       this.emit("deviceStateChanged", {
         userId,
         clientId,
-        deviceId,
         device,
         prevState,
         newState,
@@ -229,4 +282,31 @@ export class DeviceRepository extends EventEmitter<{
   // Used only for debugging
   getDevicesStates = (userId: UserId) =>
     Object.values(this.deviceState[userId] ?? {});
+
+  /**
+   * Execute a command on a device
+   * Validates device exists and emits executeCommand event
+   *
+   * @param userId - User ID
+   * @param clientId - Client ID
+   * @param deviceId - Device ID
+   * @param endpointId - Optional endpoint ID for multi-endpoint devices
+   * @param message - Command message
+   * @returns true if device exists and event emitted, false otherwise
+   */
+  executeCommand = (
+    userId: UserId,
+    clientId: ClientId,
+    deviceId: DeviceId,
+    endpointId: number | undefined,
+    message: CommandMessage
+  ): boolean =>
+    !!this.getDevice(userId, clientId, deviceId) &&
+    this.emit("executeCommand", {
+      userId,
+      clientId,
+      deviceId,
+      endpointId,
+      message,
+    });
 }

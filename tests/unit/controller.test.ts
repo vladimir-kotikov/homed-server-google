@@ -48,7 +48,9 @@ describe("HomedServerController", () => {
       };
 
       // Trigger device data update
-      (controller as any).deviceDataUpdated(mockClient, deviceId, { on: true });
+      (controller as any).deviceDataUpdated(mockClient, `fd/${deviceId}`, {
+        on: true,
+      });
 
       // Verify state was updated in cache
       const state = deviceCache.getDeviceState(userId, deviceId, clientId);
@@ -72,7 +74,7 @@ describe("HomedServerController", () => {
       deviceCache.on("deviceStateChanged", eventSpy);
 
       // Update device data
-      (controller as any).deviceDataUpdated(mockClient, deviceId, {
+      (controller as any).deviceDataUpdated(mockClient, `fd/${deviceId}`, {
         on: true,
       });
 
@@ -81,7 +83,6 @@ describe("HomedServerController", () => {
         expect.objectContaining({
           userId,
           clientId,
-          deviceId,
           device,
           newState: { on: true },
         })

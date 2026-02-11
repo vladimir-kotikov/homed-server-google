@@ -155,14 +155,23 @@ export class WebApp {
       process.env.HOMED_USER_ID &&
       process.env.HOMED_CLIENT_ID
     ) {
-      this.app = this.app.use("/inspect", debugLoggedIn, (req, res) =>
-        res.json({
-          user: req.user,
-          session: req.session,
-          devices: this.deviceRepository.getDevices(req.user!.id),
-          state: this.deviceRepository.getDevicesStates(req.user!.id),
-        })
-      );
+      console.log("[APP INIT] Setting up /inspect and /fulfillment-dev routes");
+      this.app = this.app
+        .post(
+          "/fulfillment-dev",
+          debugLoggedIn,
+          requireLoggedIn,
+          this.handleFulfillment
+        )
+        .use("/inspect", debugLoggedIn, (req, res) => {
+          console.log("[INSPECT] Request received");
+          return res.json({
+            user: req.user,
+            session: req.session,
+            devices: this.deviceRepository.getDevices(req.user!.id),
+            state: this.deviceRepository.getDevicesStates(req.user!.id),
+          });
+        });
     }
 
     Sentry.setupExpressErrorHandler(this.app);

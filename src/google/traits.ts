@@ -75,11 +75,15 @@ export interface GenericTraitMapper<
   /**
    * Convert Google command to Homed topic/message
    * Command params must match the generic TParams type
+   * @param deviceId - Base device ID (without endpoint)
+   * @param command - Google command to execute
+   * @param endpointId - Optional endpoint ID for multi-endpoint devices
    */
   mapCommand(
     deviceId: string,
-    command: GoogleCommand
-  ): { topic: string; message: CommandMessage } | undefined;
+    command: GoogleCommand,
+    endpointId?: number
+  ): CommandMessage | undefined;
 }
 
 /**
@@ -137,7 +141,7 @@ export const OnOffTrait: GenericTraitMapper<
     return;
   },
 
-  mapCommand(deviceId: string, command: GoogleCommand) {
+  mapCommand(deviceId: string, command: GoogleCommand, _endpointId?: number) {
     if (command.command !== "action.devices.commands.OnOff") {
       return;
     }
@@ -146,12 +150,9 @@ export const OnOffTrait: GenericTraitMapper<
       return;
     }
 
-    const onState = command.params.on ? 1 : 0;
+    const status = command.params.on ? "on" : "off";
 
-    return {
-      topic: `td/${deviceId}/switch`,
-      message: { on: onState },
-    };
+    return { status };
   },
 };
 
@@ -193,7 +194,7 @@ export const BrightnessTrait: GenericTraitMapper<
     return;
   },
 
-  mapCommand(deviceId: string, command: GoogleCommand) {
+  mapCommand(deviceId: string, command: GoogleCommand, _endpointId?: number) {
     if (command.command !== "action.devices.commands.BrightnessAbsolute") {
       return;
     }
@@ -207,10 +208,10 @@ export const BrightnessTrait: GenericTraitMapper<
       Math.min(100, Number(command.params.brightness))
     );
 
-    return {
-      topic: `td/${deviceId}/brightness`,
-      message: { brightness },
-    };
+    // Convert Google's 0-100% to Homed's 0-255 range
+    const level = Math.round((brightness * 255) / 100);
+
+    return { level };
   },
 };
 
@@ -282,7 +283,7 @@ export const ColorSettingTrait: GenericTraitMapper<
     return;
   },
 
-  mapCommand(deviceId: string, command: GoogleCommand) {
+  mapCommand(deviceId: string, command: GoogleCommand, _endpointId?: number) {
     if (command.command !== "action.devices.commands.ColorAbsolute") {
       return;
     }
@@ -312,10 +313,7 @@ export const ColorSettingTrait: GenericTraitMapper<
       return;
     }
 
-    return {
-      topic: `td/${deviceId}/color`,
-      message,
-    };
+    return message;
   },
 };
 
@@ -362,7 +360,7 @@ export const OpenCloseTrait: GenericTraitMapper<
     return;
   },
 
-  mapCommand(deviceId: string, command: GoogleCommand) {
+  mapCommand(deviceId: string, command: GoogleCommand, _endpointId?: number) {
     if (command.command !== "action.devices.commands.OpenClose") {
       return;
     }
@@ -372,10 +370,8 @@ export const OpenCloseTrait: GenericTraitMapper<
     }
 
     const openPercent = command.params.openPercent ?? 100;
-    return {
-      topic: `td/${deviceId}/position`,
-      message: { position: openPercent },
-    };
+
+    return { position: openPercent };
   },
 };
 
@@ -449,7 +445,7 @@ export const TemperatureSettingTrait: GenericTraitMapper<
     return Object.keys(state).length > 0 ? state : undefined;
   },
 
-  mapCommand(deviceId: string, command: GoogleCommand) {
+  mapCommand(deviceId: string, command: GoogleCommand, _endpointId?: number) {
     if (
       command.command ===
       "action.devices.commands.ThermostatTemperatureSetpoint"
@@ -458,10 +454,7 @@ export const TemperatureSettingTrait: GenericTraitMapper<
         return;
       }
       return {
-        topic: `td/${deviceId}/setpoint`,
-        message: {
-          setpoint: command.params.thermostatTemperatureSetpoint,
-        },
+        setpoint: command.params.thermostatTemperatureSetpoint,
       };
     }
 
@@ -469,10 +462,7 @@ export const TemperatureSettingTrait: GenericTraitMapper<
       if (!isTemperatureModeParameters(command.params)) {
         return;
       }
-      return {
-        topic: `td/${deviceId}/mode`,
-        message: { mode: command.params.thermostatMode },
-      };
+      return { mode: command.params.thermostatMode };
     }
 
     return;

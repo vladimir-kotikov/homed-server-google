@@ -237,7 +237,7 @@ export interface ExecuteResponsePayload {
   commands: ExecuteResponseCommand[];
 }
 
-type SmartHomeResponseBase<T> = {
+export type SmartHomeResponseBase<T> = {
   requestId: string;
   payload: T;
 };
