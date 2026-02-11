@@ -17,7 +17,6 @@ export const createMockDevice = (
   key,
   topic: key,
   name: name ?? `Device ${key}`,
-  available: true,
   endpoints: [
     {
       id: 0,

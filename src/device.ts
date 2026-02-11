@@ -15,7 +15,6 @@ export interface HomedDevice {
   topic: string; // MQTT topic for the device
   name: string; // Human-readable name
   description?: string; // Optional description
-  available: boolean; // Whether device is online
   endpoints: HomedEndpoint[];
   manufacturer?: string;
   model?: string;
@@ -182,24 +181,12 @@ export class DeviceRepository extends EventEmitter<{
     available: boolean
   ): void => {
     const device = this.getDevice(userId, clientId, deviceId);
-    if (device && device.available !== available) {
-      const prevState =
-        this.deviceState[userId]?.[clientId]?.[deviceId] ??
-        ({} satisfies DeviceState);
-
-      device.available = available;
-
-      // currentState remains unchanged - availability is tracked on device object, not in state
-      const newState = prevState;
-
-      this.emit("deviceStateChanged", {
-        userId,
-        clientId,
-        device,
-        prevState,
-        newState,
-      });
+    if (!device) {
+      return;
     }
+
+    // Update availability as state - this flows through normal state change detection
+    this.updateDeviceState(userId, clientId, deviceId, { available });
   };
 
   updateDeviceState = (
@@ -222,7 +209,9 @@ export class DeviceRepository extends EventEmitter<{
       const prevStateWithEndpoints = prevState as DeviceState & {
         endpoints?: Record<number, Partial<DeviceState>>;
       };
-      const endpoints = { ...prevStateWithEndpoints.endpoints };
+      const endpoints: Record<number, Partial<DeviceState>> = {
+        ...prevStateWithEndpoints.endpoints,
+      };
       endpoints[endpointId] = {
         ...(endpoints[endpointId] ?? {}),
         ...state,

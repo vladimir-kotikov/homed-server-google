@@ -64,7 +64,6 @@ describe("Dashboard - Connected Clients", () => {
         key: "device-1" as DeviceId,
         topic: "device/1",
         name: "Test Device",
-        available: true,
         endpoints: [],
       };
 
@@ -83,7 +82,6 @@ describe("Dashboard - Connected Clients", () => {
         key: "test-device" as DeviceId,
         topic: "test/device",
         name: "Device",
-        available: true,
         endpoints: [],
       };
 
@@ -110,7 +108,6 @@ describe("Dashboard - Connected Clients", () => {
         key: "test-device" as DeviceId,
         topic: "test/device",
         name: "Device",
-        available: true,
         endpoints: [],
       };
 
@@ -140,7 +137,6 @@ describe("Dashboard - Connected Clients", () => {
         key: "device-1" as DeviceId,
         topic: "device/1",
         name: "Test Device",
-        available: true,
         endpoints: [],
       };
 
@@ -161,7 +157,6 @@ describe("Dashboard - Connected Clients", () => {
         key: "device-1" as DeviceId,
         topic: "device/1",
         name: "Device",
-        available: true,
         endpoints: [],
       };
 
@@ -187,14 +182,12 @@ describe("Dashboard - Connected Clients", () => {
           key: "device-1" as DeviceId,
           topic: "device/1",
           name: "Light 1",
-          available: true,
           endpoints: [],
         },
         {
           key: "device-2" as DeviceId,
           topic: "device/2",
           name: "Light 2",
-          available: true,
           endpoints: [],
         },
       ];

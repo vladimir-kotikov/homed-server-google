@@ -152,9 +152,9 @@ describe("DeviceRepository", () => {
       repository.syncClientDevices(userId, uniqueId, [device]);
 
       repository.setDeviceAvailable(userId, uniqueId, deviceId, true);
-      const retrievedDevice = repository.getDevice(userId, uniqueId, deviceId);
+      const state = repository.getDeviceState(userId, deviceId, uniqueId);
 
-      expect(retrievedDevice?.available).toBe(true);
+      expect(state?.available).toBe(true);
     });
 
     it("should track device as unavailable", () => {
@@ -162,9 +162,9 @@ describe("DeviceRepository", () => {
       repository.syncClientDevices(userId, uniqueId, [device]);
 
       repository.setDeviceAvailable(userId, uniqueId, deviceId, false);
-      const retrievedDevice = repository.getDevice(userId, uniqueId, deviceId);
+      const state = repository.getDeviceState(userId, deviceId, uniqueId);
 
-      expect(retrievedDevice?.available).toBe(false);
+      expect(state?.available).toBe(false);
     });
 
     it("should set and merge device state", () => {
@@ -191,11 +191,11 @@ describe("DeviceRepository", () => {
       repository.setDeviceAvailable(userId, uniqueId, deviceId, true);
       repository.setDeviceAvailable(userId, client2, deviceId, false);
 
-      const retrievedDevice1 = repository.getDevice(userId, uniqueId, deviceId);
-      const retrievedDevice2 = repository.getDevice(userId, client2, deviceId);
+      const state1 = repository.getDeviceState(userId, deviceId, uniqueId);
+      const state2 = repository.getDeviceState(userId, deviceId, client2);
 
-      expect(retrievedDevice1?.available).toBe(true);
-      expect(retrievedDevice2?.available).toBe(false);
+      expect(state1?.available).toBe(true);
+      expect(state2?.available).toBe(false);
     });
 
     it("should keep availability separate per user", () => {
@@ -208,11 +208,11 @@ describe("DeviceRepository", () => {
       repository.setDeviceAvailable(userId, uniqueId, deviceId, true);
       repository.setDeviceAvailable(user2, uniqueId, deviceId, false);
 
-      const retrievedDevice1 = repository.getDevice(userId, uniqueId, deviceId);
-      const retrievedDevice2 = repository.getDevice(user2, uniqueId, deviceId);
+      const state1 = repository.getDeviceState(userId, deviceId, uniqueId);
+      const state2 = repository.getDeviceState(user2, deviceId, uniqueId);
 
-      expect(retrievedDevice1?.available).toBe(true);
-      expect(retrievedDevice2?.available).toBe(false);
+      expect(state1?.available).toBe(true);
+      expect(state2?.available).toBe(false);
     });
   });
 

@@ -42,7 +42,6 @@ interface DeviceCreationOptions {
   topic?: string;
   name?: string;
   description?: string;
-  available?: boolean;
   deviceOverrides?: Partial<HomedDevice>;
 }
 
@@ -69,14 +68,12 @@ const createDevice = ({
   topic = "home/test-device",
   name = "Test Device",
   description,
-  available = true,
   deviceOverrides = {},
 }: DeviceCreationOptions): HomedDevice => {
   const device: HomedDevice = {
     key: key || generateRandomKey(),
     topic,
     name,
-    available,
     endpoints: exposes.map((endpointExposes, index) => ({
       id: index + 1,
       exposes: endpointExposes,
@@ -284,7 +281,6 @@ describe("CapabilityMapper", () => {
     it("should handle device with unavailable status affecting device detection", () => {
       const device = createDevice({
         exposes: [["light"]],
-        available: false,
       });
 
       const [google] = mapToGoogleDevices(device, testClientId);
@@ -498,7 +494,6 @@ describe("CapabilityMapper", () => {
       const device3 = createDevice({
         exposes: [["light"]],
         name: "Offline Light",
-        available: false,
       });
       const [google3] = mapToGoogleDevices(device3, "client1" as ClientId);
       expect(google3.name.name).toBe("Offline Light");
@@ -587,10 +582,9 @@ describe("CapabilityMapper", () => {
     it("should reflect offline status correctly", () => {
       const device = createDevice({
         exposes: [["switch"]],
-        available: false,
       });
 
-      const state = mapToGoogleState(device, { on: true });
+      const state = mapToGoogleState(device, { on: true, available: false });
       expect(state.online).toBe(false);
     });
 
@@ -2387,10 +2381,9 @@ describe("CapabilityMapper", () => {
     it("should handle availability reflected in online status", () => {
       const device = createDevice({
         exposes: [["switch"]],
-        available: false, // Device is offline
       });
-      const prevState = { on: true };
-      const newState = { on: false }; // State changed
+      const prevState = { on: true, available: true };
+      const newState = { on: false, available: false }; // State and availability changed
 
       const report = getStateUpdates(device, testClientId, prevState, newState);
 

@@ -293,7 +293,6 @@ export class HomedServerController {
             model: device.modelName,
             firmware: device.firmware,
             version: device.version,
-            available: false,
             endpoints: [],
           }) as HomedDevice
       );

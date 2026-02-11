@@ -56,6 +56,8 @@ export type ColorValue = string | RgbColor | XyColor | HsColor;
  * Base properties common to all device states
  */
 export interface BaseDeviceState {
+  /** Device availability (online/offline) */
+  available?: boolean;
   /** Device online/availability status */
   status?: "online" | "offline" | "on" | "off";
   /** Link quality (0-255) */
@@ -68,6 +70,7 @@ export interface BaseDeviceState {
   tamper?: boolean;
   /** Message count */
   messageCount?: number;
+  endpoints?: Record<number, DeviceState>;
   /** Allow additional unknown properties */
   [key: string]: unknown;
 }
