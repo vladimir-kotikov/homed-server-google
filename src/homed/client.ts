@@ -51,7 +51,7 @@ export class ClientConnection<U extends { id: string }> extends EventEmitter<{
   constructor(
     socket: Socket,
     timeout: number = 10_000,
-    maxBufferSize: number = 10 * 2 ** 10 // 10 kB
+    maxBufferSize: number = 100 * 2 ** 10 // 10 kB
   ) {
     super();
     this.maxBufferSize = maxBufferSize;
@@ -108,7 +108,20 @@ export class ClientConnection<U extends { id: string }> extends EventEmitter<{
   private receiveData(data: Buffer): void {
     this.buf = Buffer.concat([this.buf, data]);
     if (this.buf.length > this.maxBufferSize) {
-      logError(`Buffer size exceeded limit`);
+      logError(
+        `Buffer size exceeded limit (${this.buf.length} bytes) for client ${this.uniqueId ?? "unknown"} (user: ${this.user?.id ?? "not authorized"})`
+      );
+      Sentry.captureMessage("Client buffer size exceeded", {
+        level: "warning",
+        tags: {
+          "client.unique_id": this.uniqueId ?? "not authenticated",
+          "client.user_id": this.user?.id ?? "not authenticated",
+        },
+        extra: {
+          bufferSize: this.buf.length,
+          maxBufferSize: this.maxBufferSize,
+        },
+      });
       this.close();
       return;
     }
@@ -156,6 +169,15 @@ export class ClientConnection<U extends { id: string }> extends EventEmitter<{
         continue;
       }
 
+      // Stop processing if not yet fully authorized (both uniqueId and user must be set)
+      // Messages will remain in buffer and be processed after authorization completes
+      if (!this.user) {
+        logDebug(
+          `Pausing message processing for client ${this.uniqueId} - waiting for authorization`
+        );
+        break;
+      }
+
       Sentry.startSpan(
         {
           forceTransaction: true,
@@ -171,7 +193,20 @@ export class ClientConnection<U extends { id: string }> extends EventEmitter<{
           });
 
           return this.parseMessage(message).fold(
-            error => logError(`Invalid message.`, error),
+            error => {
+              logError(
+                `Invalid message from client ${this.uniqueId ?? "unknown"} (user: ${this.user?.id ?? "not authorized"}). Raw message: ${JSON.stringify(message).substring(0, 200)}`,
+                error
+              );
+              // Only close connection if client is fully authorized (has user)
+              // During authorization window, just skip invalid messages
+              if (this.user) {
+                logError(
+                  `Closing connection due to invalid message from authorized client`
+                );
+                this.close();
+              }
+            },
             ([event, topic, data]) => {
               // Extract deviceId from topic if present (e.g., "fd/deviceId" -> "deviceId")
               let topicName = topic;
@@ -262,6 +297,14 @@ export class ClientConnection<U extends { id: string }> extends EventEmitter<{
     this.user = user;
     this.sendMessage({ action: "subscribe", topic: "status/#" });
     clearTimeout(this.timeout);
+
+    // Process any buffered messages that arrived during authorization
+    if (this.buf.length > 0) {
+      logDebug(
+        `Processing ${this.buf.length} bytes of buffered data for authorized client ${this.uniqueId}`
+      );
+      this.receiveData(Buffer.alloc(0));
+    }
   }
 
   close = () => {

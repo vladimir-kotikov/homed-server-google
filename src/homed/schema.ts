@@ -257,7 +257,7 @@ export const ClientAuthMessageSchema = z.object({
 });
 
 export const ClientMessageSchema = z.object({
-  topic: z.string(),
+  topic: z.string().min(1, "Field 'topic' cannot be empty"),
   message: z
     .union([
       ClientStatusMessageSchema, // status/ topic
