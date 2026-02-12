@@ -1,13 +1,13 @@
 import Database from "better-sqlite3";
-import debug from "debug";
 import { eq } from "drizzle-orm";
 import { BetterSQLite3Database, drizzle } from "drizzle-orm/better-sqlite3";
 import jwt from "jsonwebtoken";
 import crypto from "node:crypto";
+import { createLogger } from "../logger.ts";
 import * as schema from "./schema.ts";
 import { users } from "./schema.ts";
 
-const log = debug("homed:user");
+const log = createLogger("user");
 
 export const JWT_ALGORITHM = "HS256" as const;
 
@@ -58,9 +58,7 @@ export class UserRepository {
       refreshTokenLifetime,
     }: { create: boolean } & Partial<UserRepositoryOptions>
   ): UserRepository {
-    log(
-      `Opening database at ${databasePath} (create: ${create ? "yes" : "no"})`
-    );
+    log.debug("database.open", { databasePath, create });
     const database = new Database(databasePath, { fileMustExist: !create });
     database.pragma("journal_mode = WAL");
     return new UserRepository(database, jwtSecret, {

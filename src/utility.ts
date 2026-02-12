@@ -126,3 +126,19 @@ export function fastDeepEqual<T = unknown>(a: T, b: T): boolean {
 
   return true;
 }
+
+export const filterDict = <K extends PropertyKey, V>(
+  obj: Record<K, V>,
+  fn: (key: K, value: V) => boolean
+): Record<K, V> =>
+  Object.fromEntries(
+    Object.entries(obj).filter(([key, value]) => fn(key as K, value as V))
+  ) as Record<K, V>;
+
+export const mapDict = <K extends PropertyKey, V, U>(
+  obj: Record<K, V>,
+  fn: (key: K, value: V) => [K, U]
+): Record<K, U> =>
+  Object.fromEntries(
+    Object.entries(obj).map(([key, value]) => fn(key as K, value as V))
+  ) as Record<K, U>;

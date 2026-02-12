@@ -1,5 +1,4 @@
 import * as Sentry from "@sentry/node";
-import debug from "debug";
 import http from "node:http";
 import https from "node:https";
 import net from "node:net";
@@ -24,11 +23,10 @@ import type {
   EndpointOptions,
 } from "./homed/schema.ts";
 import type { CommandMessage } from "./homed/types.ts";
+import { createLogger } from "./logger.ts";
 import { WebApp } from "./web/app.ts";
 
-const logInfo = debug("homed:controller");
-const logDebug = debug("homed:controller:debug");
-const logError = debug("homed:controller:error");
+const log = createLogger("controller");
 
 /**
  * Parse device ID and optional endpoint ID from topic
@@ -98,7 +96,7 @@ export class HomedServerController {
     this.httpServer
       .on("request", this.httpHandler.handleRequest)
       .on("error", error => {
-        logError("HTTP(S) Server error:", error);
+        log.error("server.http_error", error);
         this.stop();
       });
 
@@ -106,7 +104,7 @@ export class HomedServerController {
       .createServer({ keepAlive: true, allowHalfOpen: false })
       .on("connection", this.clientConnected)
       .on("error", error => {
-        logError("TCP Server error:", error);
+        log.error("server.tcp_error", error);
         this.stop();
       });
 
@@ -132,11 +130,13 @@ export class HomedServerController {
     message: CommandMessage;
   }): void => {
     const client = this.clients[userId]?.[clientId];
+    Sentry.setContext("client", { userId, clientId });
+    Sentry.setExtras({ deviceId, endpointId });
 
     if (!client) {
-      logError(
-        `Cannot execute command: client ${clientId} not found for user ${userId}`
-      );
+      log.error("command.error", undefined, {
+        reason: "unknown_client",
+      });
       return;
     }
 
@@ -146,9 +146,10 @@ export class HomedServerController {
         ? `td/${deviceId}/${endpointId}`
         : `td/${deviceId}`;
 
-    logDebug(
-      `Executing command on device ${deviceId}${endpointId !== undefined ? `/${endpointId}` : ""} via client ${clientId}: topic=${topic}, message=${JSON.stringify(message)}`
-    );
+    log.debug("command.execute", {
+      // TODO: Consider redacting sensitive fields from message before logging
+      message: JSON.stringify(message),
+    });
 
     try {
       client.sendMessage({
@@ -157,21 +158,18 @@ export class HomedServerController {
         message,
       });
     } catch (error) {
-      logError(`Error executing command on ${deviceId}:`, error);
-      Sentry.captureException(error, {
-        tags: { component: "command-execution" },
-        extra: { userId, clientId, deviceId, endpointId, message },
-      });
+      log.error("command.error", error);
     }
   };
 
   start(httpPort: number, tcpPort: number) {
+    // TODO: Promisify listen methods and await in the main entry point to ensure servers are up before accepting requests
     this.httpServer.listen(httpPort);
     this.tcpServer.listen(tcpPort);
 
     const protocol = this.httpServer instanceof https.Server ? "https" : "http";
-    logInfo(`HTTP Server listening on port ${protocol}://0.0.0.0:${httpPort}`);
-    logInfo(`TCP Server listening on port tcp://0.0.0.0:${tcpPort}`);
+    log.info(`HTTP Server listening on port ${protocol}://0.0.0.0:${httpPort}`);
+    log.info(`TCP Server listening on port tcp://0.0.0.0:${tcpPort}`);
   }
 
   stop = () =>
@@ -184,19 +182,21 @@ export class HomedServerController {
     ]).then(() => this.userDb.close());
 
   clientConnected = (socket: net.Socket) => {
+    Sentry.setContext("connection", {
+      remoteAddress: socket.remoteAddress,
+      remotePort: socket.remotePort,
+    });
     if (
       !socket.remoteAddress ||
       this.healthcheckIps.has(socket.remoteAddress)
     ) {
-      logDebug(`Ignoring healthcheck connection from ${socket.remoteAddress}`);
+      log.debug("connection.healthcheck");
       socket.write("OK");
       socket.end();
       return;
     }
 
-    logDebug(
-      `New connection from ${socket.remoteAddress}:${socket.remotePort}`
-    );
+    log.debug("connection.new");
     const client = new ClientConnection<User>(socket)
       .on("close", () => this.clientDisconnected(client))
       .on("token", token => this.clientTokenReceived(client, token))
@@ -217,7 +217,7 @@ export class HomedServerController {
     if (client.user && client.uniqueId) {
       delete this.clients[client.user.id]?.[client.uniqueId];
       this.deviceCache.removeClientDevices(client.user.id, client.uniqueId);
-      logDebug(`Client disconnected: ${client.uniqueId}`);
+      log.debug("connection.close");
     }
   };
 
@@ -227,7 +227,7 @@ export class HomedServerController {
   ) => {
     const uniqueId = client.uniqueId;
     if (!uniqueId) {
-      logError(`Client has no unique ID, cannot authorize`);
+      log.error(`client.auth`, { reason: "missing_unique_id" });
       client.close();
       return;
     }
@@ -237,24 +237,17 @@ export class HomedServerController {
       .then(user => {
         if (!user) {
           client.close();
-          logError(`Client ${uniqueId} unauthorized: user not found`);
+          log.error(`client.auth`, { reason: "invalid_token", token });
           return;
         }
 
         client.authorize(user);
         this.clients[user.id] = this.clients[user.id] || {};
         this.clients[user.id][uniqueId] = client;
-        logDebug(`Client ${uniqueId} authorized for ${user.username}`);
+        log.debug(`client.auth`, { userId: user.id, uniqueId });
       })
       .catch(error => {
-        logError(
-          `Error during token authentication for client ${uniqueId}:`,
-          error
-        );
-        Sentry.captureException(error, {
-          tags: { component: "client-auth" },
-          extra: { uniqueId, token },
-        });
+        log.error(`client.auth`, error, { reason: "db_error", uniqueId });
         client.close();
       });
   };
@@ -266,10 +259,14 @@ export class HomedServerController {
     message: ClientStatusMessage
   ) => {
     if (!client.uniqueId || !client.user) return;
+    Sentry.setContext("client", {
+      uniqueId: client.uniqueId,
+      userId: client.user.id,
+    });
 
-    logDebug(
-      `Client status update from ${client.uniqueId} . Devices: ${message.devices?.length ?? 0}`
-    );
+    log.debug("message.devices", {
+      devices: message.devices?.length ?? 0,
+    });
 
     // TODO: This method only concerned with zigbee devices, as others
     // are not yet supported in the Homed server. Once other device types
@@ -316,9 +313,10 @@ export class HomedServerController {
   ) => {
     if (!client.uniqueId || !client.user) return;
 
-    logDebug(
-      `Device exposes update from ${client.uniqueId}. ${deviceId}: ${JSON.stringify(message)}`
-    );
+    log.debug("message.exposes", {
+      deviceId,
+      endpoints: Object.keys(message).length,
+    });
 
     const device = this.deviceCache.getDevice(
       client.user.id,
@@ -343,7 +341,7 @@ export class HomedServerController {
         ? `fd/${deviceId}/${endpoint.id}`
         : `fd/${deviceId}`;
 
-      logDebug(`Subscribing to device data topic: ${topic}`);
+      log.debug("message.subscribe", { topic });
       client.subscribe(topic);
     });
 
@@ -381,9 +379,7 @@ export class HomedServerController {
 
     const { deviceId, endpointId } = parseTopicDeviceId(topic);
 
-    logDebug(
-      `Device data update from ${client.uniqueId}. ${deviceId}${endpointId !== undefined ? `/${endpointId}` : ""}: ${JSON.stringify(data)}`
-    );
+    log.debug("message.state", { deviceId, endpointId });
 
     // Update device state in cache with endpoint-specific data
     this.deviceCache.updateDeviceState(

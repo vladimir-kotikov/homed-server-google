@@ -1,10 +1,10 @@
 import * as Sentry from "@sentry/node";
-import debug from "debug";
 import { EventEmitter } from "node:events";
 import { Socket } from "node:net";
 import { match, P } from "ts-pattern";
 import type { ClientToken } from "../db/repository.ts";
 import type { DeviceId } from "../device.ts";
+import { createLogger } from "../logger.ts";
 import { Result, safeParse } from "../utility.ts";
 import { AES128CBC } from "./crypto.ts";
 import { escapePacket, readPacket, unescapePacket } from "./protocol.ts";
@@ -21,8 +21,7 @@ import {
   type ServerMessage,
 } from "./schema.ts";
 
-const logDebug = debug("homed:client:debug");
-const logError = debug("homed:client:error");
+const log = createLogger("client");
 
 export type ClientId = string & { readonly __uniqueId: unique symbol };
 
@@ -68,10 +67,10 @@ export class ClientConnection<U extends { id: string }> extends EventEmitter<{
 
     this.timeout = setTimeout(() => {
       const message = this.cipher
-        ? "Authorization timeout: client not authorized"
-        : "Handshake timeout: no data received";
+        ? "connection.auth_timeout"
+        : "connection.handshake_timeout";
 
-      logError(message);
+      log.error(message);
       this.close();
     }, timeout);
   }
@@ -97,8 +96,8 @@ export class ClientConnection<U extends { id: string }> extends EventEmitter<{
       this.buf = this.buf.subarray(12); // Remove handshake data from buffer
       this.socket.write(publicKey);
       return true;
-    } catch (err) {
-      logError(`Handshake failed: ${err}`);
+    } catch (error) {
+      log.error("connection.handshake_error", error);
       this.close();
     }
 
@@ -108,19 +107,9 @@ export class ClientConnection<U extends { id: string }> extends EventEmitter<{
   private receiveData(data: Buffer): void {
     this.buf = Buffer.concat([this.buf, data]);
     if (this.buf.length > this.maxBufferSize) {
-      logError(
-        `Buffer size exceeded limit (${this.buf.length} bytes) for client ${this.uniqueId ?? "unknown"} (user: ${this.user?.id ?? "not authorized"})`
-      );
-      Sentry.captureMessage("Client buffer size exceeded", {
-        level: "warning",
-        tags: {
-          "client.unique_id": this.uniqueId ?? "not authenticated",
-          "client.user_id": this.user?.id ?? "not authenticated",
-        },
-        extra: {
-          bufferSize: this.buf.length,
-          maxBufferSize: this.maxBufferSize,
-        },
+      log.warn("connection.buffer_overflow", {
+        bufferSize: this.buf.length,
+        maxBufferSize: this.maxBufferSize,
       });
       this.close();
       return;
@@ -137,31 +126,23 @@ export class ClientConnection<U extends { id: string }> extends EventEmitter<{
       try {
         decrypted = this.cipher!.decrypt(unescapePacket(packet));
         message = JSON.parse(decrypted.toString("utf8"));
-        logDebug(
-          `Received message from ${this.uniqueId ?? "unknown client"}`,
-          message
-        );
+        log.debug("message.incoming", { message });
       } catch (error) {
-        logError(`Failed to decrypt or parse message: ${error}`);
-        Sentry.captureException(error, {
-          tags: {
-            "client.unique_id": this.uniqueId ?? "not authenticated",
-            "client.user_id": this.user?.id ?? "not authenticated",
-          },
-        });
+        log.error(`message.decrypt`, error);
         this.close();
         return;
       }
 
       if (!this.user && !this.uniqueId) {
         safeParse(message, ClientAuthMessageSchema).fold(
-          err => {
-            logError(`Invalid authentication message: ${err}`);
+          error => {
+            log.error(`message.auth`, error);
             this.close();
           },
           ({ uniqueId, token }) => {
             this.uniqueId = uniqueId as ClientId;
             this.emit("token", token as ClientToken);
+            Sentry.setContext("client", { clientId: uniqueId });
           }
         );
 
@@ -169,12 +150,11 @@ export class ClientConnection<U extends { id: string }> extends EventEmitter<{
         continue;
       }
 
-      // Stop processing if not yet fully authorized (both uniqueId and user must be set)
-      // Messages will remain in buffer and be processed after authorization completes
+      // Stop processing if not yet fully authorized (both uniqueId and user
+      // must be set). Messages will remain in buffer and be processed after
+      // authorization completes
       if (!this.user) {
-        logDebug(
-          `Pausing message processing for client ${this.uniqueId} - waiting for authorization`
-        );
+        log.debug("connection.wait_auth");
         break;
       }
 
@@ -194,18 +174,13 @@ export class ClientConnection<U extends { id: string }> extends EventEmitter<{
 
           return this.parseMessage(message).fold(
             error => {
-              logError(
-                `Invalid message from client ${this.uniqueId ?? "unknown"} (user: ${this.user?.id ?? "not authorized"}). Raw message: ${JSON.stringify(message).substring(0, 200)}`,
-                error
-              );
-              // Only close connection if client is fully authorized (has user)
-              // During authorization window, just skip invalid messages
-              if (this.user) {
-                logError(
-                  `Closing connection due to invalid message from authorized client`
-                );
-                this.close();
-              }
+              log.error("message.parse", error, {
+                rawMessage: JSON.stringify(message, undefined, 0).substring(
+                  0,
+                  200
+                ),
+              });
+              this.close();
             },
             ([event, topic, data]) => {
               // Extract deviceId from topic if present (e.g., "fd/deviceId" -> "deviceId")
@@ -268,10 +243,8 @@ export class ClientConnection<U extends { id: string }> extends EventEmitter<{
       this.socket.write(
         Buffer.concat([Buffer.from([0x42]), packet, Buffer.from([0x43])])
       );
-      logDebug(
-        `Sent message to ${this.uniqueId ?? "unknown client"}:`,
-        message
-      );
+      // TODO: format mesage for better readability in logs (e.g., truncate long fields, remove sensitive info)
+      log.debug(`message.outgoing`, message);
     } catch (error) {
       this.emit("error", new Error(`Failed to send message: ${error}`));
     }
@@ -300,9 +273,6 @@ export class ClientConnection<U extends { id: string }> extends EventEmitter<{
 
     // Process any buffered messages that arrived during authorization
     if (this.buf.length > 0) {
-      logDebug(
-        `Processing ${this.buf.length} bytes of buffered data for authorized client ${this.uniqueId}`
-      );
       this.receiveData(Buffer.alloc(0));
     }
   }

@@ -1,9 +1,8 @@
-import * as Sentry from "@sentry/node";
-import debug from "debug";
 import { google } from "googleapis";
 import { match, P } from "ts-pattern";
 import type { User, UserId, UserRepository } from "../db/repository.ts";
 import type { DeviceRepository, DeviceStateChangeEvent } from "../device.ts";
+import { createLogger } from "../logger.ts";
 import { safeParse } from "../utility.ts";
 import {
   getStateUpdates,
@@ -24,8 +23,7 @@ import type {
   SyncResponsePayload,
 } from "./types.ts";
 
-const logDebug = debug("homed:google:fulfillment:debug");
-const logError = debug("homed:google:fulfillment:error");
+const log = createLogger("google:fulfillment");
 
 const debounce = <Args extends unknown[], R>(
   fn: (...args: Args) => R,
@@ -44,12 +42,6 @@ const debounce = <Args extends unknown[], R>(
 };
 
 class RequestError extends Error {}
-
-const reportError =
-  (message: string, extra?: Record<string, unknown>) => (error: unknown) => {
-    logError(message, error, extra);
-    Sentry.captureException(error, { extra });
-  };
 
 export class FulfillmentController {
   private userRepository: UserRepository;
@@ -71,11 +63,13 @@ export class FulfillmentController {
         auth,
       });
     } else {
-      const message = "Failed to initialize Google Home Graph API client:";
       if (process.env.NODE_ENV === "production") {
-        throw new Error(message);
+        throw new Error("Failed to initialize Google Home Graph API client:");
       } else {
-        logError(message);
+        log.warn("homegraph.init", {
+          reason:
+            "GOOGLE_APPLICATION_CREDENTIALS not set, Home Graph API disabled",
+        });
       }
     }
 
@@ -94,8 +88,8 @@ export class FulfillmentController {
   private requestSync = (userId: UserId) =>
     this.homegraph?.devices
       .requestSync({ requestBody: { agentUserId: userId, async: true } })
-      .then(() => logDebug("Device update requested for user %s", userId))
-      .catch(reportError("requestSync", { userId }));
+      .then(() => log.debug("homegraph.request_sync"))
+      .catch(error => log.error("request_sync", error));
 
   /**
    * Handle device state change events from repository
@@ -113,9 +107,9 @@ export class FulfillmentController {
       return;
     }
 
-    logDebug(
-      `Reporting state to Google for ${Object.keys(states).length} device(s): ${JSON.stringify(states)}`
-    );
+    log.debug("homegraph.report_state", {
+      devices: Object.keys(states).length,
+    });
 
     return this.homegraph?.devices
       .reportStateAndNotification({
@@ -125,9 +119,7 @@ export class FulfillmentController {
           payload: { devices: { states } },
         },
       })
-      .catch(
-        reportError("reportStateChange", { userId, deviceId: device.key })
-      );
+      .catch(error => log.error("homegraph.report_state", error));
   };
 
   handleFulfillment = async (
@@ -155,7 +147,7 @@ export class FulfillmentController {
             .exhaustive()
             .then(payload => ({ requestId, payload })),
         error => {
-          logError("Invalid Smart Home request:", error);
+          log.error("fulfillment.error", error, { reson: "invalid_request" });
           throw new RequestError("Invalid Smart Home request");
         }
       );
@@ -167,9 +159,9 @@ export class FulfillmentController {
 
     const response = mapSyncResponse(user.id, devicesWithStates);
 
-    logDebug(
-      `Syncing ${response.devices.length} Google devices from ${devicesWithStates.length} Homed devices`
-    );
+    log.debug("fulfillment.response_sync", {
+      devices: response.devices.length,
+    });
 
     return response;
   };
@@ -208,9 +200,11 @@ export class FulfillmentController {
         googleDeviceIds,
         message,
       } of commandsToSend) {
-        logDebug(
-          `Executing command on device ${googleDeviceIds[0]}${endpointId !== undefined ? `/${endpointId}` : ""}: message=${JSON.stringify(message)}`
-        );
+        log.debug("fulfillment.request_execute", {
+          deviceId,
+          endpointId,
+          action: message.action,
+        });
 
         const executed = this.deviceRepository.executeCommand(
           userId,

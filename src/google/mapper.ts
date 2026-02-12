@@ -13,7 +13,7 @@ import type {
 import type { ClientId } from "../homed/client.ts";
 import type { EndpointOptions } from "../homed/schema.ts";
 import type { CommandMessage, DeviceState } from "../homed/types.ts";
-import { fastDeepEqual } from "../utility.ts";
+import { fastDeepEqual, filterDict } from "../utility.ts";
 import type { GoogleCommand } from "./schema.ts";
 import { TRAIT_MAPPERS } from "./traits.ts";
 import type {
@@ -24,16 +24,6 @@ import type {
   QueryResponsePayload,
   SyncResponsePayload,
 } from "./types.ts";
-
-const filterDict = <K extends PropertyKey, V>(
-  obj: Record<K, V>,
-  predicate: (key: K, value: V) => boolean
-): Record<K, V> =>
-  Object.fromEntries(
-    Object.entries(obj).filter(([key, value]) =>
-      predicate(key as K, value as V)
-    )
-  ) as Record<K, V>;
 
 /**
  * Creates a Google device ID from clientId (unique client identifier) and homed device key
