@@ -379,7 +379,10 @@ export class HomedServerController {
 
     const { deviceId, endpointId } = parseTopicDeviceId(topic);
 
-    log.debug("message.state", { deviceId, endpointId });
+    log.debug("message.state", {
+      deviceId,
+      ...(endpointId ? { endpointId } : {}),
+    });
 
     // Update device state in cache with endpoint-specific data
     this.deviceCache.updateDeviceState(

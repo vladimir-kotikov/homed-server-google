@@ -13,8 +13,6 @@ Sentry.init({
     Sentry.requestDataIntegration(),
     Sentry.expressIntegration(),
     Sentry.processSessionIntegration(),
-    Sentry.consoleIntegration({ levels: ["error", "warn"] }),
-    Sentry.consoleLoggingIntegration(),
     Sentry.localVariablesIntegration({ captureAllExceptions: true }),
     Sentry.zodErrorsIntegration(),
   ],

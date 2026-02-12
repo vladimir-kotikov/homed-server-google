@@ -47,6 +47,11 @@ export class ClientConnection<U extends { id: string }> extends EventEmitter<{
   uniqueId?: ClientId;
   user?: U;
 
+  private getClientContext = () => ({
+    clientId: this.uniqueId,
+    userId: this.user?.id,
+  });
+
   constructor(
     socket: Socket,
     timeout: number = 10_000,
@@ -55,15 +60,14 @@ export class ClientConnection<U extends { id: string }> extends EventEmitter<{
     super();
     this.maxBufferSize = maxBufferSize;
     this.socket = socket
-      .on("data", (data: Buffer) => {
-        this.receiveData(data);
-      })
-      .on("error", (error: Error) => {
-        this.emit("error", error);
-      })
-      .on("close", () => {
-        this.emit("close");
-      });
+      .on("data", (data: Buffer) =>
+        Sentry.withIsolationScope(scope => {
+          scope.setContext("client", this.getClientContext());
+          this.receiveData(data);
+        })
+      )
+      .on("error", error => this.emit("error", error))
+      .on("close", () => this.emit("close"));
 
     this.timeout = setTimeout(() => {
       const message = this.cipher
@@ -124,9 +128,9 @@ export class ClientConnection<U extends { id: string }> extends EventEmitter<{
       let message: unknown;
       let decrypted: Buffer;
       try {
+        log.debug("message.incoming", { size: packet.length });
         decrypted = this.cipher!.decrypt(unescapePacket(packet));
         message = JSON.parse(decrypted.toString("utf8"));
-        log.debug("message.incoming", { message });
       } catch (error) {
         log.error(`message.decrypt`, error);
         this.close();
@@ -168,8 +172,8 @@ export class ClientConnection<U extends { id: string }> extends EventEmitter<{
         span => {
           // Set up Sentry context for the entire transaction
           Sentry.setContext("client", {
-            userId: this.user?.id,
             clientId: this.uniqueId,
+            userId: this.user?.id,
           });
 
           return this.parseMessage(message).fold(
@@ -268,6 +272,8 @@ export class ClientConnection<U extends { id: string }> extends EventEmitter<{
 
   authorize(user: U): void {
     this.user = user;
+    Sentry.setContext("client", this.getClientContext());
+
     this.sendMessage({ action: "subscribe", topic: "status/#" });
     clearTimeout(this.timeout);
 
