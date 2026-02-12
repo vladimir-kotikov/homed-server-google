@@ -5,7 +5,7 @@ Sentry.init({
   dsn: process.env.SENTRY_DSN,
   environment: process.env.NODE_ENV,
   enableLogs: true,
-  tracesSampleRate: 1,
+  tracesSampleRate: 0.2,
   integrations: [
     Sentry.httpIntegration(),
     Sentry.httpServerIntegration(),
