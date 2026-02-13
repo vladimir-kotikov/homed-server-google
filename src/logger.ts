@@ -102,6 +102,10 @@ export class Logger {
         `client.${key}`,
         value,
       ]),
+      ...mapDict(contexts.connection ?? {}, (key, value) => [
+        `connection.${key}`,
+        value,
+      ]),
     };
   }
 

@@ -61,7 +61,7 @@ export class ClientConnection<U extends { id: string }> extends EventEmitter<{
     this.maxBufferSize = maxBufferSize;
     this.socket = socket
       .on("data", (data: Buffer) =>
-        Sentry.withIsolationScope(scope => {
+        Sentry.withScope(scope => {
           scope.setContext("client", this.getClientContext());
           this.receiveData(data);
         })

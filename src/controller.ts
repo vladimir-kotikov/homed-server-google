@@ -162,15 +162,14 @@ export class HomedServerController {
     }
   };
 
-  start(httpPort: number, tcpPort: number) {
-    // TODO: Promisify listen methods and await in the main entry point to ensure servers are up before accepting requests
+  start = (httpPort: number, tcpPort: number) => {
     this.httpServer.listen(httpPort);
     this.tcpServer.listen(tcpPort);
 
     const protocol = this.httpServer instanceof https.Server ? "https" : "http";
     log.info(`HTTP Server listening on port ${protocol}://0.0.0.0:${httpPort}`);
     log.info(`TCP Server listening on port tcp://0.0.0.0:${tcpPort}`);
-  }
+  };
 
   stop = () =>
     Promise.allSettled([
@@ -182,10 +181,8 @@ export class HomedServerController {
     ]).then(() => this.userDb.close());
 
   clientConnected = (socket: net.Socket) => {
-    Sentry.setContext("connection", {
-      remoteAddress: socket.remoteAddress,
-      remotePort: socket.remotePort,
-    });
+    const connectionContext = { remoteAddress: socket.remoteAddress };
+    Sentry.setContext("connection", connectionContext);
     if (
       !socket.remoteAddress ||
       this.healthcheckIps.has(socket.remoteAddress)
@@ -198,19 +195,55 @@ export class HomedServerController {
 
     log.debug("connection.new");
     const client = new ClientConnection<User>(socket)
-      .on("close", () => this.clientDisconnected(client))
-      .on("token", token => this.clientTokenReceived(client, token))
+      .on("close", () =>
+        Sentry.withScope(scope => {
+          scope.setContext("connection", connectionContext);
+          return this.clientDisconnected(client);
+        })
+      )
+      .on("token", token =>
+        Sentry.withScope(scope => {
+          scope.setContext("connection", connectionContext);
+          return this.clientTokenReceived(client, token);
+        })
+      )
       // status/# subscription
       .on("status", (topic, message) =>
-        this.clientStatusUpdated(client, topicToDeviceId(topic), message)
+        Sentry.withScope(scope => {
+          scope.setContext("connection", connectionContext);
+          return this.clientStatusUpdated(
+            client,
+            topicToDeviceId(topic),
+            message
+          );
+        })
       )
       .on("device", (topic, message) =>
-        this.deviceStatusUpdated(client, topicToDeviceId(topic), message)
+        Sentry.withScope(scope => {
+          scope.setContext("connection", connectionContext);
+          return this.deviceStatusUpdated(
+            client,
+            topicToDeviceId(topic),
+            message
+          );
+        })
       )
       .on("expose", (topic, devices) =>
-        this.clientDeviceUpdated(client, topicToDeviceId(topic), devices)
+        Sentry.withScope(scope => {
+          scope.setContext("connection", connectionContext);
+          return this.clientDeviceUpdated(
+            client,
+            topicToDeviceId(topic),
+            devices
+          );
+        })
       )
-      .on("fd", (topic, data) => this.deviceDataUpdated(client, topic, data));
+      .on("fd", (topic, data) =>
+        Sentry.withScope(scope => {
+          scope.setContext("connection", connectionContext);
+          return this.deviceDataUpdated(client, topic, data);
+        })
+      );
   };
 
   clientDisconnected = (client: ClientConnection<User>) => {
