@@ -63,6 +63,9 @@ export class ClientConnection<U extends { id: string }> extends EventEmitter<{
       .on("data", (data: Buffer) =>
         Sentry.withScope(scope => {
           scope.setContext("client", this.getClientContext());
+          scope.setContext("connection", {
+            remoteAddress: socket.remoteAddress,
+          });
           this.receiveData(data);
         })
       )
