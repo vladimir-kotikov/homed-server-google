@@ -1,3 +1,5 @@
+all: lint test
+
 .PHONY: image
 image:
 	docker build -t homed-server-google .
@@ -7,10 +9,9 @@ install:
 	@npm i
 
 lint:
-	@npm run format
-	@npm run lint
+	@prettier --write src tests
+	@eslint src tests --fix
+	@tsc --noEmit
 
 test:
 	@npm test
-
-all: lint test

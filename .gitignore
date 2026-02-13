@@ -7,3 +7,5 @@ coverage/
 
 .gitsecret/keys/random_seed
 !*.secret
+
+homed.prod.conf
