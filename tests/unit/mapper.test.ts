@@ -993,6 +993,492 @@ describe("CapabilityMapper", () => {
   });
 
   // ============================================================================
+  // Temperature Sensor Tests (Phase 2)
+  // ============================================================================
+
+  describe("State Mapping - Temperature Sensor", () => {
+    it("should map temperature sensor state", () => {
+      const device = createDevice({ exposes: [["temperature"]] });
+
+      const state = mapToGoogleState(device, { temperature: 21.5 });
+
+      expect(state.thermostatTemperatureAmbient).toBe(21.5);
+      expect(state.online).toBe(true);
+    });
+
+    it("should include TemperatureSetting trait in attributes", () => {
+      const device = createDevice({ exposes: [["temperature"]] });
+
+      const [google] = mapToGoogleDevices(device, testClientId);
+
+      expect(google.traits).toContain(TRAITS.TEMPERATURE_SETTING);
+      expect(google.attributes).toBeDefined();
+
+      const tempAttributes = google.attributes as any;
+      expect(tempAttributes.queryOnlyTemperatureSetting).toBe(true);
+      expect(tempAttributes.thermostatTemperatureUnit).toBe("CELSIUS");
+      expect(tempAttributes.availableThermostatModes).toEqual(["off"]);
+    });
+
+    it("should coerce string temperature to number", () => {
+      const device = createDevice({ exposes: [["temperature"]] });
+
+      const state = mapToGoogleState(device, { temperature: "22.5" as any });
+
+      expect(state.thermostatTemperatureAmbient).toBe(22.5);
+      expect(typeof state.thermostatTemperatureAmbient).toBe("number");
+    });
+
+    it("should handle missing temperature value", () => {
+      const device = createDevice({ exposes: [["temperature"]] });
+
+      const state = mapToGoogleState(device, {});
+
+      expect(state.thermostatTemperatureAmbient).toBeUndefined();
+      expect(state.online).toBe(true);
+    });
+
+    it("should handle invalid temperature value (NaN)", () => {
+      const device = createDevice({ exposes: [["temperature"]] });
+
+      // Test NaN
+      const state1 = mapToGoogleState(device, { temperature: NaN });
+      expect(state1.thermostatTemperatureAmbient).toBeUndefined();
+      expect(state1.online).toBe(true);
+
+      // Test null
+      // eslint-disable-next-line unicorn/no-null
+      const state2 = mapToGoogleState(device, { temperature: null as any });
+      expect(state2.thermostatTemperatureAmbient).toBeUndefined();
+      expect(state2.online).toBe(true);
+
+      // Test invalid string
+      const state3 = mapToGoogleState(device, {
+        temperature: "invalid" as any,
+      });
+      expect(state3.thermostatTemperatureAmbient).toBeUndefined();
+      expect(state3.online).toBe(true);
+    });
+  });
+
+  // ============================================================================
+  // Humidity and Pressure Sensor Tests (Phase 3)
+  // ============================================================================
+
+  describe("State Mapping - Humidity Sensor", () => {
+    it("should map humidity sensor state", () => {
+      const device = createDevice({ exposes: [["humidity"]] });
+
+      const state = mapToGoogleState(device, { humidity: 65 });
+
+      expect(state.thermostatHumidityAmbient).toBe(65);
+      expect(state.online).toBe(true);
+    });
+
+    it("should include TemperatureSetting trait in attributes", () => {
+      const device = createDevice({ exposes: [["humidity"]] });
+
+      const [google] = mapToGoogleDevices(device, testClientId);
+
+      expect(google.traits).toContain(TRAITS.TEMPERATURE_SETTING);
+      expect(google.attributes).toBeDefined();
+
+      const attributes = google.attributes as any;
+      expect(attributes.queryOnlyTemperatureSetting).toBe(true);
+    });
+
+    it("should coerce string humidity to number", () => {
+      const device = createDevice({ exposes: [["humidity"]] });
+
+      const state = mapToGoogleState(device, { humidity: "70.5" as any });
+
+      expect(state.thermostatHumidityAmbient).toBe(70.5);
+      expect(typeof state.thermostatHumidityAmbient).toBe("number");
+    });
+
+    it("should handle missing humidity value", () => {
+      const device = createDevice({ exposes: [["humidity"]] });
+
+      const state = mapToGoogleState(device, {});
+
+      expect(state.thermostatHumidityAmbient).toBeUndefined();
+      expect(state.online).toBe(true);
+    });
+  });
+
+  describe("State Mapping - Combined Temperature and Humidity Sensor", () => {
+    it("should map both temperature and humidity sensor state", () => {
+      const device = createDevice({
+        exposes: [["temperature", "humidity"]],
+      });
+
+      const state = mapToGoogleState(device, {
+        temperature: 21.5,
+        humidity: 65,
+      });
+
+      expect(state.thermostatTemperatureAmbient).toBe(21.5);
+      expect(state.thermostatHumidityAmbient).toBe(65);
+      expect(state.online).toBe(true);
+    });
+
+    it("should include TemperatureSetting trait for combined sensors", () => {
+      const device = createDevice({
+        exposes: [["temperature", "humidity"]],
+      });
+
+      const [google] = mapToGoogleDevices(device, testClientId);
+
+      expect(google.traits).toContain(TRAITS.TEMPERATURE_SETTING);
+      expect(google.attributes).toBeDefined();
+
+      const attributes = google.attributes as any;
+      expect(attributes.queryOnlyTemperatureSetting).toBe(true);
+    });
+  });
+
+  describe("State Mapping - Pressure Sensor", () => {
+    it("should map pressure sensor state", () => {
+      const device = createDevice({ exposes: [["pressure"]] });
+
+      const state = mapToGoogleState(device, { pressure: 101325 });
+
+      expect(state.currentSensorStateData).toBeDefined();
+      const sensorData = state.currentSensorStateData as any[];
+      expect(sensorData).toHaveLength(1);
+      expect(sensorData[0].name).toBe("AirPressure");
+      expect(sensorData[0].rawValue).toBe(101325);
+      expect(state.online).toBe(true);
+    });
+
+    it("should include pressure in attributes", () => {
+      const device = createDevice({ exposes: [["pressure"]] });
+
+      const [google] = mapToGoogleDevices(device, testClientId);
+
+      expect(google.traits).toContain(TRAITS.SENSOR_STATE);
+      expect(google.attributes).toBeDefined();
+
+      const sensorAttributes = google.attributes as any;
+      expect(sensorAttributes.sensorStatesSupported).toBeDefined();
+      expect(sensorAttributes.sensorStatesSupported).toHaveLength(1);
+      expect(sensorAttributes.sensorStatesSupported[0].name).toBe(
+        "AirPressure"
+      );
+      expect(
+        sensorAttributes.sensorStatesSupported[0].numericCapabilities
+      ).toBeDefined();
+      expect(
+        sensorAttributes.sensorStatesSupported[0].numericCapabilities
+          .rawValueUnit
+      ).toBe("PASCALS");
+    });
+  });
+
+  // ============================================================================
+  // Air Quality Sensor Tests (Phase 4)
+  // ============================================================================
+
+  describe("State Mapping - CO2 Sensor", () => {
+    it("should map CO2 sensor state", () => {
+      const device = createDevice({ exposes: [["co2"]] });
+
+      const state = mapToGoogleState(device, { co2: 450 });
+
+      expect(state.currentSensorStateData).toBeDefined();
+      const sensorData = state.currentSensorStateData as any[];
+      expect(sensorData).toHaveLength(1);
+      expect(sensorData[0].name).toBe("CarbonDioxideLevel");
+      expect(sensorData[0].rawValue).toBe(450);
+      expect(state.online).toBe(true);
+    });
+
+    it("should include CO2 in attributes", () => {
+      const device = createDevice({ exposes: [["co2"]] });
+
+      const [google] = mapToGoogleDevices(device, testClientId);
+
+      expect(google.traits).toContain(TRAITS.SENSOR_STATE);
+      expect(google.attributes).toBeDefined();
+
+      const sensorAttributes = google.attributes as any;
+      expect(sensorAttributes.sensorStatesSupported).toBeDefined();
+      expect(sensorAttributes.sensorStatesSupported).toHaveLength(1);
+      expect(sensorAttributes.sensorStatesSupported[0].name).toBe(
+        "CarbonDioxideLevel"
+      );
+      expect(
+        sensorAttributes.sensorStatesSupported[0].numericCapabilities
+      ).toBeDefined();
+      expect(
+        sensorAttributes.sensorStatesSupported[0].numericCapabilities
+          .rawValueUnit
+      ).toBe("PARTS_PER_MILLION");
+    });
+  });
+
+  describe("State Mapping - CO Sensor", () => {
+    it("should map CO sensor state", () => {
+      const device = createDevice({ exposes: [["co"]] });
+
+      const state = mapToGoogleState(device, { co: 5 });
+
+      expect(state.currentSensorStateData).toBeDefined();
+      const sensorData = state.currentSensorStateData as any[];
+      expect(sensorData).toHaveLength(1);
+      expect(sensorData[0].name).toBe("CarbonMonoxideLevel");
+      expect(sensorData[0].rawValue).toBe(5);
+      expect(state.online).toBe(true);
+    });
+
+    it("should include CO in attributes", () => {
+      const device = createDevice({ exposes: [["co"]] });
+
+      const [google] = mapToGoogleDevices(device, testClientId);
+
+      expect(google.traits).toContain(TRAITS.SENSOR_STATE);
+      expect(google.attributes).toBeDefined();
+
+      const sensorAttributes = google.attributes as any;
+      expect(sensorAttributes.sensorStatesSupported).toBeDefined();
+      expect(sensorAttributes.sensorStatesSupported).toHaveLength(1);
+      expect(sensorAttributes.sensorStatesSupported[0].name).toBe(
+        "CarbonMonoxideLevel"
+      );
+      expect(
+        sensorAttributes.sensorStatesSupported[0].numericCapabilities
+      ).toBeDefined();
+      expect(
+        sensorAttributes.sensorStatesSupported[0].numericCapabilities
+          .rawValueUnit
+      ).toBe("PARTS_PER_MILLION");
+    });
+  });
+
+  describe("State Mapping - PM Sensors", () => {
+    it("should map PM2.5 and PM10 sensor states", () => {
+      const device = createDevice({ exposes: [["pm25", "pm10"]] });
+
+      const state = mapToGoogleState(device, { pm25: 12.5, pm10: 25 });
+
+      expect(state.currentSensorStateData).toBeDefined();
+      const sensorData = state.currentSensorStateData as any[];
+      expect(sensorData).toHaveLength(2);
+
+      const pm25Sensor = sensorData.find(s => s.name === "PM2.5");
+      expect(pm25Sensor).toBeDefined();
+      expect(pm25Sensor.rawValue).toBe(12.5);
+
+      const pm10Sensor = sensorData.find(s => s.name === "PM10");
+      expect(pm10Sensor).toBeDefined();
+      expect(pm10Sensor.rawValue).toBe(25);
+
+      expect(state.online).toBe(true);
+    });
+
+    it("should include PM2.5 and PM10 in attributes", () => {
+      const device = createDevice({ exposes: [["pm25", "pm10"]] });
+
+      const [google] = mapToGoogleDevices(device, testClientId);
+
+      expect(google.traits).toContain(TRAITS.SENSOR_STATE);
+      expect(google.attributes).toBeDefined();
+
+      const sensorAttributes = google.attributes as any;
+      expect(sensorAttributes.sensorStatesSupported).toBeDefined();
+      expect(sensorAttributes.sensorStatesSupported).toHaveLength(2);
+
+      const pm25Attr = sensorAttributes.sensorStatesSupported.find(
+        (s: any) => s.name === "PM2.5"
+      );
+      expect(pm25Attr).toBeDefined();
+      expect(pm25Attr.numericCapabilities.rawValueUnit).toBe(
+        "MICROGRAMS_PER_CUBIC_METER"
+      );
+
+      const pm10Attr = sensorAttributes.sensorStatesSupported.find(
+        (s: any) => s.name === "PM10"
+      );
+      expect(pm10Attr).toBeDefined();
+      expect(pm10Attr.numericCapabilities.rawValueUnit).toBe(
+        "MICROGRAMS_PER_CUBIC_METER"
+      );
+    });
+  });
+
+  describe("State Mapping - All Air Quality Sensors", () => {
+    it("should map all air quality sensors together", () => {
+      const device = createDevice({
+        exposes: [["co2", "co", "pm25", "pm10"]],
+      });
+
+      const state = mapToGoogleState(device, {
+        co2: 450,
+        co: 5,
+        pm25: 12.5,
+        pm10: 25,
+      });
+
+      expect(state.currentSensorStateData).toBeDefined();
+      const sensorData = state.currentSensorStateData as any[];
+      expect(sensorData).toHaveLength(4);
+
+      const co2Sensor = sensorData.find(s => s.name === "CarbonDioxideLevel");
+      expect(co2Sensor).toBeDefined();
+      expect(co2Sensor.rawValue).toBe(450);
+
+      const coSensor = sensorData.find(s => s.name === "CarbonMonoxideLevel");
+      expect(coSensor).toBeDefined();
+      expect(coSensor.rawValue).toBe(5);
+
+      const pm25Sensor = sensorData.find(s => s.name === "PM2.5");
+      expect(pm25Sensor).toBeDefined();
+      expect(pm25Sensor.rawValue).toBe(12.5);
+
+      const pm10Sensor = sensorData.find(s => s.name === "PM10");
+      expect(pm10Sensor).toBeDefined();
+      expect(pm10Sensor.rawValue).toBe(25);
+
+      expect(state.online).toBe(true);
+    });
+
+    it("should include all air quality sensors in attributes", () => {
+      const device = createDevice({
+        exposes: [["co2", "co", "pm25", "pm10"]],
+      });
+
+      const [google] = mapToGoogleDevices(device, testClientId);
+
+      expect(google.traits).toContain(TRAITS.SENSOR_STATE);
+      expect(google.attributes).toBeDefined();
+
+      const sensorAttributes = google.attributes as any;
+      expect(sensorAttributes.sensorStatesSupported).toBeDefined();
+      expect(sensorAttributes.sensorStatesSupported).toHaveLength(4);
+
+      const co2Attr = sensorAttributes.sensorStatesSupported.find(
+        (s: any) => s.name === "CarbonDioxideLevel"
+      );
+      expect(co2Attr).toBeDefined();
+      expect(co2Attr.numericCapabilities.rawValueUnit).toBe(
+        "PARTS_PER_MILLION"
+      );
+
+      const coAttr = sensorAttributes.sensorStatesSupported.find(
+        (s: any) => s.name === "CarbonMonoxideLevel"
+      );
+      expect(coAttr).toBeDefined();
+      expect(coAttr.numericCapabilities.rawValueUnit).toBe("PARTS_PER_MILLION");
+
+      const pm25Attr = sensorAttributes.sensorStatesSupported.find(
+        (s: any) => s.name === "PM2.5"
+      );
+      expect(pm25Attr).toBeDefined();
+      expect(pm25Attr.numericCapabilities.rawValueUnit).toBe(
+        "MICROGRAMS_PER_CUBIC_METER"
+      );
+
+      const pm10Attr = sensorAttributes.sensorStatesSupported.find(
+        (s: any) => s.name === "PM10"
+      );
+      expect(pm10Attr).toBeDefined();
+      expect(pm10Attr.numericCapabilities.rawValueUnit).toBe(
+        "MICROGRAMS_PER_CUBIC_METER"
+      );
+    });
+  });
+
+  describe("State Mapping - Multiple Numeric Sensors", () => {
+    it("should map multiple numeric sensors together", () => {
+      const device = createDevice({
+        exposes: [["temperature", "humidity", "pressure"]],
+      });
+
+      const state = mapToGoogleState(device, {
+        temperature: 21.5,
+        humidity: 65,
+        pressure: 101325,
+      });
+
+      expect(state.currentSensorStateData).toBeDefined();
+      const sensorData = state.currentSensorStateData as any[];
+      expect(sensorData).toHaveLength(3);
+
+      // Check all three sensors are present
+      const tempSensor = sensorData.find(s => s.name === "AmbientTemperature");
+      expect(tempSensor).toBeDefined();
+      expect(tempSensor.rawValue).toBe(21.5);
+
+      const humiditySensor = sensorData.find(s => s.name === "AmbientHumidity");
+      expect(humiditySensor).toBeDefined();
+      expect(humiditySensor.rawValue).toBe(65);
+
+      const pressureSensor = sensorData.find(s => s.name === "AirPressure");
+      expect(pressureSensor).toBeDefined();
+      expect(pressureSensor.rawValue).toBe(101325);
+
+      expect(state.online).toBe(true);
+    });
+
+    it("should handle mixed binary and numeric sensors", () => {
+      const device = createDevice({
+        exposes: [["occupancy", "temperature"]],
+      });
+
+      const state = mapToGoogleState(device, {
+        occupancy: true,
+        temperature: 22.0,
+      });
+
+      // Should have both occupancy (string) and currentSensorStateData (array)
+      expect(state.occupancy).toBe("OCCUPIED");
+      expect(state.currentSensorStateData).toBeDefined();
+
+      const sensorData = state.currentSensorStateData as any[];
+      expect(sensorData).toHaveLength(1);
+      expect(sensorData[0].name).toBe("AmbientTemperature");
+      expect(sensorData[0].rawValue).toBe(22.0);
+      expect(state.online).toBe(true);
+    });
+
+    it("should include all numeric sensors in attributes", () => {
+      const device = createDevice({
+        exposes: [["temperature", "humidity", "pressure"]],
+      });
+
+      const [google] = mapToGoogleDevices(device, testClientId);
+
+      expect(google.traits).toContain(TRAITS.SENSOR_STATE);
+      expect(google.attributes).toBeDefined();
+
+      const sensorAttributes = google.attributes as any;
+      expect(sensorAttributes.sensorStatesSupported).toBeDefined();
+      expect(sensorAttributes.sensorStatesSupported).toHaveLength(3);
+
+      // Check temperature
+      const tempAttr = sensorAttributes.sensorStatesSupported.find(
+        (s: any) => s.name === "AmbientTemperature"
+      );
+      expect(tempAttr).toBeDefined();
+      expect(tempAttr.numericCapabilities.rawValueUnit).toBe("DEGREES_CELSIUS");
+
+      // Check humidity
+      const humidityAttr = sensorAttributes.sensorStatesSupported.find(
+        (s: any) => s.name === "AmbientHumidity"
+      );
+      expect(humidityAttr).toBeDefined();
+      expect(humidityAttr.numericCapabilities.rawValueUnit).toBe("PERCENT");
+
+      // Check pressure
+      const pressureAttr = sensorAttributes.sensorStatesSupported.find(
+        (s: any) => s.name === "AirPressure"
+      );
+      expect(pressureAttr).toBeDefined();
+      expect(pressureAttr.numericCapabilities.rawValueUnit).toBe("PASCALS");
+    });
+  });
+
+  // ============================================================================
   // Command Mapping Tests
   // ============================================================================
 
@@ -1834,7 +2320,7 @@ describe("CapabilityMapper", () => {
       });
 
       const [google] = mapToGoogleDevices(device, testClientId);
-      expect(google.type).toBe(DEVICE_TYPES.SWITCH); // Default fallback
+      expect(google.type).toBe(DEVICE_TYPES.SENSOR); // Default fallback
       expect(google.traits).toHaveLength(0);
     });
 
@@ -1845,7 +2331,7 @@ describe("CapabilityMapper", () => {
       });
 
       const [google] = mapToGoogleDevices(device, testClientId);
-      expect(google.type).toBe(DEVICE_TYPES.SWITCH); // Default fallback
+      expect(google.type).toBe(DEVICE_TYPES.SENSOR); // Default fallback
     });
 
     it("should handle unsupported command type", () => {
@@ -1882,7 +2368,7 @@ describe("CapabilityMapper", () => {
       });
 
       const [google] = mapToGoogleDevices(device, testClientId);
-      expect(google.type).toBe(DEVICE_TYPES.SWITCH); // Default fallback
+      expect(google.type).toBe(DEVICE_TYPES.SENSOR); // Default fallback
       expect(google.traits).toHaveLength(0);
     });
 
@@ -2395,6 +2881,80 @@ describe("CapabilityMapper", () => {
           on: false,
         }
       );
+    });
+  });
+
+  // ============================================================================
+  // Phase 1: Numeric Sensor Type Definitions Tests
+  // ============================================================================
+
+  describe("Phase 1: Numeric Sensor Type Definitions", () => {
+    it("should_validate_numeric_capabilities_interface", () => {
+      // Test that NumericCapabilities interface has correct structure
+      const validCapabilities: import("../../src/google/types.ts").NumericCapabilities =
+        {
+          rawValueUnit: "DEGREES_CELSIUS",
+        };
+
+      expect(validCapabilities.rawValueUnit).toBe("DEGREES_CELSIUS");
+
+      // Test all valid units
+      const validUnits = [
+        "PERCENT",
+        "DEGREES_CELSIUS",
+        "DEGREES_FAHRENHEIT",
+        "PASCALS",
+        "HECTOPASCALS",
+        "ATMOSPHERES",
+        "PARTS_PER_MILLION",
+        "MICROGRAMS_PER_CUBIC_METER",
+      ];
+
+      validUnits.forEach(unit => {
+        const capability: import("../../src/google/types.ts").NumericCapabilities =
+          {
+            rawValueUnit: unit as any,
+          };
+        expect(capability.rawValueUnit).toBe(unit);
+      });
+    });
+
+    it("should_validate_numeric_sensor_state_structure", () => {
+      // Test that NumericSensorState has name and rawValue
+      const sensorState: import("../../src/google/types.ts").NumericSensorState =
+        {
+          name: "AmbientTemperature",
+          rawValue: 22.5,
+        };
+
+      expect(sensorState.name).toBe("AmbientTemperature");
+      expect(sensorState.rawValue).toBe(22.5);
+      expect(typeof sensorState.name).toBe("string");
+      expect(typeof sensorState.rawValue).toBe("number");
+    });
+
+    it("should_validate_sensor_state_with_current_sensor_data", () => {
+      // Test that SensorStateFlat includes currentSensorStateData array
+      const sensorStateFlat: import("../../src/google/types.ts").SensorStateFlat =
+        {
+          occupancy: "OCCUPIED",
+          currentSensorStateData: [
+            { name: "AmbientTemperature", rawValue: 22.5 },
+            { name: "AmbientHumidity", rawValue: 45 },
+          ],
+        };
+
+      expect(sensorStateFlat.currentSensorStateData).toBeDefined();
+      expect(Array.isArray(sensorStateFlat.currentSensorStateData)).toBe(true);
+      expect(sensorStateFlat.currentSensorStateData).toHaveLength(2);
+
+      const tempSensor = sensorStateFlat.currentSensorStateData![0];
+      expect(tempSensor.name).toBe("AmbientTemperature");
+      expect(tempSensor.rawValue).toBe(22.5);
+
+      const humiditySensor = sensorStateFlat.currentSensorStateData![1];
+      expect(humiditySensor.name).toBe("AmbientHumidity");
+      expect(humiditySensor.rawValue).toBe(45);
     });
   });
 });

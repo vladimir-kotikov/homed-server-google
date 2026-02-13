@@ -60,17 +60,31 @@ The Capability Mapping System is the core component that translates between Home
 
 ### Sensors
 
-| Homed Expose  | Google Type    | Traits      | Example                           |
-| ------------- | -------------- | ----------- | --------------------------------- |
-| `contact`     | SENSOR         | SensorState | Door/window contact sensor        |
-| `occupancy`   | SENSOR         | SensorState | Motion detector, occupancy sensor |
-| `motion`      | SENSOR         | SensorState | Motion sensor                     |
-| `smoke`       | SMOKE_DETECTOR | SensorState | Smoke detector                    |
-| `water_leak`  | SENSOR         | SensorState | Water leak detector               |
-| `gas`         | SENSOR         | SensorState | Gas sensor                        |
-| `temperature` | SENSOR         | SensorState | Temperature sensor                |
-| `humidity`    | SENSOR         | SensorState | Humidity sensor                   |
-| `pressure`    | SENSOR         | SensorState | Barometric pressure sensor        |
+The SensorState trait supports both binary sensors (on/off states) and numeric sensors (measurement values).
+
+**Binary Sensors**:
+
+| Homed Expose | Google Type    | Traits      | State Property | Example                    |
+| ------------ | -------------- | ----------- | -------------- | -------------------------- |
+| `contact`    | SENSOR         | SensorState | `openclose`    | Door/window contact sensor |
+| `occupancy`  | SENSOR         | SensorState | `occupancy`    | Occupancy sensor           |
+| `motion`     | SENSOR         | SensorState | `occupancy`    | Motion detector            |
+| `smoke`      | SMOKE_DETECTOR | SensorState | `smoke`        | Smoke detector             |
+| `water_leak` | SENSOR         | SensorState | `waterleak`    | Water leak detector        |
+| `gas`        | SENSOR         | SensorState | `gas`          | Gas sensor                 |
+
+**Numeric Sensors** (use `currentSensorStateData` array):
+
+| Homed Expose  | Google Type | Traits      | Sensor Name                | Unit                         | Example                  |
+| ------------- | ----------- | ----------- | -------------------------- | ---------------------------- | ------------------------ |
+| `temperature` | SENSOR      | SensorState | `AmbientTemperature`       | `DEGREES_CELSIUS`            | Temperature sensor       |
+| `humidity`    | SENSOR      | SensorState | `AmbientHumidity`          | `PERCENT`                    | Humidity sensor          |
+| `pressure`    | SENSOR      | SensorState | `AirPressure`              | `PASCALS`                    | Barometric pressure      |
+| `co2`         | SENSOR      | SensorState | `CarbonDioxideLevel`       | `PARTS_PER_MILLION`          | CO₂ sensor               |
+| `co`          | SENSOR      | SensorState | `CarbonMonoxideLevel`      | `PARTS_PER_MILLION`          | CO sensor                |
+| `voc`         | SENSOR      | SensorState | `VolatileOrganicCompounds` | `PARTS_PER_MILLION`          | VOC sensor               |
+| `pm25`        | SENSOR      | SensorState | `PM2.5`                    | `MICROGRAMS_PER_CUBIC_METER` | PM2.5 particulate sensor |
+| `pm10`        | SENSOR      | SensorState | `PM10`                     | `MICROGRAMS_PER_CUBIC_METER` | PM10 particulate sensor  |
 
 ## Traits and State Mapping
 
@@ -342,19 +356,22 @@ Set Mode:
 
 **Google Trait**: `action.devices.traits.SensorState`
 
-**Supported Exposes**: contact, occupancy, motion, smoke, water_leak, gas, temperature, humidity, pressure, CO, CO2, NO2, PM2.5, PM10
+**Supported Exposes**: contact, occupancy, motion, smoke, water_leak, gas, temperature, humidity, pressure, co, co2, voc, pm25, pm10
 
-**Homed State Properties** (vary by sensor type):
+The SensorState trait supports both **binary sensors** (on/off state) and **numeric sensors** (measurement values).
 
-- `occupancy` (boolean) - Binary occupancy state
-- `motion` (boolean) - Binary motion detection
-- `contact` (boolean) - Binary door/window contact
+#### Binary Sensors
+
+Binary sensors report a discrete state (e.g., open/closed, occupied/unoccupied).
+
+**Homed State Properties**:
+
+- `occupancy` (boolean) - Occupancy detection
+- `motion` (boolean) - Motion detection
+- `contact` (boolean) - Door/window contact
 - `smoke` (boolean) - Smoke detection
 - `waterLeak` (boolean) - Water leak detection
 - `gas` (boolean) - Gas detection
-- `temperature` (float) - Temperature reading
-- `humidity` (float) - Humidity percentage
-- `pressure` (float) - Pressure reading
 
 **Google State Examples**:
 
@@ -390,7 +407,254 @@ Water Leak:
 }
 ```
 
+#### Numeric Sensors
+
+Numeric sensors report measurement values with units. These sensors use the `currentSensorStateData` array in QUERY responses.
+
+**Supported Numeric Sensor Types**:
+
+| Homed Expose  | Google Sensor Name         | Unit                         | Description              |
+| ------------- | -------------------------- | ---------------------------- | ------------------------ |
+| `temperature` | `AmbientTemperature`       | `DEGREES_CELSIUS`            | Temperature in °C        |
+| `humidity`    | `AmbientHumidity`          | `PERCENT`                    | Relative humidity %      |
+| `pressure`    | `AirPressure`              | `PASCALS`                    | Barometric pressure (Pa) |
+| `co2`         | `CarbonDioxideLevel`       | `PARTS_PER_MILLION`          | CO₂ concentration (ppm)  |
+| `co`          | `CarbonMonoxideLevel`      | `PARTS_PER_MILLION`          | CO concentration (ppm)   |
+| `voc`         | `VolatileOrganicCompounds` | `PARTS_PER_MILLION`          | VOC concentration (ppm)  |
+| `pm25`        | `PM2.5`                    | `MICROGRAMS_PER_CUBIC_METER` | PM2.5 particles (µg/m³)  |
+| `pm10`        | `PM10`                     | `MICROGRAMS_PER_CUBIC_METER` | PM10 particles (µg/m³)   |
+
+**Homed State Properties**:
+
+- `temperature` (number) - Temperature measurement
+- `humidity` (number) - Humidity percentage
+- `pressure` (number) - Pressure measurement
+- `co2` (number) - CO₂ level
+- `co` (number) - CO level
+- `voc` (number) - VOC level
+- `pm25` (number) - PM2.5 particle level
+- `pm10` (number) - PM10 particle level
+
+**Google State Format** (QUERY Response):
+
+Single numeric sensor (temperature):
+
+```json
+{
+  "currentSensorStateData": [
+    {
+      "name": "AmbientTemperature",
+      "rawValue": 21.5
+    }
+  ]
+}
+```
+
+Multiple numeric sensors (temperature + humidity + pressure):
+
+```json
+{
+  "currentSensorStateData": [
+    {
+      "name": "AmbientTemperature",
+      "rawValue": 21.5
+    },
+    {
+      "name": "AmbientHumidity",
+      "rawValue": 65
+    },
+    {
+      "name": "AirPressure",
+      "rawValue": 101325
+    }
+  ]
+}
+```
+
+Air quality sensor (CO₂ + VOC + PM2.5):
+
+```json
+{
+  "currentSensorStateData": [
+    {
+      "name": "CarbonDioxideLevel",
+      "rawValue": 450
+    },
+    {
+      "name": "VolatileOrganicCompounds",
+      "rawValue": 200
+    },
+    {
+      "name": "PM2.5",
+      "rawValue": 12.5
+    }
+  ]
+}
+```
+
+Mixed binary and numeric sensors (occupancy + temperature):
+
+```json
+{
+  "occupancy": "OCCUPIED",
+  "currentSensorStateData": [
+    {
+      "name": "AmbientTemperature",
+      "rawValue": 22.0
+    }
+  ]
+}
+```
+
+**Google Attributes Format** (SYNC Response):
+
+Single numeric sensor:
+
+```json
+{
+  "sensorStatesSupported": [
+    {
+      "name": "AmbientTemperature",
+      "numericCapabilities": {
+        "rawValueUnit": "DEGREES_CELSIUS"
+      }
+    }
+  ]
+}
+```
+
+Multiple numeric sensors:
+
+```json
+{
+  "sensorStatesSupported": [
+    {
+      "name": "AmbientTemperature",
+      "numericCapabilities": {
+        "rawValueUnit": "DEGREES_CELSIUS"
+      }
+    },
+    {
+      "name": "AmbientHumidity",
+      "numericCapabilities": {
+        "rawValueUnit": "PERCENT"
+      }
+    },
+    {
+      "name": "AirPressure",
+      "numericCapabilities": {
+        "rawValueUnit": "PASCALS"
+      }
+    }
+  ]
+}
+```
+
+Mixed binary and numeric sensors:
+
+```json
+{
+  "sensorStatesSupported": [
+    {
+      "name": "occupancy"
+    },
+    {
+      "name": "AmbientTemperature",
+      "numericCapabilities": {
+        "rawValueUnit": "DEGREES_CELSIUS"
+      }
+    }
+  ]
+}
+```
+
 **Sensors are read-only** - they don't support commands.
+
+#### Complete Device Examples
+
+**Temperature Sensor**:
+
+Homed Device State:
+
+```json
+{
+  "temperature": 21.5
+}
+```
+
+Google QUERY Response:
+
+```json
+{
+  "online": true,
+  "currentSensorStateData": [
+    {
+      "name": "AmbientTemperature",
+      "rawValue": 21.5
+    }
+  ]
+}
+```
+
+**Multi-Sensor Device** (Temperature + Humidity + Pressure):
+
+Homed Device State:
+
+```json
+{
+  "temperature": 21.5,
+  "humidity": 65,
+  "pressure": 101325
+}
+```
+
+Google QUERY Response:
+
+```json
+{
+  "online": true,
+  "currentSensorStateData": [
+    {
+      "name": "AmbientTemperature",
+      "rawValue": 21.5
+    },
+    {
+      "name": "AmbientHumidity",
+      "rawValue": 65
+    },
+    {
+      "name": "AirPressure",
+      "rawValue": 101325
+    }
+  ]
+}
+```
+
+**Motion Sensor with Temperature** (Mixed Binary + Numeric):
+
+Homed Device State:
+
+```json
+{
+  "occupancy": true,
+  "temperature": 22.0
+}
+```
+
+Google QUERY Response:
+
+```json
+{
+  "online": true,
+  "occupancy": "OCCUPIED",
+  "currentSensorStateData": [
+    {
+      "name": "AmbientTemperature",
+      "rawValue": 22.0
+    }
+  ]
+}
+```
 
 ## Device Creation Example
 
@@ -535,6 +799,121 @@ Water Leak:
 }
 ```
 
+### Multi-Sensor Device
+
+**Homed Device**:
+
+```json
+{
+  "key": "0x012345",
+  "name": "Climate Sensor",
+  "available": true,
+  "endpoints": [
+    {
+      "id": 1,
+      "exposes": ["temperature", "humidity", "pressure"]
+    }
+  ]
+}
+```
+
+**Google Device**:
+
+```json
+{
+  "id": "client-001-0x012345",
+  "type": "action.devices.types.SENSOR",
+  "traits": ["action.devices.traits.SensorState"],
+  "name": {
+    "defaultNames": ["Climate Sensor"],
+    "name": "Climate Sensor",
+    "nicknames": []
+  },
+  "attributes": {
+    "sensorStatesSupported": [
+      {
+        "name": "AmbientTemperature",
+        "numericCapabilities": {
+          "rawValueUnit": "DEGREES_CELSIUS"
+        }
+      },
+      {
+        "name": "AmbientHumidity",
+        "numericCapabilities": {
+          "rawValueUnit": "PERCENT"
+        }
+      },
+      {
+        "name": "AirPressure",
+        "numericCapabilities": {
+          "rawValueUnit": "PASCALS"
+        }
+      }
+    ]
+  },
+  "willReportState": true,
+  "deviceInfo": {
+    "manufacturer": "Homed",
+    "model": "device",
+    "hwVersion": "1.0",
+    "swVersion": "1.0"
+  }
+}
+```
+
+### Motion Sensor with Temperature
+
+**Homed Device**:
+
+```json
+{
+  "key": "0x067890",
+  "name": "Motion Sensor",
+  "available": true,
+  "endpoints": [
+    {
+      "id": 1,
+      "exposes": ["occupancy", "temperature"]
+    }
+  ]
+}
+```
+
+**Google Device**:
+
+```json
+{
+  "id": "client-001-0x067890",
+  "type": "action.devices.types.SENSOR",
+  "traits": ["action.devices.traits.SensorState"],
+  "name": {
+    "defaultNames": ["Motion Sensor"],
+    "name": "Motion Sensor",
+    "nicknames": []
+  },
+  "attributes": {
+    "sensorStatesSupported": [
+      {
+        "name": "occupancy"
+      },
+      {
+        "name": "AmbientTemperature",
+        "numericCapabilities": {
+          "rawValueUnit": "DEGREES_CELSIUS"
+        }
+      }
+    ]
+  },
+  "willReportState": true,
+  "deviceInfo": {
+    "manufacturer": "Homed",
+    "model": "device",
+    "hwVersion": "1.0",
+    "swVersion": "1.0"
+  }
+}
+```
+
 ## Usage in Code
 
 ### Getting Google Devices (SYNC Intent)
@@ -623,13 +1002,17 @@ If device is offline (`available: false`):
 
 ## Testing
 
-The mapper is thoroughly tested with 56 unit tests covering:
+The mapper is thoroughly tested with 144+ unit tests covering:
 
 - All device types and trait combinations
 - State conversions with boundary conditions
 - Command mapping with parameter validation
-- Edge cases (missing data, invalid formats, etc.)
-- Real-world scenarios (complex devices, multiple traits)
+- Binary and numeric sensor mappings
+- Air quality sensors (CO₂, CO, VOC, PM2.5, PM10)
+- Multi-sensor devices (temperature + humidity + pressure)
+- Mixed binary and numeric sensors (occupancy + temperature)
+- Edge cases (missing data, invalid formats, NaN handling, etc.)
+- Real-world scenarios (complex devices, multiple traits, multiple endpoints)
 
 Run tests:
 
@@ -642,6 +1025,6 @@ npm run test:unit -- tests/unit/mapper.test.ts
 1. **Custom Device Mappings** - Allow users to customize device type and trait mappings
 2. **Caching** - Cache device capabilities to improve performance
 3. **Incremental Sync** - Only report changed devices
-4. **Trait Options** - Support device-specific trait options (color models, temperature ranges, etc.)
-5. **Enum Values** - Map thermostat modes and other enum values from custom formats
-6. **Unit Conversion** - Support temperature in Fahrenheit or other units
+4. **Additional Numeric Sensors** - Support for more sensor types (light level, UV index, noise level, etc.)
+5. **Unit Conversion** - Support temperature in Fahrenheit or other units
+6. **Enhanced Air Quality** - Support for air quality index calculations and thresholds

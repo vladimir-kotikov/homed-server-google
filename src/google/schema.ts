@@ -73,6 +73,39 @@ const TemperatureModeParametersSchema = z
   .object({ thermostatMode: ThermostatModeSchema })
   .strict();
 
+// ===========================================================================
+// Numeric Sensor Schemas
+// ===========================================================================
+
+export const NumericCapabilitiesSchema = z
+  .object({
+    rawValueUnit: z.enum([
+      "PERCENT",
+      "DEGREES_CELSIUS",
+      "DEGREES_FAHRENHEIT",
+      "PASCALS",
+      "HECTOPASCALS",
+      "ATMOSPHERES",
+      "PARTS_PER_MILLION",
+      "MICROGRAMS_PER_CUBIC_METER",
+    ]),
+  })
+  .strict();
+
+export const NumericSensorStateSchema = z
+  .object({
+    name: z.string(),
+    rawValue: z.number(),
+  })
+  .strict();
+
+export type NumericCapabilitiesSchemaType = z.infer<
+  typeof NumericCapabilitiesSchema
+>;
+export type NumericSensorStateSchemaType = z.infer<
+  typeof NumericSensorStateSchema
+>;
+
 const TraitParametersSchema = z.union([
   OnOffParametersSchema,
   BrightnessParametersSchema,

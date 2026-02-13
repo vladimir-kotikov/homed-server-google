@@ -25,6 +25,7 @@ import {
   type ColorSettingAttributes,
   type ColorSettingState,
   type ColorValue,
+  type NumericSensorState,
   type OnOffAttributes,
   type OnOffState,
   type OpenCloseAttributes,
@@ -388,7 +389,12 @@ export const TemperatureSettingTrait: GenericTraitMapper<
 
   supports(exposes: string[]) {
     return exposes.some(expose =>
-      ["thermostat", "temperature_controller"].includes(expose)
+      [
+        "thermostat",
+        "temperature_controller",
+        "temperature",
+        "humidity",
+      ].includes(expose)
     );
   },
 
@@ -396,7 +402,21 @@ export const TemperatureSettingTrait: GenericTraitMapper<
     exposes: string[],
     options?: EndpointOptions
   ): TemperatureSettingAttributes {
-    // Build modes array, filtering to only valid ThermostatMode values
+    // Check if this is a controllable thermostat or a read-only sensor
+    const isControllable = exposes.some(expose =>
+      ["thermostat", "temperature_controller"].includes(expose)
+    );
+
+    // For read-only sensors, set queryOnlyTemperatureSetting: true
+    if (!isControllable) {
+      return {
+        availableThermostatModes: ["off"],
+        thermostatTemperatureUnit: "CELSIUS",
+        queryOnlyTemperatureSetting: true,
+      };
+    }
+
+    // Build modes array for controllable thermostats
     const modes: ThermostatMode[] = [];
     if (options?.modes && Array.isArray(options.modes)) {
       // Type guard: only include valid thermostat modes from options
@@ -427,12 +447,29 @@ export const TemperatureSettingTrait: GenericTraitMapper<
   getState(deviceData: DeviceState): TemperatureSettingState | undefined {
     const state: TemperatureSettingState = {};
 
-    if (deviceData.temperature !== undefined) {
-      state.thermostatTemperatureAmbient = Number(deviceData.temperature);
+    if (
+      deviceData.temperature !== undefined &&
+      deviceData.temperature !== null
+    ) {
+      const temp = Number(deviceData.temperature);
+      if (!isNaN(temp)) {
+        state.thermostatTemperatureAmbient = temp;
+      }
     }
 
-    if (deviceData.setpoint !== undefined) {
-      state.thermostatTemperatureSetpoint = Number(deviceData.setpoint);
+    // Report humidity via thermostatHumidityAmbient for sensors
+    if (deviceData.humidity !== undefined && deviceData.humidity !== null) {
+      const humidity = Number(deviceData.humidity);
+      if (!isNaN(humidity)) {
+        state.thermostatHumidityAmbient = humidity;
+      }
+    }
+
+    if (deviceData.setpoint !== undefined && deviceData.setpoint !== null) {
+      const setpoint = Number(deviceData.setpoint);
+      if (!isNaN(setpoint)) {
+        state.thermostatTemperatureSetpoint = setpoint;
+      }
     }
 
     if (
@@ -495,6 +532,9 @@ export const SensorStateTrait: GenericTraitMapper<
         "no2",
         "pm10",
         "pm25",
+        "temperature",
+        "humidity",
+        "pressure",
       ].includes(expose)
     );
   },
@@ -514,12 +554,69 @@ export const SensorStateTrait: GenericTraitMapper<
       attributes.sensorStatesSupported.push({ name: "waterleak" });
     } else if (exposes.includes("gas")) {
       attributes.sensorStatesSupported.push({ name: "gas" });
-    } else if (
-      ["co", "co2", "no2", "pm10", "pm25"].some(expose =>
-        exposes.includes(expose)
-      )
-    ) {
-      attributes.sensorStatesSupported.push({ name: "air_quality" });
+    }
+
+    if (exposes.includes("temperature")) {
+      attributes.sensorStatesSupported.push({
+        name: "AmbientTemperature",
+        numericCapabilities: {
+          rawValueUnit: "DEGREES_CELSIUS",
+        },
+      });
+    }
+
+    if (exposes.includes("humidity")) {
+      attributes.sensorStatesSupported.push({
+        name: "AmbientHumidity",
+        numericCapabilities: {
+          rawValueUnit: "PERCENT",
+        },
+      });
+    }
+
+    if (exposes.includes("pressure")) {
+      attributes.sensorStatesSupported.push({
+        name: "AirPressure",
+        numericCapabilities: {
+          rawValueUnit: "PASCALS",
+        },
+      });
+    }
+
+    if (exposes.includes("co2")) {
+      attributes.sensorStatesSupported.push({
+        name: "CarbonDioxideLevel",
+        numericCapabilities: {
+          rawValueUnit: "PARTS_PER_MILLION",
+        },
+      });
+    }
+
+    if (exposes.includes("co")) {
+      attributes.sensorStatesSupported.push({
+        name: "CarbonMonoxideLevel",
+        numericCapabilities: {
+          rawValueUnit: "PARTS_PER_MILLION",
+        },
+      });
+    }
+
+    if (exposes.includes("pm25")) {
+      attributes.sensorStatesSupported.push({
+        name: "PM2.5",
+        numericCapabilities: {
+          rawValueUnit: "MICROGRAMS_PER_CUBIC_METER",
+        },
+      });
+    }
+
+    if (exposes.includes("pm10")) {
+      attributes.sensorStatesSupported.push({
+        name: "PM10",
+        numericCapabilities: {
+          rawValueUnit: "MICROGRAMS_PER_CUBIC_METER",
+        },
+      });
     }
 
     return attributes;
@@ -527,6 +624,7 @@ export const SensorStateTrait: GenericTraitMapper<
 
   getState(deviceData: DeviceState): SensorStateFlat | undefined {
     const stateObject: SensorStateFlat = {};
+    const numericData: NumericSensorState[] = [];
 
     if (deviceData.occupancy !== undefined) {
       stateObject.occupancy = deviceData.occupancy ? "OCCUPIED" : "UNOCCUPIED";
@@ -550,6 +648,83 @@ export const SensorStateTrait: GenericTraitMapper<
 
     if (deviceData.gas !== undefined) {
       stateObject.gas = deviceData.gas ? "HIGH" : "NORMAL";
+    }
+
+    if (
+      deviceData.temperature !== undefined &&
+      deviceData.temperature !== null
+    ) {
+      const temp = Number(deviceData.temperature);
+      if (!isNaN(temp)) {
+        numericData.push({
+          name: "AmbientTemperature",
+          rawValue: temp,
+        });
+      }
+    }
+
+    if (deviceData.humidity !== undefined && deviceData.humidity !== null) {
+      const humidity = Number(deviceData.humidity);
+      if (!isNaN(humidity)) {
+        numericData.push({
+          name: "AmbientHumidity",
+          rawValue: humidity,
+        });
+      }
+    }
+
+    if (deviceData.pressure !== undefined && deviceData.pressure !== null) {
+      const pressure = Number(deviceData.pressure);
+      if (!isNaN(pressure)) {
+        numericData.push({
+          name: "AirPressure",
+          rawValue: pressure,
+        });
+      }
+    }
+
+    if (deviceData.co2 !== undefined && deviceData.co2 !== null) {
+      const co2 = Number(deviceData.co2);
+      if (!isNaN(co2)) {
+        numericData.push({
+          name: "CarbonDioxideLevel",
+          rawValue: co2,
+        });
+      }
+    }
+
+    if (deviceData.co !== undefined && deviceData.co !== null) {
+      const co = Number(deviceData.co);
+      if (!isNaN(co)) {
+        numericData.push({
+          name: "CarbonMonoxideLevel",
+          rawValue: co,
+        });
+      }
+    }
+
+    if (deviceData.pm25 !== undefined && deviceData.pm25 !== null) {
+      const pm25 = Number(deviceData.pm25);
+      if (!isNaN(pm25)) {
+        numericData.push({
+          name: "PM2.5",
+          rawValue: pm25,
+        });
+      }
+    }
+
+    if (deviceData.pm10 !== undefined && deviceData.pm10 !== null) {
+      const pm10 = Number(deviceData.pm10);
+      if (!isNaN(pm10)) {
+        numericData.push({
+          name: "PM10",
+          rawValue: pm10,
+        });
+      }
+    }
+
+    if (numericData.length > 0) {
+      stateObject.currentSensorStateData = numericData;
     }
 
     if (Object.keys(stateObject).length > 0) {

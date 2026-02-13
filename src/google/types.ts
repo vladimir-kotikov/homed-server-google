@@ -138,10 +138,35 @@ export type SensorName =
   | "gas"
   | "filter_cleanliness"
   | "filter_life_time"
-  | "air_quality";
+  | "air_quality"
+  | "AmbientTemperature"
+  | "AmbientHumidity"
+  | "AirPressure"
+  | "CarbonDioxideLevel"
+  | "CarbonMonoxideLevel"
+  | "PM2.5"
+  | "PM10";
+
+export interface NumericCapabilities {
+  rawValueUnit:
+    | "PERCENT"
+    | "DEGREES_CELSIUS"
+    | "DEGREES_FAHRENHEIT"
+    | "PASCALS"
+    | "HECTOPASCALS"
+    | "ATMOSPHERES"
+    | "PARTS_PER_MILLION"
+    | "MICROGRAMS_PER_CUBIC_METER";
+}
+
+export interface NumericSensorState {
+  name: string;
+  rawValue: number;
+}
 
 export interface SensorStateSupported {
   name: SensorName;
+  numericCapabilities?: NumericCapabilities;
 }
 
 export interface SensorStateAttributes extends Record<string, unknown> {
@@ -168,6 +193,7 @@ export interface SensorStateFlat extends Record<string, unknown> {
   filter_cleanliness?: FilterCleanlinessState;
   filter_life_time?: number; // Percentage 0-100
   air_quality?: "EXCELLENT" | "GOOD" | "FAIR" | "POOR" | "VERY_POOR";
+  currentSensorStateData?: NumericSensorState[];
 }
 
 /**

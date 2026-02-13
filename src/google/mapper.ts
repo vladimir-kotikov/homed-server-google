@@ -108,64 +108,42 @@ export const GOOGLE_DEVICE_TYPES = {
 } as const;
 
 /**
- * Maps Homed expose types to Google device types
- * Priority order is important - some exposes can match multiple types
- */
-const DEVICE_TYPE_MAPPINGS: Record<string, string> = {
-  // Simple switches and outlets
-  switch: GOOGLE_DEVICE_TYPES.SWITCH,
-  outlet: GOOGLE_DEVICE_TYPES.OUTLET,
-  relay: GOOGLE_DEVICE_TYPES.SWITCH,
-
-  // Lighting devices
-  light: GOOGLE_DEVICE_TYPES.LIGHT,
-  dimmable_light: GOOGLE_DEVICE_TYPES.LIGHT,
-  color_light: GOOGLE_DEVICE_TYPES.LIGHT,
-  brightness: GOOGLE_DEVICE_TYPES.LIGHT,
-
-  // Door/Window
-  lock: GOOGLE_DEVICE_TYPES.LOCK,
-  door_lock: GOOGLE_DEVICE_TYPES.LOCK,
-
-  // Window coverings
-  cover: GOOGLE_DEVICE_TYPES.BLINDS,
-  blinds: GOOGLE_DEVICE_TYPES.BLINDS,
-  curtain: GOOGLE_DEVICE_TYPES.BLINDS,
-  shutter: GOOGLE_DEVICE_TYPES.BLINDS,
-
-  // Climate control
-  thermostat: GOOGLE_DEVICE_TYPES.THERMOSTAT,
-  temperature_controller: GOOGLE_DEVICE_TYPES.THERMOSTAT,
-
-  // Sensors
-  contact: GOOGLE_DEVICE_TYPES.SENSOR,
-  occupancy: GOOGLE_DEVICE_TYPES.SENSOR,
-  motion: GOOGLE_DEVICE_TYPES.SENSOR,
-  temperature: GOOGLE_DEVICE_TYPES.SENSOR,
-  humidity: GOOGLE_DEVICE_TYPES.SENSOR,
-  pressure: GOOGLE_DEVICE_TYPES.SENSOR,
-  co2: GOOGLE_DEVICE_TYPES.SENSOR,
-  pm10: GOOGLE_DEVICE_TYPES.SENSOR,
-  pm25: GOOGLE_DEVICE_TYPES.SENSOR,
-  co: GOOGLE_DEVICE_TYPES.SENSOR,
-  no2: GOOGLE_DEVICE_TYPES.SENSOR,
-
-  // Smoke detector
-  smoke: GOOGLE_DEVICE_TYPES.SMOKE_DETECTOR,
-  water_leak: GOOGLE_DEVICE_TYPES.SENSOR,
-  gas: GOOGLE_DEVICE_TYPES.SENSOR,
-};
-
-/**
  * Detect device type from exposes
  * Returns the most specific device type based on available exposes
  */
 const detectDeviceType = (exposes: string[]): string => {
   if (!exposes || exposes.length === 0) {
-    return GOOGLE_DEVICE_TYPES.SWITCH; // Default fallback
+    return GOOGLE_DEVICE_TYPES.SENSOR; // Default fallback is SENSOR
   }
 
-  // Priority mapping for devices with multiple exposes
+  // Priority: If any main sensor expose is present, always map as SENSOR
+  // Exception: smoke should map to SMOKE_DETECTOR
+  if (exposes.includes("smoke")) {
+    return GOOGLE_DEVICE_TYPES.SMOKE_DETECTOR;
+  }
+
+  if (
+    exposes.some(expose =>
+      [
+        "temperature",
+        "humidity",
+        "pressure",
+        "co2",
+        "pm10",
+        "pm25",
+        "co",
+        "no2",
+        "contact",
+        "occupancy",
+        "motion",
+        "water_leak",
+        "gas",
+      ].includes(expose)
+    )
+  ) {
+    return GOOGLE_DEVICE_TYPES.SENSOR;
+  }
+
   // Outlet takes priority over light if present
   if (exposes.includes("outlet")) {
     return GOOGLE_DEVICE_TYPES.OUTLET;
@@ -203,14 +181,13 @@ const detectDeviceType = (exposes: string[]): string => {
     return GOOGLE_DEVICE_TYPES.BLINDS;
   }
 
-  // Smoke detector
-  if (exposes.includes("smoke")) {
-    return GOOGLE_DEVICE_TYPES.SMOKE_DETECTOR;
+  // Only map as SWITCH if exposes includes switch, relay, or outlet
+  if (exposes.some(expose => ["switch", "relay", "outlet"].includes(expose))) {
+    return GOOGLE_DEVICE_TYPES.SWITCH;
   }
 
-  // Map first expose type
-  const firstExpose = exposes[0];
-  return DEVICE_TYPE_MAPPINGS[firstExpose] || GOOGLE_DEVICE_TYPES.SWITCH;
+  // Default fallback is SENSOR
+  return GOOGLE_DEVICE_TYPES.SENSOR;
 };
 
 /**
@@ -304,7 +281,9 @@ const getTraitsForExposes = (
       }
 
       case "thermostat":
-      case "temperature_controller": {
+      case "temperature_controller":
+      case "temperature":
+      case "humidity": {
         traits.add("action.devices.traits.TemperatureSetting");
         break;
       }
@@ -319,7 +298,8 @@ const getTraitsForExposes = (
       case "co2":
       case "no2":
       case "pm10":
-      case "pm25": {
+      case "pm25":
+      case "pressure": {
         traits.add("action.devices.traits.SensorState");
         break;
       }
