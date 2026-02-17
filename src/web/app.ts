@@ -7,7 +7,9 @@ import debug from "debug";
 import ejs from "ejs";
 import type { NextFunction, Request, Response } from "express";
 import express from "express";
+import rateLimit from "express-rate-limit";
 import sessionMiddleware from "express-session";
+import helmet from "helmet";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import passport from "passport";
 import appConfig from "../config.ts";
@@ -124,14 +126,25 @@ export class WebApp {
       .use(session)
       .use(authentication)
       .use(passport.session())
+      .use(helmet())
+      .use(rateLimit({ windowMs: 15 * 60 * 1000, max: 100 }))
       .get(
         "/",
         passport.authenticate("session"),
         ensureLoggedIn("/login"),
         this.handleHome
       )
-      .get("/login", ensureLoggedOut("/"), (_, res) => res.render("signin"))
-      .get("/auth/google", passport.authenticate("google-oauth20"))
+      .get(
+        "/login",
+        rateLimit({ windowMs: 15 * 60 * 1000, max: 5 }),
+        ensureLoggedOut("/"),
+        (_, res) => res.render("signin")
+      )
+      .get(
+        "/auth/google",
+        rateLimit({ max: 10 }),
+        passport.authenticate("google-oauth20")
+      )
       .get(
         "/auth/google/callback",
         passport.authenticate("google-oauth20", { keepSessionInfo: true }),
@@ -143,6 +156,7 @@ export class WebApp {
       .get("/health", (_, res) => res.json({ status: "ok" }))
       .post(
         "/fulfillment",
+        rateLimit({ max: 100 }),
         passport.authenticate("jwt", { session: false }),
         debugLoggedIn,
         requireLoggedIn,

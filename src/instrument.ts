@@ -5,6 +5,7 @@ Sentry.init({
   dsn: process.env.SENTRY_DSN,
   environment: process.env.NODE_ENV,
   enableLogs: true,
+  enableMetrics: true,
   tracesSampleRate: 0.2,
   integrations: [
     Sentry.httpIntegration(),
@@ -17,16 +18,11 @@ Sentry.init({
     Sentry.zodErrorsIntegration(),
   ],
   openTelemetryInstrumentations: [new BetterSqlite3Instrumentation()],
-  enableMetrics: true,
   includeLocalVariables: true,
   sendClientReports: true,
   sendDefaultPii: true,
-  beforeSendTransaction(transaction) {
+  beforeSendTransaction: transaction =>
     // Ignore health check transactions
-    if (transaction.transaction === "GET /health") {
-      // eslint-disable-next-line unicorn/no-null
-      return null;
-    }
-    return transaction;
-  },
+    // eslint-disable-next-line unicorn/no-null
+    transaction.transaction === "GET /health" ? null : transaction,
 });

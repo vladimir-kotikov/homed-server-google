@@ -142,3 +142,23 @@ export const mapDict = <K extends PropertyKey, V, U>(
   Object.fromEntries(
     Object.entries(obj).map(([key, value]) => fn(key as K, value as V))
   ) as Record<K, U>;
+
+export const cloak = (str: string, unmaskedChars = 4): string => {
+  if (str.length <= unmaskedChars) {
+    return "*".repeat(str.length);
+  }
+  const maskedPart = "*".repeat(str.length - unmaskedChars);
+  const unmaskedPart = str.slice(-unmaskedChars);
+  return maskedPart + unmaskedPart;
+};
+
+export const truncate = (value: unknown, maxLength: number): string => {
+  let str: string;
+  try {
+    str = JSON.stringify(value);
+  } catch {
+    str = String(value);
+  }
+
+  return str.length <= maxLength ? str : str.slice(0, maxLength) + "...";
+};

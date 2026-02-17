@@ -24,6 +24,7 @@ import type {
 } from "./homed/schema.ts";
 import type { CommandMessage } from "./homed/types.ts";
 import { createLogger } from "./logger.ts";
+import { cloak, truncate } from "./utility.ts";
 import { WebApp } from "./web/app.ts";
 
 const log = createLogger("controller");
@@ -71,8 +72,11 @@ export class HomedServerController {
   private tcpServer: net.Server;
   private userDb: UserRepository;
   private httpHandler: WebApp;
-  private healthcheckIps: Set<string>;
   private deviceCache: DeviceRepository;
+
+  private healthcheckIps: Set<string>;
+  private maxConnections: number;
+  private maxConnectionsPerUser: number;
 
   private clients: Record<UserId, Record<ClientId, ClientConnection<User>>> =
     {};
@@ -82,12 +86,16 @@ export class HomedServerController {
     deviceCache: DeviceRepository,
     httpHandler: WebApp,
     sslOptions?: { cert: string; key: string },
-    healtcheckIps: string[] = []
+    healtcheckIps: string[] = [],
+    maxConnections: number = 100,
+    maxConnectionsPerUser: number = 5
   ) {
     this.userDb = userDatabase;
     this.httpHandler = httpHandler;
     this.deviceCache = deviceCache;
     this.healthcheckIps = new Set(healtcheckIps);
+    this.maxConnections = maxConnections;
+    this.maxConnectionsPerUser = maxConnectionsPerUser;
 
     this.httpServer = sslOptions
       ? https.createServer(sslOptions)
@@ -147,8 +155,8 @@ export class HomedServerController {
         : `td/${deviceId}`;
 
     log.debug("command.execute", {
-      // TODO: Consider redacting sensitive fields from message before logging
-      message: JSON.stringify(message),
+      ...message,
+      message: truncate(message.message, 50),
     });
 
     try {
@@ -193,11 +201,22 @@ export class HomedServerController {
       return;
     }
 
-    log.debug("connection.new");
+    if (this.tcpServer.connections > this.maxConnections) {
+      log.info("connection.refuse", { reason: "server_full" });
+      socket.write("Server is at capacity, try again later");
+      socket.end();
+      return;
+    }
+
+    log.debug("connection.accept");
     const client = new ClientConnection<User>(socket)
       .on("close", () =>
         Sentry.withScope(scope => {
           scope.setContext("connection", connectionContext);
+          Sentry.metrics.gauge(
+            "connections.active",
+            this.tcpServer.connections
+          );
           return this.clientDisconnected(client);
         })
       )
@@ -244,14 +263,16 @@ export class HomedServerController {
           return this.deviceDataUpdated(client, topic, data);
         })
       );
+
+    Sentry.metrics.gauge("connections.active", this.tcpServer.connections);
   };
 
   clientDisconnected = (client: ClientConnection<User>) => {
     if (client.user && client.uniqueId) {
       delete this.clients[client.user.id]?.[client.uniqueId];
       this.deviceCache.removeClientDevices(client.user.id, client.uniqueId);
-      log.debug("connection.close");
     }
+    log.debug("connection.close");
   };
 
   clientTokenReceived = (
@@ -270,7 +291,23 @@ export class HomedServerController {
       .then(user => {
         if (!user) {
           client.close();
-          log.error(`client.auth`, { reason: "invalid_token", token });
+          log.error(`client.auth`, {
+            reason: "invalid_token",
+            token: cloak(token, 4),
+          });
+          return;
+        }
+
+        if (
+          this.clients[user.id] &&
+          Object.keys(this.clients[user.id]).length >=
+            this.maxConnectionsPerUser
+        ) {
+          log.info("connection.refused", {
+            reason: "user_limit",
+            userId: user.id,
+          });
+          client.close();
           return;
         }
 

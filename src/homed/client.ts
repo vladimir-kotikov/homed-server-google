@@ -5,7 +5,7 @@ import { match, P } from "ts-pattern";
 import type { ClientToken } from "../db/repository.ts";
 import type { DeviceId } from "../device.ts";
 import { createLogger } from "../logger.ts";
-import { Result, safeParse } from "../utility.ts";
+import { Result, safeParse, truncate } from "../utility.ts";
 import { AES128CBC } from "./crypto.ts";
 import { escapePacket, readPacket, unescapePacket } from "./protocol.ts";
 import {
@@ -250,8 +250,10 @@ export class ClientConnection<U extends { id: string }> extends EventEmitter<{
       this.socket.write(
         Buffer.concat([Buffer.from([0x42]), packet, Buffer.from([0x43])])
       );
-      // TODO: format mesage for better readability in logs (e.g., truncate long fields, remove sensitive info)
-      log.debug(`message.outgoing`, message);
+      log.debug(`message.outgoing`, {
+        ...message,
+        message: truncate(message.message, 50),
+      });
     } catch (error) {
       this.emit("error", new Error(`Failed to send message: ${error}`));
     }
