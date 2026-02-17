@@ -160,5 +160,5 @@ export const truncate = (value: unknown, maxLength: number): string => {
     str = String(value);
   }
 
-  return str.length <= maxLength ? str : str.slice(0, maxLength) + "...";
+  return str && str.length <= maxLength ? str : str.slice(0, maxLength) + "...";
 };
