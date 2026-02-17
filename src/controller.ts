@@ -208,7 +208,7 @@ export class HomedServerController {
       return;
     }
 
-    log.debug("connection.accept");
+    log.info("connection.accept");
     const client = new ClientConnection<User>(socket)
       .on("close", () =>
         Sentry.withScope(scope => {
