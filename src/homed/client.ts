@@ -252,7 +252,7 @@ export class ClientConnection<U extends { id: string }> extends EventEmitter<{
       );
       log.debug(`message.outgoing`, {
         ...message,
-        message: truncate(message.message, 50),
+        ...(message.message ? { message: truncate(message.message, 50) } : {}),
       });
     } catch (error) {
       this.emit("error", new Error(`Failed to send message: ${error}`));

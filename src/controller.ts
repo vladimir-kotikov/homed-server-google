@@ -156,7 +156,7 @@ export class HomedServerController {
 
     log.debug("command.execute", {
       ...message,
-      message: truncate(message.message, 50),
+      ...(message.message ? { message: truncate(message.message, 50) } : {}),
     });
 
     try {
