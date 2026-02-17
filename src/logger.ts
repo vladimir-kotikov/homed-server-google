@@ -29,21 +29,24 @@ export class Logger {
   debug(message: string, data?: LogExtra): void {
     this.formatDebugOutput(this.debugInstances.debug, message, data);
     this.addBreadcrumb("debug", message, data);
+    Sentry.logger.debug(message, { component: this.component, ...data });
   }
 
   info(message: string, data?: LogExtra): void {
     this.formatDebugOutput(this.debugInstances.info, message, data);
     this.addBreadcrumb("info", message, data);
+    Sentry.logger.info(message, { component: this.component, ...data });
   }
 
   warn(message: string, data?: LogExtra): void {
     this.formatDebugOutput(this.debugInstances.warn, message, data);
     this.addBreadcrumb("warning", message, data);
-    Sentry.withScope(scope => {
-      scope.setTag("component", this.component);
-      if (data) scope.setExtras(data);
-      Sentry.captureMessage(message, "warning");
-    });
+    Sentry.logger.warn(message, { component: this.component, ...data });
+    Sentry.captureMessage(message, {
+      level: "warning",
+      extra: data,
+      tags: { component: this.component },
+    } as Sentry.CaptureContext);
   }
 
   error(message: string, error?: unknown, data?: LogExtra): void {
@@ -54,16 +57,19 @@ export class Logger {
     }
 
     this.addBreadcrumb("error", message, data);
-
-    Sentry.withScope(scope => {
-      scope.setTag("component", this.component);
-      if (data) scope.setExtras(data);
-      if (error !== undefined) {
-        Sentry.captureException(error);
-      } else {
-        Sentry.captureMessage(message, "error");
-      }
-    });
+    Sentry.logger.error(message, { component: this.component, ...data, error });
+    const context = {
+      tags: { component: this.component },
+      ...(data ? { extra: data } : {}),
+    };
+    // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+    error
+      ? Sentry.captureException(error as Error, context)
+      : Sentry.captureMessage(message, {
+          level: "error",
+          error,
+          ...context,
+        } as Sentry.CaptureContext);
   }
 
   /**
@@ -110,12 +116,14 @@ export class Logger {
   }
 
   private addBreadcrumb = (
-    level: "debug" | "info" | "warning" | "error",
+    level: Sentry.SeverityLevel,
     message: string,
-    data?: LogExtra
-  ): void =>
+    data: LogExtra | undefined
+  ) =>
     Sentry.addBreadcrumb({
-      level,
+      type: level,
+      level: level,
+      category: this.component.replace(":", "."),
       message,
       ...(data ? { data } : {}),
     });

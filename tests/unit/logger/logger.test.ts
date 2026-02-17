@@ -27,6 +27,12 @@ vi.mock("@sentry/node", () => ({
     };
     callback(mockScope);
   }),
+  logger: {
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+  },
 }));
 
 // Mock the debug module
@@ -78,7 +84,7 @@ describe("Logger", () => {
     } as any);
 
     // Create logger instance
-    logger = new Logger("test-component", {
+    logger = new Logger("test:component", {
       debug: mockDebugFn,
       info: mockInfoFn,
       warn: mockWarnFn,
@@ -106,6 +112,8 @@ describe("Logger", () => {
       expect(Sentry.addBreadcrumb).toHaveBeenCalledWith({
         level: "debug",
         message: "test message",
+        type: "debug",
+        category: "test.component",
       });
     });
 
@@ -115,7 +123,9 @@ describe("Logger", () => {
 
       expect(Sentry.addBreadcrumb).toHaveBeenCalledWith({
         level: "debug",
+        type: "debug",
         message: "test message",
+        category: "test.component",
         data: meta,
       });
     });
@@ -140,7 +150,9 @@ describe("Logger", () => {
 
       expect(Sentry.addBreadcrumb).toHaveBeenCalledWith({
         level: "info",
+        type: "info",
         message: "test info",
+        category: "test.component",
       });
     });
   });
@@ -157,23 +169,19 @@ describe("Logger", () => {
 
       expect(Sentry.addBreadcrumb).toHaveBeenCalledWith({
         level: "warning",
+        type: "warning",
         message: "test warning",
+        category: "test.component",
       });
     });
 
     it("should capture message to Sentry", () => {
       logger.warn("test warning");
 
-      expect(Sentry.captureMessage).toHaveBeenCalledWith(
-        "test warning",
-        "warning"
-      );
-    });
-
-    it("should use withScope to prevent metadata leakage", () => {
-      logger.warn("test warning", { foo: "bar" });
-
-      expect(Sentry.withScope).toHaveBeenCalled();
+      expect(Sentry.captureMessage).toHaveBeenCalledWith("test warning", {
+        level: "warning",
+        tags: { component: "test:component" },
+      });
     });
   });
 
@@ -196,7 +204,9 @@ describe("Logger", () => {
 
       expect(Sentry.addBreadcrumb).toHaveBeenCalledWith({
         level: "error",
+        type: "error",
         message: "test error",
+        category: "test.component",
       });
     });
 
@@ -204,96 +214,18 @@ describe("Logger", () => {
       const error = new Error("test");
       logger.error("test error", error);
 
-      expect(Sentry.captureException).toHaveBeenCalledWith(error);
+      expect(Sentry.captureException).toHaveBeenCalledWith(error, {
+        tags: { component: "test:component" },
+      });
     });
 
     it("should capture message when no error object provided", () => {
       logger.error("test error");
 
-      expect(Sentry.captureMessage).toHaveBeenCalledWith("test error", "error");
-    });
-
-    it("should use withScope to prevent metadata leakage", () => {
-      logger.error("test error", undefined, { foo: "bar" });
-
-      expect(Sentry.withScope).toHaveBeenCalled();
-    });
-  });
-
-  describe("metadata mapping to Sentry scope", () => {
-    it("should map other fields to extras", () => {
-      const mockScope = {
-        setTag: vi.fn(),
-        setContext: vi.fn(),
-        setExtras: vi.fn(),
-        setUser: vi.fn(),
-        setFingerprint: vi.fn(),
-      };
-
-      vi.mocked(Sentry.withScope).mockImplementation((callback: any) => {
-        callback(mockScope);
+      expect(Sentry.captureMessage).toHaveBeenCalledWith("test error", {
+        level: "error",
+        tags: { component: "test:component" },
       });
-
-      const meta: LogExtra = {
-        requestId: "abc123",
-        duration: 150,
-        tags: { env: "test" },
-      };
-
-      logger.warn("test", meta);
-
-      expect(mockScope.setExtras).toHaveBeenCalledWith({
-        requestId: "abc123",
-        duration: 150,
-        tags: { env: "test" },
-      });
-    });
-
-    it("should add component as a tag automatically", () => {
-      const mockScope = {
-        setTag: vi.fn(),
-        setContext: vi.fn(),
-        setExtras: vi.fn(),
-        setUser: vi.fn(),
-        setFingerprint: vi.fn(),
-      };
-
-      vi.mocked(Sentry.withScope).mockImplementation((callback: any) => {
-        callback(mockScope);
-      });
-
-      logger.warn("test warning");
-
-      expect(mockScope.setTag).toHaveBeenCalledWith(
-        "component",
-        "test-component"
-      );
-    });
-  });
-
-  describe("withScope prevents metadata leakage", () => {
-    it("should call withScope for warn with metadata", () => {
-      logger.warn("test", { foo: "bar" });
-
-      expect(Sentry.withScope).toHaveBeenCalledTimes(1);
-    });
-
-    it("should call withScope for error with metadata", () => {
-      logger.error("test", undefined, { foo: "bar" });
-
-      expect(Sentry.withScope).toHaveBeenCalledTimes(1);
-    });
-
-    it("should call withScope even without explicit metadata for warn", () => {
-      logger.warn("test");
-
-      expect(Sentry.withScope).toHaveBeenCalledTimes(1);
-    });
-
-    it("should call withScope even without explicit metadata for error", () => {
-      logger.error("test");
-
-      expect(Sentry.withScope).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -454,7 +386,7 @@ describe("createLogger", () => {
   });
 
   it("should return an object with all required Logger methods", () => {
-    const logger = createLogger("test-component");
+    const logger = createLogger("test:component");
 
     expect(logger).toBeDefined();
     expect(typeof logger.debug).toBe("function");
