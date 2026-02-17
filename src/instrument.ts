@@ -1,3 +1,4 @@
+import { registerInstrumentations } from "@opentelemetry/instrumentation";
 import * as Sentry from "@sentry/node";
 import { BetterSqlite3Instrumentation } from "opentelemetry-plugin-better-sqlite3";
 
@@ -17,7 +18,6 @@ Sentry.init({
     Sentry.localVariablesIntegration({ captureAllExceptions: true }),
     Sentry.zodErrorsIntegration(),
   ],
-  openTelemetryInstrumentations: [new BetterSqlite3Instrumentation()],
   includeLocalVariables: true,
   sendClientReports: true,
   sendDefaultPii: true,
@@ -25,4 +25,10 @@ Sentry.init({
     // Ignore health check transactions
     // eslint-disable-next-line unicorn/no-null
     transaction.transaction === "GET /health" ? null : transaction,
+});
+
+// Register custom OpenTelemetry instrumentations after Sentry.init
+// Sentry manages the OpenTelemetry SDK internally, so we just register additional instrumentations
+registerInstrumentations({
+  instrumentations: [new BetterSqlite3Instrumentation()],
 });
