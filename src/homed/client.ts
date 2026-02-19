@@ -5,7 +5,7 @@ import { match, P } from "ts-pattern";
 import type { ClientToken } from "../db/repository.ts";
 import type { DeviceId } from "../device.ts";
 import { createLogger } from "../logger.ts";
-import { Result, safeParse, truncate } from "../utility.ts";
+import { Err, safeParse, truncate, type Result } from "../utility.ts";
 import { AES128CBC } from "./crypto.ts";
 import { escapePacket, readPacket, unescapePacket } from "./protocol.ts";
 import {
@@ -141,17 +141,16 @@ export class ClientConnection<U extends { id: string }> extends EventEmitter<{
       }
 
       if (!this.user && !this.uniqueId) {
-        safeParse(message, ClientAuthMessageSchema).fold(
-          error => {
-            log.error(`message.auth`, error);
-            this.close();
-          },
-          ({ uniqueId, token }) => {
+        safeParse(message, ClientAuthMessageSchema)
+          .map(({ uniqueId, token }) => {
             this.uniqueId = uniqueId as ClientId;
             this.emit("token", token as ClientToken);
             Sentry.setContext("client", { clientId: uniqueId });
-          }
-        );
+          })
+          .catch(error => {
+            log.error(`message.auth`, error);
+            this.close();
+          });
 
         this.buf = remainder;
         continue;
@@ -179,17 +178,8 @@ export class ClientConnection<U extends { id: string }> extends EventEmitter<{
             userId: this.user?.id,
           });
 
-          return this.parseMessage(message).fold(
-            error => {
-              log.error("message.parse", error, {
-                rawMessage: JSON.stringify(message, undefined, 0).substring(
-                  0,
-                  200
-                ),
-              });
-              this.close();
-            },
-            ([event, topic, data]) => {
+          return this.parseMessage(message)
+            .map(([event, topic, data]) => {
               // Extract deviceId from topic if present (e.g., "fd/deviceId" -> "deviceId")
               let topicName = topic;
               const topicParts = topic.split("/");
@@ -202,8 +192,13 @@ export class ClientConnection<U extends { id: string }> extends EventEmitter<{
               span.setAttributes({ "messaging.destination.name": topicName });
 
               this.emit(event, topic, data);
-            }
-          );
+            })
+            .catch(error => {
+              log.error("message.parse", error, {
+                rawMessage: truncate(message, 100),
+              });
+              this.close();
+            });
         }
       );
 
@@ -214,28 +209,24 @@ export class ClientConnection<U extends { id: string }> extends EventEmitter<{
 
   private parseMessage = (
     rawMessage: unknown
-  ): Result<[string, string, unknown]> => {
-    return safeParse(rawMessage, ClientMessageSchema).map(
-      ({ topic, message }) => {
-        const event = topic.split("/")[0];
-        return match(topic)
-          .with(P.string.startsWith("status/"), () =>
-            safeParse(message, ClientStatusMessageSchema)
-          )
-          .with(P.string.startsWith("expose/"), () =>
-            safeParse(message, DeviceExposesMessageSchema)
-          )
-          .with(P.string.startsWith("device/"), () =>
-            safeParse(message, DeviceStatusMessageSchema)
-          )
-          .with(P.string.startsWith("fd/"), () =>
-            safeParse(message, DeviceStateMessageSchema)
-          )
-          .otherwise(() => Result.err(`Unknown message topic ${topic}`))
-          .map(data => [event, topic, data] as const);
-      }
+  ): Result<[string, string, unknown]> =>
+    safeParse(rawMessage, ClientMessageSchema).flatMap(({ topic, message }) =>
+      match(topic)
+        .with(P.string.startsWith("status/"), () =>
+          safeParse(message, ClientStatusMessageSchema)
+        )
+        .with(P.string.startsWith("expose/"), () =>
+          safeParse(message, DeviceExposesMessageSchema)
+        )
+        .with(P.string.startsWith("device/"), () =>
+          safeParse(message, DeviceStatusMessageSchema)
+        )
+        .with(P.string.startsWith("fd/"), () =>
+          safeParse(message, DeviceStateMessageSchema)
+        )
+        .otherwise(() => new Err(`Unknown message topic ${topic}`))
+        .map(data => [topic.split("/")[0], topic, data] as const)
     );
-  };
 
   // Public solely for testing purposes
   sendMessage(message: ServerMessage): void {

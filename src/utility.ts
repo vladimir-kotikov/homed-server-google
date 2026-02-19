@@ -1,52 +1,33 @@
 import * as Sentry from "@sentry/node";
 import zod from "zod";
 
-export class Result<T> {
-  private readonly isOkValue: boolean;
-  private readonly value: T | Error;
+export class Ok<T> {
+  readonly value: T;
 
-  private constructor(isOkValue: boolean, value: T | Error) {
-    this.isOkValue = isOkValue;
+  constructor(value: T) {
     this.value = value;
   }
 
-  static ok = <T>(value: T): Result<T> => new Result<T>(true, value);
-
-  static err = <T>(error: Error | string): Result<T> =>
-    new Result<T>(false, error instanceof Error ? error : new Error(error));
-
-  isOk = (): boolean => this.isOkValue;
-
-  isErr = (): boolean => !this.isOkValue;
-
-  map = <U>(fn: (value: T) => U | Result<U>): Result<U> => {
-    if (!this.isOk()) {
-      return this as unknown as Result<U>;
-    }
-
-    const result = fn(this.value as T);
-    // Auto-flatten if function returns a Result (like Promise.then)
-    return result instanceof Result ? result : Result.ok<U>(result as U);
-  };
-
-  getOrElse = (defaultValue: T): T =>
-    this.isOk() ? (this.value as T) : defaultValue;
-
-  expect = (message?: string): T => {
-    if (this.isOk()) {
-      return this.value as T;
-    }
-    throw message ? new Error(message) : this.value;
-  };
-
-  fold = <U>(onError: (error: Error) => U, onOk: (value: T) => U): U =>
-    this.isOk() ? onOk(this.value as T) : onError(this.value as Error);
-
-  toPromise = (): Promise<T> =>
-    this.isOk()
-      ? Promise.resolve(this.value as T)
-      : Promise.reject(this.value as Error);
+  map = <U>(fn: (value: T) => U): Ok<U> => new Ok(fn(this.value));
+  flatMap = <U>(fn: (value: T) => Result<U>): Result<U> => fn(this.value);
+  catch = <U>(_: (error: never) => U): Ok<T> => this;
+  toPromise = (): Promise<T> => Promise.resolve(this.value);
 }
+
+export class Err {
+  private readonly error: Error;
+
+  constructor(error: Error | string) {
+    this.error = typeof error === "string" ? new Error(error) : error;
+  }
+
+  map = <U>(_: (value: never) => U): Err => this;
+  flatMap: <U>(_: (value: never) => Result<U>) => Result<U> = () => this;
+  catch: <U>(fn: (error: Error) => U) => Ok<U> = fn => new Ok(fn(this.error));
+  toPromise = (): Promise<never> => Promise.reject(this.error);
+}
+
+export type Result<T> = Ok<T> | Err;
 
 export const safeParse = <T extends zod.ZodType>(
   value: unknown,
@@ -54,11 +35,11 @@ export const safeParse = <T extends zod.ZodType>(
 ): Result<zod.infer<T>> => {
   const { data, success, error } = schema.safeParse(value);
   if (success) {
-    return Result.ok(data);
+    return new Ok(data);
   }
 
   Sentry.captureException(error);
-  return Result.err(error);
+  return new Err(error);
 };
 
 /**

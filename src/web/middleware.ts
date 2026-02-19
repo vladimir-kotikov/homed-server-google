@@ -64,7 +64,6 @@ export const googleOauth20Strategy = (
     },
     async (accessToken, refreshToken, profile, callback) =>
       Promise.try(() => verifyUser(profile))
-
         .then(user => callback(null, user ?? false))
         .catch(error => callback(error))
   );

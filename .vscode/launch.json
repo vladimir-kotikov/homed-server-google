@@ -10,7 +10,10 @@
             ],
             "program": "${workspaceFolder}/src/index.ts",
             "console": "integratedTerminal",
-            "restart": true
+            "restart": true,
+            "runtimeArgs": [
+                "--watch",
+            ],
         }
     ]
 }
