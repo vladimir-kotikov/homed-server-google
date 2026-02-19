@@ -10,7 +10,7 @@ install:
 
 lint:
 	@prettier --write src tests
-	@eslint src tests --fix
+	@DEBUG='' eslint src tests --fix
 	@tsc --noEmit
 
 test:

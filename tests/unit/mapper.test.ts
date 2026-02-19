@@ -401,7 +401,6 @@ describe("CapabilityMapper", () => {
       expect(google.willReportState).toBe(false);
       expect(google.deviceInfo?.manufacturer).toBe("IKEA");
       expect(google.deviceInfo?.model).toBe("TRADFRI bulb E27");
-      expect(google.customData?.homedKey).toBe("0x123456");
       expect(google.type).toBe(DEVICE_TYPES.LIGHT);
     });
 
@@ -429,7 +428,6 @@ describe("CapabilityMapper", () => {
       expect(google.traits).toContain(TRAITS.ON_OFF);
       expect(google.traits).toContain(TRAITS.BRIGHTNESS);
       expect(google.traits).toContain(TRAITS.COLOR_SETTING);
-      expect(google.customData?.endpoints).toHaveLength(3);
     });
 
     it("should deduplicate exposes from multiple endpoints", () => {
@@ -447,23 +445,6 @@ describe("CapabilityMapper", () => {
       // Should not duplicate OnOff trait from duplicate switch exposes
       expect(google.traits).toContain(TRAITS.ON_OFF);
       expect(google.type).toBe(DEVICE_TYPES.SWITCH);
-    });
-
-    it("should store endpoint info in customData", () => {
-      const device = createDevice({
-        exposes: [["light"], ["brightness"]],
-        topic: "home/device",
-        name: "Device",
-      });
-
-      const [google] = mapToGoogleDevices(device, testClientId);
-      expect(google.customData?.endpoints).toBeDefined();
-      expect(google.customData?.endpoints).toHaveLength(2);
-      const endpoints = google.customData?.endpoints as any;
-      expect(endpoints[0].id).toBe(1);
-      expect(endpoints[1].id).toBe(2);
-      expect(endpoints[0].exposes).toEqual(["light"]);
-      expect(endpoints[1].exposes).toEqual(["brightness"]);
     });
 
     // ========================================================================
@@ -506,23 +487,7 @@ describe("CapabilityMapper", () => {
       });
 
       const [google] = mapToGoogleDevices(device, testClientId);
-      expect(google.customData?.homedKey).toBe(device.key);
       expect(google.id).toContain(device.key);
-    });
-
-    // FIXME: Verify if very large number of endpointsndex causes performance issues
-    it("should handndexle device with many endpoints (edge case)", () => {
-      const exposes = Array.from({ length: 20 }, (_, index) => [
-        `expose_${index}`,
-      ]);
-      const device = createDevice({
-        exposes,
-        name: "Multi-endpoint Edge Case",
-      });
-
-      const [google] = mapToGoogleDevices(device, testClientId);
-      const endpoints = google.customData?.endpoints as any;
-      expect(endpoints).toHaveLength(20);
     });
   });
 
@@ -2162,23 +2127,6 @@ describe("CapabilityMapper", () => {
       } as GoogleCommand);
 
       expect(cmd?.level).toBe(128);
-    });
-
-    it("should preserve endpoint info with options in customData", () => {
-      const device = createDevice({
-        exposes: [["light"], ["brightness"]],
-        options: {
-          colorModel: "rgb",
-          type: "dimmable",
-        },
-      });
-
-      const [google] = mapToGoogleDevices(device, testClientId);
-      expect(google.customData?.endpoints).toBeDefined();
-      expect(google.customData?.endpoints).toHaveLength(2);
-      const endpoints = google.customData?.endpoints as any;
-      expect(endpoints[0].exposes).toEqual(["light"]);
-      expect(endpoints[1].exposes).toEqual(["brightness"]);
     });
   });
 

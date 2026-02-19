@@ -48,10 +48,10 @@ import {
  * @template TParams - Trait-specific command parameters type
  */
 export interface GenericTraitMapper<
-  TAttributes extends Record<string, unknown>,
-  TState extends Record<string, unknown>,
+  TAttributes extends Record<string, unknown> = Record<string, unknown>,
+  TState extends Record<string, unknown> = Record<string, unknown>,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  TParameters,
+  TParameters = Record<string, unknown>,
 > {
   /**
    * Trait identifier (e.g., 'action.devices.traits.OnOff')
@@ -752,14 +752,11 @@ export const GOOGLE_TRAITS = {
   SENSOR_STATE: "action.devices.traits.SensorState",
 } as const;
 
-/**
- * All available trait mappers
- */
-export const TRAIT_MAPPERS = [
-  OnOffTrait,
-  BrightnessTrait,
-  ColorSettingTrait,
-  OpenCloseTrait,
-  TemperatureSettingTrait,
-  SensorStateTrait,
-];
+export const TRAIT_MAPPERS: Record<string, GenericTraitMapper> = {
+  "action.devices.traits.OnOff": OnOffTrait,
+  "action.devices.traits.Brightness": BrightnessTrait,
+  "action.devices.traits.ColorSetting": ColorSettingTrait,
+  "action.devices.traits.OpenClose": OpenCloseTrait,
+  "action.devices.traits.TemperatureSetting": TemperatureSettingTrait,
+  "action.devices.traits.SensorState": SensorStateTrait,
+};

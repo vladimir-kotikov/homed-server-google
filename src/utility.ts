@@ -133,6 +133,12 @@ export const cloak = (str: string, unmaskedChars = 4): string => {
   return maskedPart + unmaskedPart;
 };
 
+// Merges multiple objects into one, can be passed to reduce directly
+export const mergeDicts = <T extends object, U>(
+  target: T,
+  source: U | undefined
+): T & U => Object.assign(target, source);
+
 export const truncate = (value: unknown, maxLength: number): string => {
   let str: string;
   try {

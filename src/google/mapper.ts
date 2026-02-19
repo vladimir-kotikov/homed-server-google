@@ -13,7 +13,7 @@ import type {
 import type { ClientId } from "../homed/client.ts";
 import type { EndpointOptions } from "../homed/schema.ts";
 import type { CommandMessage, DeviceState } from "../homed/types.ts";
-import { fastDeepEqual, filterDict } from "../utility.ts";
+import { fastDeepEqual, filterDict, mergeDicts } from "../utility.ts";
 import type { GoogleCommand } from "./schema.ts";
 import { TRAIT_MAPPERS } from "./traits.ts";
 import type {
@@ -93,7 +93,6 @@ export interface CommandToSend {
  * Device type mapping from Homed expose types to Google Smart Home device types
  */
 
-// Google Smart Home device types
 export const GOOGLE_DEVICE_TYPES = {
   SWITCH: "action.devices.types.SWITCH",
   OUTLET: "action.devices.types.OUTLET",
@@ -108,209 +107,179 @@ export const GOOGLE_DEVICE_TYPES = {
 } as const;
 
 /**
+ * Priority-ordered list of expose types for device type detection
+ * Earlier entries have higher priority when multiple control types are present
+ *
+ * Note: This ordering reflects UI/UX priorities. For multi-function devices,
+ * we want to prioritize the type that users will most commonly control.
+ */
+const DEVICE_TYPE_PRIORITY: Array<{ exposes: string[]; type: string }> = [
+  // Special sensors (highest priority for safety devices)
+  { exposes: ["smoke"], type: GOOGLE_DEVICE_TYPES.SMOKE_DETECTOR },
+
+  // Generic sensors (high priority to catch sensor-primary devices)
+  {
+    exposes: [
+      "temperature",
+      "humidity",
+      "pressure",
+      "co2",
+      "pm10",
+      "pm25",
+      "co",
+      "no2",
+      "contact",
+      "occupancy",
+      "motion",
+      "water_leak",
+      "gas",
+    ],
+    type: GOOGLE_DEVICE_TYPES.SENSOR,
+  },
+
+  // Outlets (priority over generic switch)
+  { exposes: ["outlet"], type: GOOGLE_DEVICE_TYPES.OUTLET },
+
+  // Lights (high priority for multi-function devices)
+  {
+    exposes: ["light", "color_light", "dimmable_light"],
+    type: GOOGLE_DEVICE_TYPES.LIGHT,
+  },
+  { exposes: ["lock", "door_lock"], type: GOOGLE_DEVICE_TYPES.LOCK },
+  {
+    exposes: ["thermostat", "temperature_controller"],
+    type: GOOGLE_DEVICE_TYPES.THERMOSTAT,
+  },
+  {
+    exposes: ["cover", "blinds", "curtain", "shutter"],
+    type: GOOGLE_DEVICE_TYPES.BLINDS,
+  },
+  // Switches (lowest priority - catch-all for control devices)
+  { exposes: ["switch", "relay"], type: GOOGLE_DEVICE_TYPES.SWITCH },
+];
+
+// Handle special case for "brightness" - add OnOff if light is present
+const handleBrightnessExpose = (exposes: string[]): string[] => {
+  return exposes.includes("light")
+    ? ["action.devices.traits.OnOff", "action.devices.traits.Brightness"]
+    : ["action.devices.traits.Brightness"];
+};
+
+// Handle special case for "light" with options
+const handleLightExpose = (
+  exposes: string[],
+  options?: EndpointOptions
+): string[] => {
+  const traits = ["action.devices.traits.OnOff"];
+
+  const lightOptions = options?.light;
+  // FIXME: This is a hack for INSPELLNIG sockets from IKEA which do
+  // not currently have good support in Homed and expose "light" with
+  // "level" where level is power measurement, not brightness, so skip
+  // brightness trait if device has power/energy monitoring (indicates
+  // level is power, not brightness)
+  const hasPowerMonitoring = exposes.some(e =>
+    ["power", "energy", "voltage", "current"].includes(e)
+  );
+
+  if (
+    Array.isArray(lightOptions) &&
+    lightOptions.includes("level") &&
+    !hasPowerMonitoring
+  ) {
+    traits.push("action.devices.traits.Brightness");
+  }
+
+  // Check if light has color option
+  if (
+    Array.isArray(lightOptions) &&
+    (lightOptions.includes("color") ||
+      lightOptions.includes("colorTemperature"))
+  ) {
+    traits.push("action.devices.traits.ColorSetting");
+  }
+  return traits;
+};
+
+/**
+ * Mapping of Homed expose types to Google traits
+ * Multiple exposes may contribute to the same trait
+ */
+const EXPOSE_TO_TRAITS: Record<
+  string,
+  string[] | ((exposes: string[], options?: EndpointOptions) => string[])
+> = {
+  switch: ["action.devices.traits.OnOff"],
+  relay: ["action.devices.traits.OnOff"],
+  outlet: ["action.devices.traits.OnOff"],
+  lock: ["action.devices.traits.OnOff"],
+  // Light with potential brightness/color options needs special handling
+  light: handleLightExpose,
+  // Brightness and dimmable lights may add OnOff if light is present
+  dimmable_light: handleBrightnessExpose,
+  brightness: handleBrightnessExpose,
+  color_light: [
+    "action.devices.traits.OnOff",
+    "action.devices.traits.Brightness",
+    "action.devices.traits.ColorSetting",
+  ],
+  color: ["action.devices.traits.ColorSetting"],
+  cover: ["action.devices.traits.OpenClose"],
+  blinds: ["action.devices.traits.OpenClose"],
+  curtain: ["action.devices.traits.OpenClose"],
+  shutter: ["action.devices.traits.OpenClose"],
+  thermostat: ["action.devices.traits.TemperatureSetting"],
+  temperature_controller: ["action.devices.traits.TemperatureSetting"],
+  temperature: ["action.devices.traits.TemperatureSetting"],
+  humidity: ["action.devices.traits.TemperatureSetting"],
+  occupancy: ["action.devices.traits.SensorState"],
+  motion: ["action.devices.traits.SensorState"],
+  contact: ["action.devices.traits.SensorState"],
+  smoke: ["action.devices.traits.SensorState"],
+  water_leak: ["action.devices.traits.SensorState"],
+  gas: ["action.devices.traits.SensorState"],
+  co: ["action.devices.traits.SensorState"],
+  co2: ["action.devices.traits.SensorState"],
+  no2: ["action.devices.traits.SensorState"],
+  pm10: ["action.devices.traits.SensorState"],
+  pm25: ["action.devices.traits.SensorState"],
+  pressure: ["action.devices.traits.SensorState"],
+};
+
+/**
  * Detect device type from exposes
  * Returns the most specific device type based on available exposes
+ * Uses priority-based matching for multi-function devices
  */
-const detectDeviceType = (exposes: string[]): string => {
-  if (!exposes || exposes.length === 0) {
-    return GOOGLE_DEVICE_TYPES.SENSOR; // Default fallback is SENSOR
-  }
-
-  // Priority: If any main sensor expose is present, always map as SENSOR
-  // Exception: smoke should map to SMOKE_DETECTOR
-  if (exposes.includes("smoke")) {
-    return GOOGLE_DEVICE_TYPES.SMOKE_DETECTOR;
-  }
-
-  if (
-    exposes.some(expose =>
-      [
-        "temperature",
-        "humidity",
-        "pressure",
-        "co2",
-        "pm10",
-        "pm25",
-        "co",
-        "no2",
-        "contact",
-        "occupancy",
-        "motion",
-        "water_leak",
-        "gas",
-      ].includes(expose)
-    )
-  ) {
-    return GOOGLE_DEVICE_TYPES.SENSOR;
-  }
-
-  // Outlet takes priority over light if present
-  if (exposes.includes("outlet")) {
-    return GOOGLE_DEVICE_TYPES.OUTLET;
-  }
-
-  // Light takes priority if present
-  if (
-    exposes.some(expose =>
-      ["light", "color_light", "dimmable_light"].includes(expose)
-    )
-  ) {
-    return GOOGLE_DEVICE_TYPES.LIGHT;
-  }
-
-  // Thermostat
-  if (
-    exposes.some(expose =>
-      ["thermostat", "temperature_controller"].includes(expose)
-    )
-  ) {
-    return GOOGLE_DEVICE_TYPES.THERMOSTAT;
-  }
-
-  // Lock
-  if (exposes.some(expose => ["lock", "door_lock"].includes(expose))) {
-    return GOOGLE_DEVICE_TYPES.LOCK;
-  }
-
-  // Cover/Blinds
-  if (
-    exposes.some(expose =>
-      ["cover", "blinds", "curtain", "shutter"].includes(expose)
-    )
-  ) {
-    return GOOGLE_DEVICE_TYPES.BLINDS;
-  }
-
-  // Only map as SWITCH if exposes includes switch, relay, or outlet
-  if (exposes.some(expose => ["switch", "relay", "outlet"].includes(expose))) {
-    return GOOGLE_DEVICE_TYPES.SWITCH;
-  }
-
-  // Default fallback is SENSOR
-  return GOOGLE_DEVICE_TYPES.SENSOR;
-};
+const detectDeviceType = (exposes: string[]): string =>
+  // Find first matching device type in priority list
+  // This ensures correct priority for hybrid devices
+  // (e.g., light+thermostat -> light)
+  DEVICE_TYPE_PRIORITY.find(({ exposes: priorityExposes }) =>
+    priorityExposes.some(expose => exposes.includes(expose))
+  )?.type ??
+  // Default to SENSOR if no exposes
+  GOOGLE_DEVICE_TYPES.SENSOR;
 
 /**
  * Get device type traits based on exposes and options
  * Different traits work with different device types
- * Options are checked for additional capabilities (e.g., light with level = brightness)
  */
-const getTraitsForExposes = (
+const mapExposesToTraits = (
   exposes: string[],
   options?: EndpointOptions
-): string[] => {
-  const traits = new Set<string>();
-
-  if (!exposes) {
-    return [];
-  }
-
-  for (const expose of exposes) {
-    switch (expose) {
-      case "switch":
-      case "relay":
-      case "outlet":
-      case "lock": {
-        traits.add("action.devices.traits.OnOff");
-        break;
+): string[] =>
+  exposes
+    .reduce((acc, expose) => {
+      let exposeTraits = EXPOSE_TO_TRAITS[expose];
+      if (typeof exposeTraits === "function") {
+        exposeTraits = exposeTraits(exposes, options);
       }
-
-      case "light": {
-        traits.add("action.devices.traits.OnOff");
-        // Check if light has level option (brightness control)
-        const lightOptions = options?.light;
-        // FIXME: This is a hack for INSPELLNIG sockets from IKEA which do
-        // not currently have good support in Homed and expose "light" with
-        // "level" where level is power measurement, not brightness, so skip
-        // brightness trait if device has power/energy monitoring (indicates
-        // level is power, not brightness)
-        const hasPowerMonitoring = exposes.some(e =>
-          ["power", "energy", "voltage", "current"].includes(e)
-        );
-        if (
-          Array.isArray(lightOptions) &&
-          lightOptions.includes("level") &&
-          !hasPowerMonitoring
-        ) {
-          traits.add("action.devices.traits.Brightness");
-        }
-        // Check if light has color option
-        if (
-          Array.isArray(lightOptions) &&
-          (lightOptions.includes("color") ||
-            lightOptions.includes("colorTemperature"))
-        ) {
-          traits.add("action.devices.traits.ColorSetting");
-        }
-        break;
-      }
-
-      case "dimmable_light": {
-        traits.add("action.devices.traits.OnOff");
-        traits.add("action.devices.traits.Brightness");
-        break;
-      }
-
-      case "color_light": {
-        traits.add("action.devices.traits.OnOff");
-        traits.add("action.devices.traits.Brightness");
-        traits.add("action.devices.traits.ColorSetting");
-        break;
-      }
-
-      case "brightness": {
-        // Add OnOff if there's a light present, otherwise just brightness
-        if (exposes.includes("light")) {
-          traits.add("action.devices.traits.OnOff");
-        }
-        traits.add("action.devices.traits.Brightness");
-        break;
-      }
-
-      case "color": {
-        traits.add("action.devices.traits.ColorSetting");
-        break;
-      }
-
-      case "cover":
-      case "blinds":
-      case "curtain":
-      case "shutter": {
-        traits.add("action.devices.traits.OpenClose");
-        break;
-      }
-
-      case "thermostat":
-      case "temperature_controller":
-      case "temperature":
-      case "humidity": {
-        traits.add("action.devices.traits.TemperatureSetting");
-        break;
-      }
-
-      case "occupancy":
-      case "motion":
-      case "contact":
-      case "smoke":
-      case "water_leak":
-      case "gas":
-      case "co":
-      case "co2":
-      case "no2":
-      case "pm10":
-      case "pm25":
-      case "pressure": {
-        traits.add("action.devices.traits.SensorState");
-        break;
-      }
-    }
-  }
-
-  return [...traits];
-};
-
-const mergeEndpointOptions = (endpoints: HomedEndpoint[]): EndpointOptions =>
-  Object.assign({}, ...endpoints.map(ep => ep.options ?? {}));
+      exposeTraits?.forEach(trait => acc.add(trait));
+      return acc;
+    }, new Set<string>())
+    .values()
+    .toArray();
 
 /**
  * Determines if an endpoint has control capabilities (vs just metadata)
@@ -360,13 +329,7 @@ const getPrimaryExpose = (exposes: string[]): string | undefined => {
     "temperature_controller", // Climate types
   ];
 
-  for (const primary of priorities) {
-    if (exposes.includes(primary)) {
-      return primary;
-    }
-  }
-
-  return undefined;
+  return priorities.find(primary => exposes.includes(primary));
 };
 
 /**
@@ -387,6 +350,44 @@ const areAllSameDeviceType = (endpoints: HomedEndpoint[]): boolean => {
   // Check if all primary exposes are the same
   const firstPrimary = validPrimaries[0];
   return validPrimaries.every(primary => primary === firstPrimary);
+};
+
+/**
+ * Creates virtual device representations for Google Smart Home integration
+ *
+ * Returns an array of virtual HomedDevice objects, potentially splitting a single
+ * physical device into multiple Google devices when appropriate.
+ *
+ * Splitting logic: A device is split into multiple Google devices when:
+ * - It has 2+ endpoints with control capabilities, AND
+ * - All control endpoints have the same primary device type (e.g., all switches)
+ *
+ * This prevents splitting devices with mixed capabilities (e.g., switch + sensor)
+ * while properly handling multi-switch devices as separate Google devices.
+ *
+ * @param homedDevice - The physical Homed device to analyze
+ * @returns Array of virtual devices:
+ *   - When split: Each control endpoint becomes a separate virtual device with
+ *     `virtualEndpointId` set to the endpoint's ID and `endpoints` containing only that endpoint
+ *   - When not split: Returns array with single device (original, no `virtualEndpointId`)
+ */
+const getVirtualControlDevices = (
+  homedDevice: HomedDevice
+): (HomedDevice & { endpointId?: number })[] => {
+  const controlEndpoints = homedDevice.endpoints.filter(ep =>
+    hasControlCapabilities(ep.exposes)
+  );
+
+  const shouldSplit =
+    controlEndpoints.length > 1 && areAllSameDeviceType(controlEndpoints);
+
+  return shouldSplit
+    ? controlEndpoints.map(ep => ({
+        ...homedDevice,
+        endpointId: ep.id,
+        endpoints: [ep],
+      }))
+    : [homedDevice];
 };
 
 /**
@@ -424,23 +425,23 @@ const buildDeviceNames = (
  * Build a complete Google Smart Home device object
  * Consolidates device type detection, trait mapping, attribute collection, and structure building
  */
-const buildGoogleDevice = (
+const mapToGoogleDevice = (
   homedDevice: HomedDevice,
   clientId: ClientId,
   exposes: string[],
   options: EndpointOptions,
-  endpoint?: HomedEndpoint
+  endpointId?: number
 ): GoogleDevice => {
   const deviceType = detectDeviceType(exposes);
-  const traits = getTraitsForExposes(exposes, options);
+  const traits = mapExposesToTraits(exposes, options);
   const googleDeviceId = toGoogleDeviceId(
     clientId,
     homedDevice.key,
-    endpoint?.id
+    endpointId
   );
 
   // Build name suffix for multi-endpoint devices
-  const suffix = endpoint?.id !== undefined ? ` - Switch ${endpoint?.id}` : "";
+  const suffix = endpointId !== undefined ? ` - Switch ${endpointId}` : "";
   const name = homedDevice.name + suffix;
 
   const { defaultNames, nicknames } = buildDeviceNames(
@@ -452,13 +453,9 @@ const buildGoogleDevice = (
   );
 
   // Collect trait attributes
-  const attributes: GoogleDeviceAttributes = {};
-  for (const trait of TRAIT_MAPPERS) {
-    if (traits.includes(trait.trait)) {
-      const traitAttributes = trait.getAttributes(exposes, options);
-      Object.assign(attributes, traitAttributes);
-    }
-  }
+  const attributes = traits
+    .map(trait => TRAIT_MAPPERS[trait]?.getAttributes(exposes, options))
+    .reduce(mergeDicts, {});
 
   return {
     id: googleDeviceId,
@@ -470,23 +467,15 @@ const buildGoogleDevice = (
       nicknames,
     },
     willReportState: false,
-    attributes: Object.keys(attributes).length > 0 ? attributes : undefined,
+    attributes:
+      Object.keys(attributes).length > 0
+        ? (attributes as GoogleDeviceAttributes)
+        : undefined,
     deviceInfo: {
       manufacturer: homedDevice.manufacturer ?? "Unknown Manufacturer",
       model: homedDevice.model ?? "Unknown Model",
       hwVersion: homedDevice.version ?? "unknown",
       swVersion: homedDevice.firmware ?? "unknown",
-    },
-    customData: {
-      homedKey: homedDevice.key,
-      clientId,
-      endpointId: endpoint?.id,
-      endpoints: endpoint
-        ? [{ id: endpoint.id, exposes: endpoint.exposes }]
-        : homedDevice.endpoints.map(ep => ({
-            id: ep.id,
-            exposes: ep.exposes,
-          })),
     },
   };
 };
@@ -502,26 +491,13 @@ const buildGoogleDevice = (
 export const getGoogleDeviceIds = (
   homedDevice: HomedDevice,
   clientId: ClientId
-): GoogleDeviceId[] => {
-  // Find all endpoints with control capabilities
-  const controlEndpoints = homedDevice.endpoints.filter(ep =>
-    hasControlCapabilities(ep.exposes)
+): GoogleDeviceId[] =>
+  // Multiple control endpoints of same type would have endpoint id defined,
+  // while single-endpoint device or multi-endpoint device with different types
+  // would not include endpoint ID in Google device ID
+  getVirtualControlDevices(homedDevice).map(device =>
+    toGoogleDeviceId(clientId, device.key, device.endpointId)
   );
-
-  // Determine if device should be split (same logic as mapToGoogleDevices)
-  const shouldSplit =
-    controlEndpoints.length > 1 && areAllSameDeviceType(controlEndpoints);
-
-  if (shouldSplit) {
-    // Multiple control endpoints of same type - return ID for each endpoint
-    return controlEndpoints.map(endpoint =>
-      toGoogleDeviceId(clientId, homedDevice.key, endpoint.id)
-    );
-  }
-
-  // Single device - return single ID
-  return [toGoogleDeviceId(clientId, homedDevice.key)];
-};
 
 /**
  * Convert a Homed device to Google Smart Home device format(s)
@@ -534,53 +510,21 @@ export const getGoogleDeviceIds = (
 export const mapToGoogleDevices = (
   homedDevice: HomedDevice,
   clientId: ClientId
-): GoogleDevice[] => {
-  // Find all endpoints with control capabilities
-  const controlEndpoints = homedDevice.endpoints.filter(ep =>
-    hasControlCapabilities(ep.exposes)
+): GoogleDevice[] =>
+  getVirtualControlDevices(homedDevice).map(device =>
+    mapToGoogleDevice(
+      homedDevice,
+      clientId,
+      // Flatten exposes - for single-control (not virtual) device that would be
+      // all exposes, to make sure we include traits from all endpoints, for
+      // virtual device it's just the single endpoint's exposes
+      new Set(device.endpoints.flatMap(ep => ep.exposes)).values().toArray(),
+      device.endpoints
+        .map(ep => ep.options)
+        .reduce(mergeDicts, {} as EndpointOptions),
+      device.endpointId
+    )
   );
-
-  // Determine if device should be split into multiple Google devices
-  // Only split if there are 2+ control endpoints AND they're all the same type
-  const shouldSplit =
-    controlEndpoints.length > 1 && areAllSameDeviceType(controlEndpoints);
-
-  // If not splitting, treat as single device
-  if (!shouldSplit) {
-    // Single device: flatten all exposes from all endpoints
-    const allExposes = homedDevice.endpoints
-      .flatMap(ep => ep.exposes)
-      .filter((expose, index, array) => array.indexOf(expose) === index);
-
-    return [
-      buildGoogleDevice(
-        homedDevice,
-        clientId,
-        allExposes,
-        mergeEndpointOptions(homedDevice.endpoints)
-      ),
-    ];
-  }
-
-  // Multiple control endpoints of same type - create separate Google device for each
-  return controlEndpoints
-    .map(endpoint => {
-      const traits = getTraitsForExposes(endpoint.exposes, endpoint.options);
-      // Skip if no traits (shouldn't happen for control endpoints)
-      if (traits.length === 0) {
-        return undefined;
-      }
-
-      return buildGoogleDevice(
-        homedDevice,
-        clientId,
-        endpoint.exposes,
-        endpoint.options ?? {},
-        endpoint
-      );
-    })
-    .filter((device): device is GoogleDevice => device !== undefined);
-};
 
 /**
  * Convert Homed device state to Google state
@@ -593,27 +537,22 @@ export const mapToGoogleState = (
   homedDevice: HomedDevice,
   deviceState: DeviceState
 ): GoogleDeviceState => {
-  const allExposes = homedDevice.endpoints
-    .flatMap(endpoint => endpoint.exposes)
-    .filter((expose, index, array) => array.indexOf(expose) === index);
+  // Deduplicate exposes across endpoints for accurate trait mapping
+  const allExposes = new Set(homedDevice.endpoints.flatMap(ep => ep.exposes))
+    .values()
+    .toArray();
 
-  const mergedOptions = mergeEndpointOptions(homedDevice.endpoints);
-  const traits = getTraitsForExposes(allExposes, mergedOptions);
-  const state: GoogleDeviceState = {
+  const allOptions = homedDevice.endpoints
+    .map(ep => ep.options)
+    .reduce(mergeDicts, {} as EndpointOptions);
+
+  return {
     online: (deviceState.available as boolean | undefined) ?? true,
+    // Get state for each supported trait - use properly typed TraitState union
+    ...mapExposesToTraits(allExposes, allOptions)
+      .map(trait => TRAIT_MAPPERS[trait]?.getState(deviceState))
+      .reduce(mergeDicts, {}),
   };
-
-  // Get state for each supported trait - use properly typed TraitState union
-  for (const trait of TRAIT_MAPPERS) {
-    if (traits.includes(trait.trait)) {
-      const traitState = trait.getState(deviceState);
-      if (traitState) {
-        Object.assign(state, traitState);
-      }
-    }
-  }
-
-  return state;
 };
 
 /**
@@ -629,45 +568,26 @@ export const mapToGoogleStates = (
   homedDevice: HomedDevice,
   clientId: ClientId,
   deviceState: DeviceState
-): Record<GoogleDeviceId, GoogleDeviceState> => {
-  // Find all endpoints with control capabilities
-  const controlEndpoints = homedDevice.endpoints.filter(ep =>
-    hasControlCapabilities(ep.exposes)
-  );
+): Record<GoogleDeviceId, GoogleDeviceState> =>
+  getVirtualControlDevices(homedDevice)
+    .map(device => {
+      const { key, endpointId } = device;
+      // if there's a single endpoint with a nonzero ID, use that ID for the
+      // Google device, otherwise omit endpoint ID.
+      // Same goes for state - extract endpoint-specific state from nested
+      // structure otherwise fall back to device-level state
+      const state =
+        endpointId && deviceState.endpoints
+          ? ((deviceState.endpoints as Record<number, DeviceState>)[
+              endpointId
+            ] ?? deviceState)
+          : deviceState;
 
-  // Determine if device should be split (same logic as mapToGoogleDevices)
-  const shouldSplit =
-    controlEndpoints.length > 1 && areAllSameDeviceType(controlEndpoints);
-
-  if (!shouldSplit) {
-    // Single device - report state once
-    const googleState = mapToGoogleState(homedDevice, deviceState);
-    const googleDeviceId = toGoogleDeviceId(clientId, homedDevice.key);
-    return { [googleDeviceId]: googleState };
-  }
-
-  // Multiple control endpoints of same type - report state for each separately
-  return controlEndpoints.reduce((acc, endpoint) => {
-    // Create filtered device with only this endpoint for accurate state mapping
-    const endpointDevice = { ...homedDevice, endpoints: [endpoint] };
-
-    // Extract endpoint-specific state from nested structure
-    const endpointState: DeviceState =
-      endpoint.id && deviceState.endpoints
-        ? ((deviceState.endpoints as Record<number, DeviceState>)[
-            endpoint.id
-          ] ?? deviceState)
-        : deviceState;
-
-    const googleState = mapToGoogleState(endpointDevice, endpointState);
-    const googleDeviceId = toGoogleDeviceId(
-      clientId,
-      homedDevice.key,
-      endpoint.id
-    );
-    return { ...acc, [googleDeviceId]: googleState };
-  }, {});
-};
+      const googleState = mapToGoogleState(device, state);
+      const googleDeviceId = toGoogleDeviceId(clientId, key, endpointId);
+      return { [googleDeviceId]: googleState };
+    })
+    .reduce(mergeDicts, {});
 
 /**
  * Prepare state report for Google Home Graph
@@ -720,12 +640,13 @@ export const mapToHomedCommand = (
   homedDevice: HomedDevice,
   googleCommand: GoogleCommand
 ): CommandMessage | undefined => {
-  const allExposes = homedDevice.endpoints
-    .flatMap(ep => ep.exposes)
-    .filter((expose, index, array) => array.indexOf(expose) === index);
+  const allExposes = new Set(homedDevice.endpoints.flatMap(ep => ep.exposes))
+    .values()
+    .toArray();
 
-  const mergedOptions = mergeEndpointOptions(homedDevice.endpoints);
-  const traits = getTraitsForExposes(allExposes, mergedOptions);
+  const allOptions = homedDevice.endpoints
+    .map(ep => ep.options)
+    .reduce(mergeDicts, {});
 
   // Extract endpoint ID if device has been filtered to single endpoint
   // Only use endpoint ID in topic if its a truly multi-endpoint scenario
@@ -737,21 +658,16 @@ export const mapToHomedCommand = (
       ? homedDevice.endpoints[0].id
       : undefined;
 
-  // Find matching trait mapper
-  for (const trait of TRAIT_MAPPERS) {
-    if (traits.includes(trait.trait)) {
-      const command = trait.mapCommand(
+  // Find matching trait mapper and map command
+  return mapExposesToTraits(allExposes, allOptions)
+    .map(trait =>
+      TRAIT_MAPPERS[trait]?.mapCommand(
         homedDevice.key,
         googleCommand,
         endpointId
-      );
-      if (command) {
-        return command;
-      }
-    }
-  }
-
-  return;
+      )
+    )
+    .find(command => command !== undefined);
 };
 
 /**
@@ -763,63 +679,39 @@ export const mapToHomedCommand = (
  * @returns Array of commands ready to send to Homed devices
  */
 export const mapExecutionRequest = (
-  request: ExecutionRequest,
+  { userId, googleDeviceIds, commands }: ExecutionRequest,
   allDevices: Array<{ device: HomedDevice; clientId: ClientId }>
-): CommandToSend[] => {
-  const { userId, googleDeviceIds, commands } = request;
-  const requestedDeviceIds = new Set(googleDeviceIds);
-  const commandsToSend: CommandToSend[] = [];
-
+): CommandToSend[] =>
   // Map Google device IDs to Homed devices with context
-  const deviceCommandContexts = allDevices.flatMap(({ device, clientId }) => {
-    // Get all Google device IDs that exist for this Homed device
-    const googleIds = getGoogleDeviceIds(device, clientId);
+  // Get all Google device IDs that exist for this Homed device
+  allDevices.flatMap(({ device, clientId }) =>
+    getGoogleDeviceIds(device, clientId)
+      .filter(googleId => googleDeviceIds.includes(googleId))
+      // Process each matched device
+      .flatMap(googleId => {
+        // For multi-endpoint devices, filter to only the requested endpoint
+        const endpointId = getEndpointIdFromGoogleDeviceId(googleId);
+        const deviceForCommand = {
+          ...device,
+          endpoints: endpointId
+            ? device.endpoints.filter(ep => ep.id === endpointId)
+            : device.endpoints,
+        };
 
-    return googleIds
-      .filter(googleId => requestedDeviceIds.has(googleId))
-      .map(googleId => ({
-        device,
-        clientId,
-        googleId,
-        endpointId: getEndpointIdFromGoogleDeviceId(googleId),
-      }));
-  });
-
-  // Process each matched device
-  for (const {
-    device,
-    clientId,
-    googleId,
-    endpointId,
-  } of deviceCommandContexts) {
-    // For multi-endpoint devices, filter to only the requested endpoint
-    const deviceForCommand =
-      endpointId !== undefined
-        ? {
-            ...device,
-            endpoints: device.endpoints.filter(ep => ep.id === endpointId),
-          }
-        : device;
-
-    // Map each Google command to Homed command
-    for (const command of commands) {
-      const message = mapToHomedCommand(deviceForCommand, command);
-
-      if (message) {
-        commandsToSend.push({
-          userId,
-          clientId,
-          deviceId: device.key as DeviceId,
-          endpointId,
-          googleDeviceIds: [googleId],
-          message,
-        });
-      }
-    }
-  }
-
-  return commandsToSend;
-};
+        // Map each Google command to Homed command
+        return commands
+          .map(command => mapToHomedCommand(deviceForCommand, command))
+          .filter(message => message !== undefined)
+          .map(message => ({
+            userId,
+            clientId,
+            deviceId: device.key,
+            endpointId,
+            googleDeviceIds: [googleId],
+            message,
+          }));
+      })
+  );
 
 /**
  * Map devices and states to Google SYNC response payload
