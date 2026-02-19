@@ -1,52 +1,67 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Link Your Account - OAuth</title>
+    <link rel="icon" type="image/svg+xml" href="/images/favicon.svg" />
     <link rel="stylesheet" href="/css/common.css">
     <link rel="stylesheet" href="/css/consent.css">
 </head>
 
-<body>
-    <div class="container">
-        <div class="header">
-            <div class="logo">🏠</div>
+<body class="centered-layout">
+    <main class="container">
+        <header class="header">
+            <img src="/images/homed-icon.svg" alt="Homed" class="logo" />
             <h1>Link Your Account</h1>
             <p class="subtitle">
                 Google Home wants to link your <strong><%= clientId %></strong> account
                 with your Google Account.
             </p>
-        </div>
+        </header>
 
-        <div class="info-box">
+        <section class="info-box">
             <strong>Authorization statement:</strong>
-            <p class="warning-text">By signing in, you are authorizing Google to control your devices.</p>
-        </div>
+            <p>By signing in, you are authorizing Google to control your devices.</p>
+        </section>
 
-        <div class="scopes">
+        <section class="scopes">
             <p class="scopes-title">This will allow Google to:</p>
-            <div class="scope-item">Control your smart home devices</div>
-            <% if (scopes) { %>
-            <div class="scope-item">Access: <%= scopes %></div>
-            <% } %>
-        </div>
+            <ul class="scope-list">
+                <li class="list-item">Control your smart home devices</li>
+                <% if (scopes) { %>
+                <li class="list-item">Access: <%= scopes %></li>
+                <% } %>
+            </ul>
+        </section>
 
-        <div class="privacy-info">
-            <strong>Your privacy is important.</strong><br>
-            <a href="https://policies.google.com/privacy" target="_blank">View Google's Privacy Policy</a> to learn how
-            Google handles your data.
-        </div>
+        <aside class="card-info-section">
+            <p>
+                Your privacy is important.
+                <a href="https://policies.google.com/privacy" target="_blank" rel="noopener noreferrer">View Google's
+                    Privacy Policy</a>
+                to learn how Google handles your data.
+            </p>
+        </aside>
 
         <form id="approveForm" method="POST" action="/oauth/authorize/consent">
             <input type="hidden" name="transaction_id" value="<%= transaction_id %>">
             <div class="buttons">
-                <button type="submit" name="authorize" value="Approve" class="approve">Agree and link</button>
-                <button type="submit" name="cancel" value="Deny" class="deny">Cancel</button>
+                <button type="submit" name="authorize" value="Approve" class="approve">Approve</button>
+                <button type="submit" name="cancel" value="Deny" class="deny">Deny</button>
             </div>
         </form>
-    </div>
+    </main>
+
+    <footer>
+        <a href="#" id="theme-toggle" class="action-link">
+            <img src="/images/icons/moon.svg" alt="" width="14" height="14" class="theme-icon" />
+            <span class="theme-text">Dark theme</span>
+        </a>
+    </footer>
+
+    <script src="/js/theme.js"></script>
 </body>
 
 </html>

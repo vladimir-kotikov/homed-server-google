@@ -1,80 +1,99 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Homed Server - Dashboard</title>
+    <link rel="icon" type="image/svg+xml" href="/images/favicon.svg" />
     <link rel="stylesheet" href="/css/common.css">
     <link rel="stylesheet" href="/css/dashboard.css">
 </head>
 
 <body>
-    <div class="header">
-        <h1>🏠 Homed Server</h1>
-        <div class="user-info">
-            <span class="username"><%= username %></span>
-            <a href="/logout" class="logout-btn">Logout</a>
+    <header class="header">
+        <div class="header-left">
+            <img src="/images/homed-icon.svg" alt="Homed" class="header-icon" />
+            <h1>Homed Server</h1>
         </div>
-    </div>
+        <nav class="user-info">
+            <span class="user-email"><%= email %></span>
+            <a href="/logout" class="action-link logout-link">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                    <polyline points="16 17 21 12 16 7"></polyline>
+                    <line x1="21" y1="12" x2="9" y2="12"></line>
+                </svg>
+                Logout
+            </a>
+        </nav>
+    </header>
 
-    <div class="container">
-        <div class="card">
-            <h2>🔑 TCP Server Token</h2>
+    <main class="container">
+        <section class="card">
+            <h2>TCP Server Token</h2>
             <p>Use this token to connect your Homed devices to the Google Smart Home integration via the TCP server.</p>
 
             <div class="token-container">
-                <div class="token-label">Client Token</div>
+                <div class="token-label">
+                    Client Token
+                    <a href="#" class="action-link copy-link" title="Copy to clipboard">
+                        <img src="/images/icons/clipboard.svg" alt="" width="14" height="14" class="copy-icon" />
+                        <span class="copy-text">Copy</span>
+                    </a>
+                </div>
                 <div class="token-value"><%= clientToken %></div>
-                <button class="copy-btn" onclick="copyToken()">Copy</button>
             </div>
-        </div>
+        </section>
 
-        <div class="card">
-            <h2>�️ Connected Clients</h2>
+        <section class="card">
+            <h2>Connected Clients</h2>
             <% if (connectedClients && connectedClients.length > 0) { %>
-            <div class="clients-list">
+            <ul class="clients-list">
                 <% connectedClients.forEach(clientId => { %>
-                <div class="client-item">
+                <li class="client-item">
                     <span class="client-id"><%= clientId %></span>
                     <span class="client-status">● Connected</span>
-                </div>
+                </li>
                 <% }); %>
-            </div>
+            </ul>
             <% } else { %>
             <p class="no-clients">No clients connected yet.</p>
             <% } %>
-        </div>
+        </section>
 
-        <div class="card">
-            <h2>�💡 Next Steps</h2>
-            <p><strong>1. Configure your homed-service-cloud client:</strong></p>
-            <p style="margin-left: 1rem;">Add your client token to the configuration file and point it to this server.
-            </p>
+        <details class="card collapsible">
+            <summary class="collapsible-header">
+                <svg class="collapse-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="9 18 15 12 9 6"></polyline>
+                </svg>
+                Next Steps
+            </summary>
+            <section class="collapsible-content">
+                <p><strong>1. Configure your homed-service-cloud client:</strong></p>
+                <p style="margin-left: 1rem;">Add your client token to the configuration file and point it to this
+                    server.
+                </p>
 
-            <p style="margin-top: 1rem;"><strong>2. Set up Google Smart Home:</strong></p>
-            <p style="margin-left: 1rem;">Link your Google account through the OAuth flow to control devices via Google
-                Assistant.</p>
-        </div>
-    </div>
+                <p style="margin-top: 1rem;"><strong>2. Set up Google Smart Home:</strong></p>
+                <p style="margin-left: 1rem;">Link your Google account through the OAuth flow to control devices via
+                    Google
+                    Assistant.</p>
+            </section>
+        </details>
+    </main>
 
-    <script>
-        async function copyToken() {
-            const tokenValue = document.querySelector('.token-value').textContent;
-            const btn = document.querySelector('.copy-btn');
+    <footer>
+        <a href="#" id="theme-toggle" class="action-link">
+            <img src="/images/icons/moon.svg" alt="" width="14" height="14" class="theme-icon" />
+            <span class="theme-text">Dark theme</span>
+        </a>
+    </footer>
 
-            try {
-                await navigator.clipboard.writeText(tokenValue);
-                btn.textContent = 'Copied!';
-                btn.classList.add('copied');
-
-                setTimeout(() => {
-                    btn.textContent = 'Copy';
-                    btn.classList.remove('copied');
-                }, 2000);
-            } catch (error) { }
-        }
-    </script>
+    <script src="/js/theme.js"></script>
+    <script src="/js/dashboard.js"></script>
 </body>
 
 </html>
