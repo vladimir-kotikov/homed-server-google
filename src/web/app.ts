@@ -127,7 +127,6 @@ export class WebApp {
       .use(authentication)
       .use(passport.session())
       .use(helmet())
-      .use(rateLimit({ windowMs: 15 * 60 * 1000, max: 100 }))
       .get(
         "/",
         passport.authenticate("session"),
@@ -193,10 +192,11 @@ export class WebApp {
 
   private handleHome = (request: Request, response: Response) => {
     const {
-      user: { id, clientToken },
+      user: { id, clientToken, username },
     } = request as Express.AuthenticatedRequest;
     response.render("dashboard", {
       username: id,
+      email: username, // username is actually the email from Google
       clientToken,
       connectedClients: this.deviceRepository.getConnectedClientIds(id),
     });
