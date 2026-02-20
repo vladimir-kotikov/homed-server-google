@@ -22,6 +22,7 @@ export default defineConfig(
           "warn",
           {
             case: "camelCase",
+            ignore: [".*\.d\.ts$"],
           },
         ],
       },
