@@ -1,7 +1,4 @@
-/**
- * Mapper Service Unit Tests
- */
-
+import { describe, expect, it } from "vitest";
 import { type DeviceId, type HomedDevice } from "../../src/device.ts";
 import {
   getStateUpdates,

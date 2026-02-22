@@ -17,103 +17,134 @@ export interface DebugInstances {
   error: Debugger;
 }
 
+/**
+ * Sentry-managed internal context names injected automatically by the SDK
+ * (OS details, runtime, hardware, etc.). These add noise to log output and
+ * are already visible in Sentry's built-in context panels.
+ */
+const SENTRY_INTERNAL_CONTEXTS = new Set([
+  "os",
+  "runtime",
+  "app",
+  "browser",
+  "device",
+  "gpu",
+  "culture",
+  "memory_info",
+  "trace",
+  "state",
+  "transaction",
+]);
+
 export class Logger {
   private readonly component: string;
-  private readonly debugInstances: DebugInstances;
+  private readonly loggers: DebugInstances;
 
-  constructor(component: string, debugInstances: DebugInstances) {
+  constructor(component: string, loggers: DebugInstances) {
     this.component = component;
-    this.debugInstances = debugInstances;
+    this.loggers = loggers;
   }
 
-  debug(message: string, data?: LogExtra): void {
-    this.formatDebugOutput(this.debugInstances.debug, message, data);
-    this.addBreadcrumb("debug", message, data);
-    Sentry.logger.debug(message, { component: this.component, ...data });
+  debug(message: string, extra?: LogExtra): void {
+    const enriched = this.mergeSentryScopeData(extra);
+    this.log(this.loggers.debug, message, enriched);
+    this.addBreadcrumb("debug", message, extra);
+    Sentry.logger.debug(message, { component: this.component, ...enriched });
   }
 
   info(message: string, data?: LogExtra): void {
-    this.formatDebugOutput(this.debugInstances.info, message, data);
+    const enriched = this.mergeSentryScopeData(data);
+    this.log(this.loggers.info, message, enriched);
     this.addBreadcrumb("info", message, data);
-    Sentry.logger.info(message, { component: this.component, ...data });
+    Sentry.logger.info(message, { component: this.component, ...enriched });
   }
 
   warn(message: string, data?: LogExtra): void {
-    this.formatDebugOutput(this.debugInstances.warn, message, data);
+    const enriched = this.mergeSentryScopeData(data);
+    this.log(this.loggers.warn, message, enriched);
     this.addBreadcrumb("warning", message, data);
-    Sentry.logger.warn(message, { component: this.component, ...data });
-    Sentry.captureMessage(message, {
-      level: "warning",
-      extra: data,
-      tags: { component: this.component },
-    } as Sentry.CaptureContext);
+    Sentry.logger.warn(message, { component: this.component, ...enriched });
+    Sentry.captureMessage(message, this.getCaptureContext("warning", data));
   }
 
   error(message: string, error?: unknown, data?: LogExtra): void {
+    const enriched = this.mergeSentryScopeData(data);
     if (error !== undefined) {
-      this.debugInstances.error("%s %O", message, error);
+      this.loggers.error("%s %O", message, error);
     } else {
-      this.formatDebugOutput(this.debugInstances.error, message, data);
+      this.log(this.loggers.error, message, enriched);
     }
 
     this.addBreadcrumb("error", message, data);
-    Sentry.logger.error(message, { component: this.component, ...data, error });
-    const context = {
-      tags: { component: this.component },
-      ...(data ? { extra: data } : {}),
-    };
+    Sentry.logger.error(message, {
+      component: this.component,
+      ...enriched,
+      error,
+    });
     // eslint-disable-next-line @typescript-eslint/no-unused-expressions
     error
-      ? Sentry.captureException(error as Error, context)
-      : Sentry.captureMessage(message, {
-          level: "error",
-          error,
-          ...context,
-        } as Sentry.CaptureContext);
+      ? Sentry.captureException(error, this.getCaptureContext("error", data))
+      : Sentry.captureMessage(message, this.getCaptureContext("error", data));
   }
 
   /**
    * Format output to debug instance
    * Uses "%s %O" when meta is provided, "%s" when not
-   * Enriches output with context from current Sentry scope
    */
-  private formatDebugOutput(
-    debugFn: Debugger,
-    message: string,
-    data?: LogExtra
-  ): void {
-    const enrichedMeta = this.enrichLogExtra(data);
-    if (enrichedMeta !== undefined && Object.keys(enrichedMeta).length > 0) {
-      debugFn("%s %O", message, enrichedMeta);
+  private log(logFn: Debugger, message: string, extra?: LogExtra): void {
+    if (extra !== undefined && Object.keys(extra).length > 0) {
+      logFn("%s %O", message, extra);
     } else {
-      debugFn("%s", message);
+      logFn("%s", message);
     }
   }
 
   /**
-   * Enrich metadata by reading from Sentry's current scope
-   * This ensures console logs show the same context that Sentry events receive
+   * Enrich metadata by merging from both Sentry's isolation scope and current
+   * scope. Context set in withIsolationScope() lives on the isolation scope and
+   * persists through async boundaries, but is NOT visible via getCurrentScope().
+   * Current scope takes precedence on conflicts.
    */
-  private enrichLogExtra(data: LogExtra = {}): LogExtra {
-    const { tags, user, extra, contexts } =
-      Sentry.getCurrentScope().getScopeData();
-    // Skip contexts for now to avoid polluting debug logs
+  private mergeSentryScopeData(data: LogExtra = {}): LogExtra {
+    const isolationData = Sentry.getIsolationScope().getScopeData();
+    const currentData = Sentry.getCurrentScope().getScopeData();
+
+    const tags = { ...isolationData.tags, ...currentData.tags };
+    const user = { ...isolationData.user, ...currentData.user };
+    const extra = { ...isolationData.extra, ...currentData.extra };
+    const contexts = { ...isolationData.contexts, ...currentData.contexts };
+
+    // Flatten domain contexts into log output with prefixes,
+    // skipping Sentry-internal context names
+    const contextEntries = Object.entries(contexts)
+      .filter(([contextName]) => !SENTRY_INTERNAL_CONTEXTS.has(contextName))
+      .flatMap(([contextName, contextData]) =>
+        contextData
+          ? Object.entries(contextData as Record<string, unknown>).map(
+              ([key, value]) =>
+                [`${contextName}.${key}`, value] as [string, unknown]
+            )
+          : []
+      );
+
     return {
       ...data,
       ...mapDict(tags, (key, value) => [`tag.${key}`, value]),
       ...mapDict(user, (key, value) => [`user.${key}`, value]),
       ...mapDict(extra, (key, value) => [`extra.${key}`, value]),
-      // Merge client context if available, prefixing keys to avoid collisions
-      ...mapDict(contexts.client ?? {}, (key, value) => [
-        `client.${key}`,
-        value,
-      ]),
-      ...mapDict(contexts.connection ?? {}, (key, value) => [
-        `connection.${key}`,
-        value,
-      ]),
+      ...Object.fromEntries(contextEntries),
     };
   }
+
+  private getCaptureContext = (
+    level: Sentry.SeverityLevel,
+    extra?: LogExtra
+  ): Sentry.CaptureContext =>
+    ({
+      level,
+      tags: { component: this.component },
+      ...(extra && Object.keys(extra).length > 0 ? { extra } : {}),
+    }) as Sentry.CaptureContext;
 
   private addBreadcrumb = (
     level: Sentry.SeverityLevel,
@@ -121,7 +152,7 @@ export class Logger {
     data: LogExtra | undefined
   ) =>
     Sentry.addBreadcrumb({
-      type: level,
+      type: level === "debug" || level === "error" ? level : "default",
       level: level,
       category: this.component.replace(":", "."),
       message,

@@ -138,8 +138,8 @@ export class HomedServerController {
     message: CommandMessage;
   }): void => {
     const client = this.clients[userId]?.[clientId];
-    Sentry.setContext("client", { userId, clientId });
-    Sentry.setExtras({ deviceId, endpointId });
+    Sentry.setContext("client", { clientId });
+    Sentry.setContext("homed.device", { deviceId, endpointId });
 
     if (!client) {
       log.error("command.error", undefined, {
@@ -189,8 +189,6 @@ export class HomedServerController {
     ]).then(() => this.userDb.close());
 
   clientConnected = (socket: net.Socket) => {
-    const connectionContext = { remoteAddress: socket.remoteAddress };
-    Sentry.setContext("connection", connectionContext);
     if (
       !socket.remoteAddress ||
       this.healthcheckIps.has(socket.remoteAddress)
@@ -210,60 +208,22 @@ export class HomedServerController {
 
     log.info("connection.accept");
     const client = new ClientConnection<User>(socket)
-      .on("close", () =>
-        Sentry.withScope(scope => {
-          scope.setContext("connection", connectionContext);
-          Sentry.metrics.gauge(
-            "connections.active",
-            this.tcpServer.connections
-          );
-          return this.clientDisconnected(client);
-        })
-      )
-      .on("token", token =>
-        Sentry.withScope(scope => {
-          scope.setContext("connection", connectionContext);
-          return this.clientTokenReceived(client, token);
-        })
-      )
+      .on("close", () => {
+        Sentry.metrics.gauge("connections.active", this.tcpServer.connections);
+        return this.clientDisconnected(client);
+      })
+      .on("token", token => this.clientTokenReceived(client, token))
       // status/# subscription
       .on("status", (topic, message) =>
-        Sentry.withScope(scope => {
-          scope.setContext("connection", connectionContext);
-          return this.clientStatusUpdated(
-            client,
-            topicToDeviceId(topic),
-            message
-          );
-        })
+        this.clientStatusUpdated(client, topicToDeviceId(topic), message)
       )
       .on("device", (topic, message) =>
-        Sentry.withScope(scope => {
-          scope.setContext("connection", connectionContext);
-          return this.deviceStatusUpdated(
-            client,
-            topicToDeviceId(topic),
-            message
-          );
-        })
+        this.deviceStatusUpdated(client, topicToDeviceId(topic), message)
       )
       .on("expose", (topic, devices) =>
-        Sentry.withScope(scope => {
-          scope.setContext("connection", connectionContext);
-          return this.clientDeviceUpdated(
-            client,
-            topicToDeviceId(topic),
-            devices
-          );
-        })
+        this.clientDeviceUpdated(client, topicToDeviceId(topic), devices)
       )
-      .on("fd", (topic, data) =>
-        Sentry.withScope(scope => {
-          scope.setContext("connection", connectionContext);
-          return this.deviceDataUpdated(client, topic, data);
-        })
-      );
-
+      .on("fd", (topic, data) => this.deviceDataUpdated(client, topic, data));
     Sentry.metrics.gauge("connections.active", this.tcpServer.connections);
   };
 
@@ -329,10 +289,6 @@ export class HomedServerController {
     message: ClientStatusMessage
   ) => {
     if (!client.uniqueId || !client.user) return;
-    Sentry.setContext("client", {
-      uniqueId: client.uniqueId,
-      userId: client.user.id,
-    });
 
     log.debug("message.devices", {
       devices: message.devices?.length ?? 0,

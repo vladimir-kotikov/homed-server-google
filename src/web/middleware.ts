@@ -1,4 +1,5 @@
 /* eslint-disable unicorn/no-null */
+import * as Sentry from "@sentry/node";
 import type { NextFunction, Request, Response } from "express";
 import jwt from "jsonwebtoken";
 import {
@@ -102,3 +103,15 @@ export const debugLoggedIn = (
         next
       )
     : next();
+
+export const setSentryUser = (
+  req: Request,
+  _res: Response,
+  next: NextFunction
+) => {
+  const user = req.user as User | undefined;
+  if (user) {
+    Sentry.setUser({ id: user.id, username: user.username });
+  }
+  next();
+};

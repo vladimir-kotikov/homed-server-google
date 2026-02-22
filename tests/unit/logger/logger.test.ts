@@ -17,6 +17,14 @@ vi.mock("@sentry/node", () => ({
       extra: {},
     })),
   })),
+  getIsolationScope: vi.fn(() => ({
+    getScopeData: vi.fn(() => ({
+      tags: {},
+      contexts: {},
+      user: {},
+      extra: {},
+    })),
+  })),
   withScope: vi.fn((callback: (scope: any) => void) => {
     const mockScope = {
       setTag: vi.fn(),
@@ -73,15 +81,12 @@ describe("Logger", () => {
     // Reset all Sentry mocks
     vi.clearAllMocks();
 
-    // Mock getCurrentScope to return empty scope by default
-    vi.mocked(Sentry.getCurrentScope).mockReturnValue({
-      getScopeData: () => ({
-        tags: {},
-        contexts: {},
-        user: {},
-        extra: {},
-      }),
-    } as any);
+    // Mock both scopes to return empty scope by default
+    const emptyScope = {
+      getScopeData: () => ({ tags: {}, contexts: {}, user: {}, extra: {} }),
+    } as any;
+    vi.mocked(Sentry.getCurrentScope).mockReturnValue(emptyScope);
+    vi.mocked(Sentry.getIsolationScope).mockReturnValue(emptyScope);
 
     // Create logger instance
     logger = new Logger("test:component", {
@@ -150,7 +155,7 @@ describe("Logger", () => {
 
       expect(Sentry.addBreadcrumb).toHaveBeenCalledWith({
         level: "info",
-        type: "info",
+        type: "default",
         message: "test info",
         category: "test.component",
       });
@@ -169,7 +174,7 @@ describe("Logger", () => {
 
       expect(Sentry.addBreadcrumb).toHaveBeenCalledWith({
         level: "warning",
-        type: "warning",
+        type: "default",
         message: "test warning",
         category: "test.component",
       });
@@ -215,6 +220,7 @@ describe("Logger", () => {
       logger.error("test error", error);
 
       expect(Sentry.captureException).toHaveBeenCalledWith(error, {
+        level: "error",
         tags: { component: "test:component" },
       });
     });
@@ -370,15 +376,17 @@ describe("Logger", () => {
 describe("createLogger", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    // Reset getCurrentScope to return empty scope
-    vi.mocked(Sentry.getCurrentScope).mockReturnValue({
+    // Reset both scopes to return empty scope
+    const emptyScope = {
       getScopeData: vi.fn(() => ({
         tags: {},
         contexts: {},
         user: {},
         extra: {},
       })),
-    } as any);
+    } as any;
+    vi.mocked(Sentry.getCurrentScope).mockReturnValue(emptyScope);
+    vi.mocked(Sentry.getIsolationScope).mockReturnValue(emptyScope);
   });
 
   afterEach(() => {

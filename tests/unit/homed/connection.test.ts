@@ -11,6 +11,8 @@ class MockSocket extends EventEmitter {
   public writtenData: Buffer[] = [];
   public remoteAddress = "127.0.0.1";
   public remotePort = 12_345;
+  public writable = true;
+  public closed = false;
 
   write(data: Buffer): void {
     this.writtenData.push(data);

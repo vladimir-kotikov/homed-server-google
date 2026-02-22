@@ -89,7 +89,7 @@ export class FulfillmentController {
     this.homegraph?.devices
       .requestSync({ requestBody: { agentUserId: userId, async: true } })
       .then(() => log.debug("homegraph.request_sync"))
-      .catch(error => log.error("request_sync", error));
+      .catch(error => log.error("homegraph.request_sync", error));
 
   /**
    * Handle device state change events from repository
@@ -147,7 +147,7 @@ export class FulfillmentController {
             .exhaustive()
             .then(payload => ({ requestId, payload })),
         error => {
-          log.error("fulfillment.error", error, { reson: "invalid_request" });
+          log.error("fulfillment.error", error, { reason: "invalid_request" });
           throw new RequestError("Invalid Smart Home request");
         }
       );

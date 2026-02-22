@@ -6,6 +6,7 @@ import type { ClientToken } from "../db/repository.ts";
 import type { DeviceId } from "../device.ts";
 import { createLogger } from "../logger.ts";
 import { Err, safeParse, truncate, type Result } from "../utility.ts";
+import { connectionContextFromSocket } from "./context.ts";
 import { AES128CBC } from "./crypto.ts";
 import { escapePacket, readPacket, unescapePacket } from "./protocol.ts";
 import {
@@ -30,7 +31,9 @@ export type ClientId = string & { readonly __uniqueId: unique symbol };
  * handles the DH handshake, encryption/decryption, and message parsing.
  */
 
-export class ClientConnection<U extends { id: string }> extends EventEmitter<{
+export class ClientConnection<
+  U extends { id: string; username?: string },
+> extends EventEmitter<{
   error: [Error];
   close: [];
   token: [ClientToken];
@@ -47,11 +50,6 @@ export class ClientConnection<U extends { id: string }> extends EventEmitter<{
   uniqueId?: ClientId;
   user?: U;
 
-  private getClientContext = () => ({
-    clientId: this.uniqueId,
-    userId: this.user?.id,
-  });
-
   constructor(
     socket: Socket,
     timeout: number = 10_000,
@@ -59,13 +57,21 @@ export class ClientConnection<U extends { id: string }> extends EventEmitter<{
   ) {
     super();
     this.maxBufferSize = maxBufferSize;
+    const connectionContext = connectionContextFromSocket(socket);
     this.socket = socket
       .on("data", (data: Buffer) =>
-        Sentry.withScope(scope => {
-          scope.setContext("client", this.getClientContext());
-          scope.setContext("connection", {
-            remoteAddress: socket.remoteAddress,
-          });
+        Sentry.withIsolationScope(scope => {
+          scope.setContext("client", { clientId: this.uniqueId });
+          scope.setContext("connection", connectionContext);
+          if (this.user) {
+            scope.setUser({
+              id: this.user.id,
+              username: this.user.username,
+              ip_address: connectionContext.remoteAddress,
+            });
+            scope.setTag("userId", this.user.id);
+          }
+
           this.receiveData(data);
         })
       )
@@ -172,19 +178,13 @@ export class ClientConnection<U extends { id: string }> extends EventEmitter<{
           attributes: { "messaging.message.body.size": decrypted.length },
         },
         span => {
-          // Set up Sentry context for the entire transaction
-          Sentry.setContext("client", {
-            clientId: this.uniqueId,
-            userId: this.user?.id,
-          });
-
           return this.parseMessage(message)
             .map(([event, topic, data]) => {
               // Extract deviceId from topic if present (e.g., "fd/deviceId" -> "deviceId")
               let topicName = topic;
               const topicParts = topic.split("/");
               if (topicParts.length > 1) {
-                Sentry.setContext("device", {
+                Sentry.setContext("homed.device", {
                   deviceId: topicParts.slice(1).join("/"),
                 });
                 topicName = topicParts.slice(0, 2).join("/") + "/{deviceId}";
@@ -231,7 +231,19 @@ export class ClientConnection<U extends { id: string }> extends EventEmitter<{
   // Public solely for testing purposes
   sendMessage(message: ServerMessage): void {
     if (!this.cipher) {
+      // This should never happen in normal operation since sendMessage
+      // is only called after authorization, but we check just in case
+      // and do not bother to handle gracefully since it would indicate
+      // a fundamental protocol violation by the client
       throw new Error("Cannot send message: AES not initialized");
+    }
+
+    if (this.socket.closed || !this.socket.writable) {
+      log.warn("message.outgoing", {
+        reason: "socket_closed",
+        message: truncate(message, 100),
+      });
+      return;
     }
 
     try {
@@ -268,7 +280,12 @@ export class ClientConnection<U extends { id: string }> extends EventEmitter<{
 
   authorize(user: U): void {
     this.user = user;
-    Sentry.setContext("client", this.getClientContext());
+    Sentry.setUser({
+      id: this.user.id,
+      username: this.user.username,
+      ip_address: this.socket.remoteAddress,
+    });
+    Sentry.setTag("userId", this.user.id);
 
     this.sendMessage({ action: "subscribe", topic: "status/#" });
     clearTimeout(this.timeout);

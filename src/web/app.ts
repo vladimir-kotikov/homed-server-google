@@ -26,6 +26,7 @@ import {
   googleOauth20Strategy,
   jwtStrategy,
   requireLoggedIn,
+  setSentryUser,
 } from "./middleware.ts";
 import { OAuthController } from "./oauth.ts";
 
@@ -126,6 +127,7 @@ export class WebApp {
       .use(session)
       .use(authentication)
       .use(passport.session())
+      .use(setSentryUser)
       .use(helmet())
       .get(
         "/",
@@ -157,6 +159,7 @@ export class WebApp {
         "/fulfillment",
         rateLimit({ max: 100 }),
         passport.authenticate("jwt", { session: false }),
+        setSentryUser,
         debugLoggedIn,
         requireLoggedIn,
         this.handleFulfillment

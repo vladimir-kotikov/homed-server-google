@@ -8,6 +8,14 @@ import {
   createUserId,
 } from "../factories.ts";
 
+vi.mock("@sentry/node", () => ({
+  metrics: {
+    increment: vi.fn(),
+    distribution: vi.fn(),
+    gauge: vi.fn(),
+  },
+}));
+
 describe("DeviceRepository", () => {
   let repository: DeviceRepository;
   const userId = createUserId("user1");

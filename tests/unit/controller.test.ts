@@ -11,6 +11,33 @@ import {
   createUserId,
 } from "../factories.ts";
 
+vi.mock("@sentry/node", () => {
+  const emptyScope = () => ({
+    getScopeData: vi.fn(() => ({
+      tags: {},
+      contexts: {},
+      user: {},
+      extra: {},
+    })),
+  });
+  return {
+    metrics: { increment: vi.fn(), distribution: vi.fn(), gauge: vi.fn() },
+    addBreadcrumb: vi.fn(),
+    captureException: vi.fn(),
+    captureMessage: vi.fn(),
+    getCurrentScope: vi.fn(emptyScope),
+    getIsolationScope: vi.fn(emptyScope),
+    setContext: vi.fn(),
+    setUser: vi.fn(),
+    withIsolationScope: vi.fn((cb: (scope: any) => void) =>
+      cb({ setContext: vi.fn(), setUser: vi.fn(), setTag: vi.fn() })
+    ),
+    startSpan: vi.fn((_opts: unknown, cb: () => unknown) => cb()),
+    logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+    setupExpressErrorHandler: vi.fn(),
+  };
+});
+
 describe("HomedServerController", () => {
   let controller: HomedServerController;
   let deviceCache: DeviceRepository;
