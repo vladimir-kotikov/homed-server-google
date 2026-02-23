@@ -25,6 +25,24 @@ Sentry.init({
     // Ignore health check transactions
     // eslint-disable-next-line unicorn/no-null
     transaction.transaction === "GET /health" ? null : transaction,
+  // Bridge new OTel semantic convention attribute names to the legacy names
+  // that Sentry's Queries insights panel still requires.
+  // opentelemetry-plugin-better-sqlite3 uses the new OTel 1.29+ names
+  // (db.system.name, db.query.text) but the panel looks for db.system and
+  // db.statement to classify and populate DB query spans.
+  beforeSendSpan: span => {
+    const data = span.data as Record<string, unknown> | undefined;
+    if (!data) return span;
+
+    if (data["db.system.name"] && !data["db.system"]) {
+      data["db.system"] = data["db.system.name"];
+    }
+    if (data["db.query.text"] && !data["db.statement"]) {
+      data["db.statement"] = data["db.query.text"];
+    }
+
+    return span;
+  },
 });
 
 // Register custom OpenTelemetry instrumentations after Sentry.init
