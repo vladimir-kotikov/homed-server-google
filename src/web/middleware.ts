@@ -1,39 +1,49 @@
 /* eslint-disable unicorn/no-null */
 import * as Sentry from "@sentry/node";
 import type { NextFunction, Request, Response } from "express";
-import jwt from "jsonwebtoken";
 import {
   Strategy as GoogleOauth20Strategy,
   type Profile,
 } from "passport-google-oauth20";
-import { ExtractJwt, Strategy as JwtStrategy } from "passport-jwt";
 import { Strategy as ClientPasswordStrategy } from "passport-oauth2-client-password";
-import {
-  JWT_ALGORITHM,
-  type ClientToken,
-  type User,
-  type UserId,
-} from "../db/repository.ts";
+import { type ClientToken, type User, type UserId } from "../db/repository.ts";
+import { createLogger } from "../logger.ts";
+
+const logger = createLogger("web.middleware");
 
 declare type Maybe<T> = T | undefined;
 declare type MaybeAsync<T> = T | Promise<T>;
 
-// Authenticates Google Smarthome API endpoint with provided JWT token
-export const jwtStrategy = (
-  jwtSecret: string,
-  verifyToken: (token: jwt.JwtPayload) => MaybeAsync<Maybe<User>>
-) =>
-  new JwtStrategy(
-    {
-      jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
-      secretOrKey: jwtSecret,
-      algorithms: [JWT_ALGORITHM],
-    },
-    async (payload, done) =>
-      Promise.try(() => verifyToken(payload))
-        .then(user => done(null, user ?? false))
-        .catch(error => done(error))
-  );
+// Authenticates Google Smarthome API endpoint with an opaque Bearer
+// token. The token is verified by the UserRepository
+// (AES-256-GCM decryption). Skips verification if the request is already
+// authenticated (e.g. by debugLoggedIn in dev environments).
+export const bearerAuthMiddleware =
+  (verifyToken: (token: string) => Promise<Express.User | undefined>) =>
+  async (req: Request, res: Response, next: NextFunction) => {
+    if (req.user) return next();
+    const authHeader = req.headers.authorization;
+    return authHeader?.startsWith("Bearer ")
+      ? verifyToken(authHeader.slice(7))
+          .then(user => {
+            if (!user) {
+              return res
+                .status(401)
+                .set("WWW-Authenticate", 'Bearer realm="api"')
+                .json({ error: "invalid_token" });
+            }
+            req.user = user;
+            next();
+          })
+          .catch(error => {
+            logger.error("oauth.token.error", error);
+            next(error);
+          })
+      : res
+          .status(401)
+          .set("WWW-Authenticate", 'Bearer realm="api"')
+          .json({ error: "unauthorized_client" });
+  };
 
 export const clientPasswordOauth20Strategy = (
   allowedClientId: string,

@@ -30,11 +30,11 @@ const EXCHANGE_TOKENS_PAYLOAD = {
 };
 
 const newCode = (repo: UserRepository) =>
-  repo.issueCode("test-user-id" as UserId, CLIENT_ID, REDIRECT_URI);
+  repo.issueCode("test-user-id" as UserId);
 
 const newTokens = async (repo: UserRepository) => {
   const code = newCode(repo);
-  const tokens = await repo.exchangeCode(code, CLIENT_ID, REDIRECT_URI);
+  const tokens = await repo.exchangeCode(code);
   return tokens!;
 };
 
@@ -264,7 +264,7 @@ describe("OAuth Integration Tests", () => {
       expect(response.status).toBe(401);
       expect(response.headers).toHaveProperty("www-authenticate");
       expect(response.body).toMatchObject({
-        error: "invalid_token",
+        error: "unauthorized_client",
       });
     });
 
@@ -276,7 +276,7 @@ describe("OAuth Integration Tests", () => {
       expect(response.status).toBe(401);
       expect(response.headers).toHaveProperty("www-authenticate");
       expect(response.body).toMatchObject({
-        error: "invalid_token",
+        error: "unauthorized_client",
       });
     });
 
@@ -296,7 +296,7 @@ describe("OAuth Integration Tests", () => {
       // Create an expired token by manipulating issueToken
       const expiredAccessToken = await (userRepository as any).issueToken(
         "access",
-        "-1h", // Already expired
+        -3600, // Already expired (1 hour ago)
         "test-user-id",
         CLIENT_ID,
         REDIRECT_URI

@@ -1,7 +1,6 @@
 import Database from "better-sqlite3";
 import { eq } from "drizzle-orm";
 import { BetterSQLite3Database, drizzle } from "drizzle-orm/better-sqlite3";
-import jwt from "jsonwebtoken";
 import crypto from "node:crypto";
 import { createLogger } from "../logger.ts";
 import * as schema from "./schema.ts";
@@ -9,7 +8,14 @@ import { users } from "./schema.ts";
 
 const log = createLogger("user");
 
-export const JWT_ALGORITHM = "HS256" as const;
+/**
+ * Opaque token payload (AES-256-GCM encrypted, not visible to clients)
+ */
+interface OpaqueTokenPayload {
+  typ: "code" | "access" | "refresh";
+  sub: UserId;
+  exp: number; // Unix timestamp seconds
+}
 
 const newClientToken = () =>
   crypto.randomBytes(32).toString("hex") as ClientToken;
@@ -32,7 +38,7 @@ type UserRepositoryOptions = {
 export class UserRepository {
   readonly database: Database.Database;
   private readonly client: BetterSQLite3Database<typeof schema>;
-  private readonly jwtSecret: string;
+  private readonly encryptionKey: Buffer;
   private accessTokenLifetime: number;
   private refreshTokenLifetime: number;
 
@@ -43,10 +49,11 @@ export class UserRepository {
   ) {
     this.database = database;
     this.client = drizzle(database, { schema });
-    this.jwtSecret = jwtSecret;
     this.accessTokenLifetime = options?.accessTokenLifetime ?? 15 * 60; // 15 minutes
     this.refreshTokenLifetime =
       options?.refreshTokenLifetime ?? 7 * 24 * 60 * 60; // 7 days
+    // Derive a 256-bit encryption key from the JWT secret using SHA-256.
+    this.encryptionKey = crypto.createHash("sha256").update(jwtSecret).digest();
   }
 
   static open(
@@ -71,91 +78,107 @@ export class UserRepository {
     this.database.close();
   }
 
-  private verifyTokenPayload = (
-    { typ, sub }: jwt.JwtPayload,
-    expectedType: string
-  ) => {
-    if (typ !== expectedType || !sub) {
-      return;
-    }
-
-    return this.client.query.users.findFirst({
-      where: eq(users.id, sub as UserId),
-    });
-  };
-
-  private verifyToken = async (
+  /**
+   * Decrypt and validate an opaque AES-256-GCM token.
+   * Returns the UserId on success, or undefined if invalid/expired/wrong type.
+   */
+  private verifyToken = (
     token: string,
-    expectedType: string,
-    clientId?: string,
-    redirectUri?: string
-  ) => {
-    const options = { algorithms: [JWT_ALGORITHM] } as jwt.VerifyOptions;
-    if (clientId) {
-      options.issuer = clientId;
-    }
-    if (redirectUri) {
-      options.audience = redirectUri;
-    }
+    expectedType: "code" | "access" | "refresh"
+  ): UserId | undefined => {
     try {
-      const payload = jwt.verify(
-        token,
-        this.jwtSecret,
-        options
-      ) as jwt.JwtPayload;
-      return this.verifyTokenPayload(payload, expectedType);
+      const buf = Buffer.from(token, "base64url");
+      if (buf.length < 29) return undefined; // iv(12) + authTag(16) + 1 byte minimum
+      const iv = buf.subarray(0, 12);
+      const authTag = buf.subarray(12, 28);
+      const encrypted = buf.subarray(28);
+      const decipher = crypto.createDecipheriv(
+        "aes-256-gcm",
+        this.encryptionKey,
+        iv
+      );
+      decipher.setAuthTag(authTag);
+      const decrypted = Buffer.concat([
+        decipher.update(encrypted),
+        decipher.final(),
+      ]);
+      const { typ, sub, exp } = JSON.parse(
+        decrypted.toString("utf8")
+      ) as OpaqueTokenPayload;
+      if (typ !== expectedType || typeof sub !== "string") return undefined;
+      if (
+        typeof exp !== "number" ||
+        isNaN(exp) ||
+        exp < Math.floor(Date.now() / 1000)
+      )
+        return undefined;
+      return sub;
     } catch {
-      return;
+      return undefined;
     }
   };
 
-  // This can be made private and is public only for testing purposes
+  /**
+   * Encrypt a token payload with AES-256-GCM.
+   * Returns a base64url-encoded string that is opaque to clients.
+   * Format: base64url(iv[12] + authTag[16] + ciphertext)
+   */
   issueToken = (
     typ: "code" | "access" | "refresh",
-    expiresIn: string | number,
-    userId: UserId,
-    clientId?: string,
-    redirectUri?: string
-  ) => {
-    const options = {
-      subject: userId,
-      expiresIn,
-      algorithm: JWT_ALGORITHM,
-    } as jwt.SignOptions;
-    if (clientId) {
-      options.issuer = clientId;
-    }
-    if (redirectUri) {
-      options.audience = redirectUri;
-    }
-    return jwt.sign({ typ }, this.jwtSecret, options);
+    expiresInSeconds: number,
+    userId: UserId
+  ): string => {
+    const iv = crypto.randomBytes(12);
+    const exp = Math.floor(Date.now() / 1000) + expiresInSeconds;
+    const payload: OpaqueTokenPayload = { typ, sub: userId, exp };
+    const cipher = crypto.createCipheriv("aes-256-gcm", this.encryptionKey, iv);
+    const encrypted = Buffer.concat([
+      cipher.update(JSON.stringify(payload), "utf8"),
+      cipher.final(),
+    ]);
+    const authTag = cipher.getAuthTag();
+    return Buffer.concat([iv, authTag, encrypted]).toString("base64url");
   };
 
-  issueCode = (userId: UserId, clientId: string, redirectUri: string) =>
-    this.issueToken("code", "5m", userId, clientId, redirectUri);
+  issueCode = (userId: UserId) => this.issueToken("code", 5 * 60, userId);
 
-  exchangeCode = async (code: string, clientId: string, redirectUri: string) =>
-    this.verifyToken(code, "code", clientId, redirectUri).then(user =>
-      user
-        ? [
-            this.issueToken("access", this.accessTokenLifetime, user.id),
-            this.issueToken("refresh", this.refreshTokenLifetime, user.id),
-          ]
-        : undefined
-    );
+  exchangeCode = async (code: string) => {
+    const userId = this.verifyToken(code, "code");
+    if (!userId) return undefined;
+    const user = await this.client.query.users.findFirst({
+      where: eq(users.id, userId),
+    });
+    if (!user) return undefined;
+    return [
+      this.issueToken("access", this.accessTokenLifetime, user.id),
+      this.issueToken("refresh", this.refreshTokenLifetime, user.id),
+    ];
+  };
 
-  exchangeRefreshToken = async (token: string) =>
-    this.verifyToken(token, "refresh").then(user =>
-      user
-        ? [
-            this.issueToken("access", this.accessTokenLifetime, user.id),
-            this.issueToken("refresh", this.refreshTokenLifetime, user.id),
-          ]
-        : undefined
-    );
+  exchangeRefreshToken = async (token: string) => {
+    const userId = this.verifyToken(token, "refresh");
+    if (!userId) return undefined;
+    const user = await this.client.query.users.findFirst({
+      where: eq(users.id, userId),
+    });
+    if (!user) return undefined;
+    return [
+      this.issueToken("access", this.accessTokenLifetime, user.id),
+      this.issueToken("refresh", this.refreshTokenLifetime, user.id),
+    ];
+  };
 
-  verifyAccessTokenPayload = (payload: jwt.JwtPayload) =>
-    this.verifyTokenPayload(payload, "access");
+  /**
+   * Verify an opaque access token and return the corresponding user.
+   * Used by the Bearer authentication middleware.
+   */
+  verifyAccessToken = async (rawToken: string): Promise<User | undefined> => {
+    const userId = this.verifyToken(rawToken, "access");
+    if (!userId) return undefined;
+    return this.client.query.users.findFirst({
+      where: eq(users.id, userId),
+    });
+  };
 
   getOrCreate = (id: UserId, username: string): Promise<User> =>
     this.client

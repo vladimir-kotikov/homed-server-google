@@ -24,10 +24,10 @@ import type { DeviceRepository } from "../device.ts";
 import { FulfillmentController } from "../google/fulfillment.ts";
 import { createLogger } from "../logger.ts";
 import {
+  bearerAuthMiddleware,
   clientPasswordOauth20Strategy,
   debugLoggedIn,
   googleOauth20Strategy,
-  jwtStrategy,
   requireLoggedIn,
   setSentryUser,
 } from "./middleware.ts";
@@ -96,9 +96,8 @@ export class WebApp {
       },
     });
 
-    const jwtAuthentication = jwtStrategy(
-      appConfig.jwtSecret,
-      this.userRepository.verifyAccessTokenPayload
+    const bearerAuthentication = bearerAuthMiddleware(
+      this.userRepository.verifyAccessToken
     );
 
     const googleSSOAuthentication = googleOauth20Strategy(
@@ -115,7 +114,6 @@ export class WebApp {
     );
 
     const authentication = passport
-      .use("jwt", jwtAuthentication)
       .use("google-oauth20", googleSSOAuthentication)
       .use("client-password-oauth20", clientOauthAuthentication)
       .initialize();
@@ -190,9 +188,9 @@ export class WebApp {
           skip: skipHealthChecks,
           handler: onRateLimitExceeded,
         }),
-        passport.authenticate("jwt", { session: false }),
-        setSentryUser,
         debugLoggedIn,
+        bearerAuthentication,
+        setSentryUser,
         requireLoggedIn,
         this.handleFulfillment
       )

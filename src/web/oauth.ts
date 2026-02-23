@@ -1,12 +1,13 @@
 /* eslint-disable unicorn/no-null */
 import bodyParser from "body-parser";
 import { ensureLoggedIn } from "connect-ensure-login";
-import type { NextFunction, Request, Response } from "express";
+import type { Request, Response } from "express";
 import { Router } from "express";
 import * as oauth2orize from "oauth2orize";
 import passport from "passport";
 import appConfig from "../config.ts";
 import { UserRepository, type UserId } from "../db/repository.ts";
+import { bearerAuthMiddleware } from "./middleware.ts";
 
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
@@ -85,7 +86,7 @@ export class OAuthController {
     done(
       null,
       this.isValidClient(client.id, redirectUri)
-        ? this.userRepository.issueCode(user.id, client.id, redirectUri)
+        ? this.userRepository.issueCode(user.id)
         : false
     );
 
@@ -99,19 +100,17 @@ export class OAuthController {
       return done(null, false);
     }
 
-    this.userRepository
-      .exchangeCode(code, client.id, redirectUri)
-      .then(args => {
-        if (args === undefined) {
-          return done(null, false);
-        }
+    this.userRepository.exchangeCode(code).then(args => {
+      if (args === undefined) {
+        return done(null, false);
+      }
 
-        const [accessToken, refreshToken] = args;
-        // Include expires_in as required by Google
-        done(null, accessToken, refreshToken, {
-          expires_in: appConfig.accessTokenLifetime,
-        });
-      }, done);
+      const [accessToken, refreshToken] = args;
+      // Include expires_in as required by Google
+      done(null, accessToken, refreshToken, {
+        expires_in: appConfig.accessTokenLifetime,
+      });
+    }, done);
   };
 
   private exchangeToken = (
@@ -149,7 +148,7 @@ export class OAuthController {
       ? done(null, { id: clientId }, redirectUri)
       : done(null, false);
 
-  private userinfoHandler = async (req: Request, res: Response) => {
+  private userinfoHandler = (req: Request, res: Response) => {
     const { user } = req as Express.AuthenticatedRequest;
     res.json({
       sub: user.id,
@@ -185,36 +184,10 @@ export class OAuthController {
         this.oauth2Server.token(),
         this.oauth2Server.errorHandler()
       )
-      .get("/userinfo", (req: Request, res: Response, next: NextFunction) => {
-        passport.authenticate(
-          "jwt",
-          { session: false },
-          (authError: Error | null, user: User | false) => {
-            // Handle JWT authentication errors
-            if (authError) {
-              res.set("WWW-Authenticate", 'Bearer realm="api"');
-              return res.status(401).json({
-                error: "invalid_token",
-                error_description: authError.message,
-              });
-            }
-
-            // Handle no user returned (invalid/missing token)
-            if (!user) {
-              res.set("WWW-Authenticate", 'Bearer realm="api"');
-              return res.status(401).json({
-                error: "invalid_token",
-                error_description:
-                  "The access token provided is invalid or expired",
-              });
-            }
-
-            // Authentication successful
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            req.user = user as any;
-            this.userinfoHandler(req, res);
-          }
-        )(req, res, next);
-      });
+      .get(
+        "/userinfo",
+        bearerAuthMiddleware(this.userRepository.verifyAccessToken),
+        this.userinfoHandler
+      );
   }
 }

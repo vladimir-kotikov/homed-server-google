@@ -45,11 +45,7 @@ describe("Verify expires_in in token response", () => {
 
   it("Token exchange response MUST include expires_in field", async () => {
     // Create a valid authorization code
-    const code = userRepository.issueCode(
-      testUserId as UserId,
-      CLIENT_ID,
-      REDIRECT_URI
-    );
+    const code = userRepository.issueCode(testUserId as UserId);
 
     // Exchange the code for tokens
     const response = await request(webApp.app)
@@ -75,11 +71,7 @@ describe("Verify expires_in in token response", () => {
 
   it("Refresh token exchange MUST also include expires_in field", async () => {
     // Create initial tokens
-    const code = userRepository.issueCode(
-      testUserId as UserId,
-      CLIENT_ID,
-      REDIRECT_URI
-    );
+    const code = userRepository.issueCode(testUserId as UserId);
 
     const initialResponse = await request(webApp.app)
       .post("/oauth/token")

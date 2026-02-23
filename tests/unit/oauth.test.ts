@@ -1,6 +1,7 @@
 /**
  * Unit tests for OAuth functionality
- * These tests focus on the UserRepository token routines and JWT operations
+ * Tests UserRepository token routines with opaque AES-256-GCM access/refresh tokens
+ * and JWT authorization codes.
  */
 import Database from "better-sqlite3";
 import jwt from "jsonwebtoken";
@@ -9,499 +10,238 @@ import { UserRepository, type UserId } from "../../src/db/repository.ts";
 
 describe("UserRepository - Token Routines", () => {
   let repository: UserRepository;
-  const JWT_SECRET = "test-secret-key";
+  const JWT_SECRET = "test-secret-key-that-is-long-enough-for-tests";
+  const TEST_USER_ID = "test-user-id" as UserId;
 
   beforeEach(() => {
-    const sqliteDatabase = new (Database as any)(":memory:");
+    const sqliteDatabase = new (Database as unknown as typeof Database)(
+      ":memory:"
+    );
 
-    // Create schema
+    // Create schema matching the actual production schema
     sqliteDatabase.exec(`
-      CREATE TABLE "user" (
+      CREATE TABLE IF NOT EXISTS "user" (
         "id" TEXT PRIMARY KEY,
-        "email" TEXT NOT NULL,
-        "password_hash" TEXT NOT NULL,
+        "username" TEXT NOT NULL,
+        "client_token" TEXT NOT NULL UNIQUE,
         "created_at" INTEGER NOT NULL
       );
-      CREATE TABLE "authorization_code" (
-        "code" TEXT PRIMARY KEY,
-        "user_id" TEXT NOT NULL,
-        "client_id" TEXT NOT NULL,
-        "redirect_uri" TEXT NOT NULL,
-        "scope" TEXT,
-        "expires_at" INTEGER NOT NULL,
-        "created_at" INTEGER NOT NULL,
-        FOREIGN KEY("user_id") REFERENCES "user"("id")
-      );
-      CREATE TABLE "access_token" (
-        "token" TEXT PRIMARY KEY,
-        "user_id" TEXT NOT NULL,
-        "client_id" TEXT,
-        "expires_at" INTEGER NOT NULL,
-        "created_at" INTEGER NOT NULL,
-        FOREIGN KEY("user_id") REFERENCES "user"("id")
-      );
-      CREATE TABLE "refresh_token" (
-        "token" TEXT PRIMARY KEY,
-        "user_id" TEXT NOT NULL,
-        "client_id" TEXT,
-        "expires_at" INTEGER NOT NULL,
-        "created_at" INTEGER NOT NULL,
-        FOREIGN KEY("user_id") REFERENCES "user"("id")
+      CREATE TABLE IF NOT EXISTS "sessions" (
+        "sid" TEXT PRIMARY KEY,
+        "sess" TEXT NOT NULL,
+        "expire" TEXT NOT NULL
       );
     `);
 
-    repository = new UserRepository(sqliteDatabase, JWT_SECRET);
-
-    // Create test user
+    // Insert a test user
     sqliteDatabase
       .prepare(
-        `
-      INSERT INTO user (id, email, password_hash, created_at)
-      VALUES (?, ?, ?, ?)
-    `
+        `INSERT INTO "user" (id, username, client_token, created_at)
+         VALUES (?, ?, ?, ?)`
       )
-      .run("test-user-id", "test@example.com", "hashed-password", Date.now());
+      .run(
+        TEST_USER_ID,
+        "testuser@example.com",
+        "test-client-token",
+        Date.now()
+      );
+
+    repository = new UserRepository(sqliteDatabase, JWT_SECRET);
   });
 
-  describe("Authorization Code Generation", () => {
-    it("should generate authorization code with correct structure", () => {
-      const code = repository.issueCode(
-        "test-user-id" as UserId,
-        "client-id",
-        "http://localhost:3000/callback"
-      );
+  describe("Authorization Code (issueCode)", () => {
+    it("should generate an opaque authorization code", () => {
+      const code = repository.issueCode(TEST_USER_ID);
 
       expect(code).toBeDefined();
       expect(typeof code).toBe("string");
-      expect(code.length).toBeGreaterThan(0);
+      // Must be opaque — not a three-part JWT
+      expect(code.split(".").length).not.toBe(3);
+      expect(code).toMatch(/^[A-Za-z0-9_-]+$/);
     });
 
     it("should generate different codes for different calls", () => {
-      const code1 = repository.issueCode(
-        "test-user-id" as UserId,
-        "client-id",
-        "http://localhost:3000/callback"
-      );
-      // Add a small delay to ensure different iat timestamp
-      const code2 = repository.issueCode(
-        "test-user-id" as UserId,
-        "client-id",
-        "http://localhost:3000/callback"
-      );
+      const code1 = repository.issueCode(TEST_USER_ID);
+      const code2 = repository.issueCode(TEST_USER_ID);
 
-      // JWTs with same payload but issued at different times have different iat claims
-      const decoded1 = jwt.verify(code1, JWT_SECRET) as Record<string, unknown>;
-      const decoded2 = jwt.verify(code2, JWT_SECRET) as Record<string, unknown>;
-
-      // Both should be valid codes
-      expect(decoded1.typ).toBe("code");
-      expect(decoded2.typ).toBe("code");
+      // Random IV guarantees uniqueness
+      expect(code1).not.toBe(code2);
     });
   });
 
-  describe("Token Generation and JWT Verification", () => {
-    it("should generate valid JWT access token", () => {
-      const token = repository.issueToken(
-        "access",
-        "1h",
-        "test-user-id" as UserId,
-        "client-id",
-        "http://localhost"
-      );
+  describe("Opaque Access Token (issueToken / verifyAccessToken)", () => {
+    it("should generate an opaque (non-JWT) access token", () => {
+      const token = repository.issueToken("access", 3600, TEST_USER_ID);
 
       expect(token).toBeDefined();
       expect(typeof token).toBe("string");
-
-      const decoded = jwt.verify(token, JWT_SECRET) as Record<string, unknown>;
-      expect(decoded.sub).toBe("test-user-id");
-      expect(decoded.typ).toBe("access");
+      // Opaque tokens must NOT look like JWTs (three dot-separated base64url parts)
+      expect(token.split(".").length).not.toBe(3);
+      // Should be a valid base64url string
+      expect(token).toMatch(/^[A-Za-z0-9_-]+$/);
     });
 
-    it("should generate valid JWT refresh token", () => {
-      const token = repository.issueToken(
-        "refresh",
-        "7d",
-        "test-user-id" as UserId,
-        "client-id",
-        "http://localhost"
-      );
+    it("should generate an opaque (non-JWT) refresh token", () => {
+      const token = repository.issueToken("refresh", 604_800, TEST_USER_ID);
 
       expect(token).toBeDefined();
-      const decoded = jwt.verify(token, JWT_SECRET) as Record<string, unknown>;
-      expect(decoded.typ).toBe("refresh");
+      expect(token.split(".").length).not.toBe(3);
+      expect(token).toMatch(/^[A-Za-z0-9_-]+$/);
     });
 
-    it("should include correct issuer in token", () => {
-      const token = repository.issueToken(
-        "access",
-        "1h",
-        "test-user-id" as UserId,
-        "client-id",
-        "http://localhost"
-      );
-
-      const decoded = jwt.verify(token, JWT_SECRET) as Record<string, unknown>;
-      expect(decoded.iss).toBe("client-id");
+    it("should generate different tokens on each call (random IV)", () => {
+      const token1 = repository.issueToken("access", 3600, TEST_USER_ID);
+      const token2 = repository.issueToken("access", 3600, TEST_USER_ID);
+      expect(token1).not.toBe(token2);
     });
 
-    it("should set correct expiration time", () => {
-      const beforeIssue = Math.floor(Date.now() / 1000);
-      const token = repository.issueToken(
-        "access",
-        "1h",
-        "test-user-id" as UserId,
-        "client-id",
-        "http://localhost"
-      );
+    it("should verify a valid access token and return the user", async () => {
+      const token = repository.issueToken("access", 3600, TEST_USER_ID);
+      const user = await repository.verifyAccessToken(token);
 
-      const decoded = jwt.verify(token, JWT_SECRET) as Record<string, unknown>;
-      const exp = decoded.exp as number;
-
-      // Should be approximately 1 hour from now
-      const expectedExp = beforeIssue + 3600;
-      expect(Math.abs(exp - expectedExp)).toBeLessThan(5); // Allow 5 second tolerance
+      expect(user).toBeDefined();
+      expect(user?.id).toBe(TEST_USER_ID);
     });
 
-    it("should reject token with wrong secret", () => {
-      const token = repository.issueToken(
-        "access",
-        "1h",
-        "test-user-id" as UserId,
-        "client-id",
-        "http://localhost"
-      );
+    it("should return undefined for an expired access token", async () => {
+      // Token that expired 1 second ago
+      const token = repository.issueToken("access", -1, TEST_USER_ID);
+      const user = await repository.verifyAccessToken(token);
 
-      expect(() => {
-        jwt.verify(token, "wrong-secret");
-      }).toThrow();
+      expect(user).toBeUndefined();
     });
 
-    it("should reject tampered token", () => {
-      const token = repository.issueToken(
-        "access",
-        "1h",
-        "test-user-id" as UserId,
-        "client-id",
-        "http://localhost"
-      );
-      const decoded = jwt.decode(token) as Record<string, unknown>;
+    it("should return undefined for a refresh token used as access token", async () => {
+      const refreshToken = repository.issueToken("refresh", 3600, TEST_USER_ID);
+      const user = await repository.verifyAccessToken(refreshToken);
 
-      // Tamper with payload
-      if (decoded && typeof decoded === "object") {
-        decoded.sub = "different-user";
-      }
-
-      // Re-encode without signing (simulates tampering)
-      const tampered = Buffer.from(JSON.stringify(decoded)).toString("base64");
-
-      // jwt.verify should reject this
-      expect(() => {
-        jwt.verify(
-          token.slice(0, token.lastIndexOf(".")) + "." + tampered,
-          JWT_SECRET
-        );
-      }).toThrow();
+      // Wrong token type — must be rejected
+      expect(user).toBeUndefined();
     });
 
-    it("should verify token with correct secret", () => {
-      const token = repository.issueToken(
-        "access",
-        "1h",
-        "test-user-id" as UserId,
-        "client-id",
-        "http://localhost"
-      );
+    it("should return undefined for a tampered token", async () => {
+      const token = repository.issueToken("access", 3600, TEST_USER_ID);
+      // Modify the last 4 characters to simulate tampering
+      const tampered = token.slice(0, -4) + "AAAA";
+      const user = await repository.verifyAccessToken(tampered);
 
-      expect(() => {
-        jwt.verify(token, JWT_SECRET);
-      }).not.toThrow();
+      expect(user).toBeUndefined();
+    });
+
+    it("should return undefined for a random string", async () => {
+      const user = await repository.verifyAccessToken("not-a-valid-token");
+      expect(user).toBeUndefined();
+    });
+
+    it("should return undefined for an empty token", async () => {
+      const user = await repository.verifyAccessToken("");
+      expect(user).toBeUndefined();
+    });
+
+    it("should reject a JWT-format access token (old format no longer accepted)", async () => {
+      // Old format: JWT signed with JWT_SECRET — should be rejected by opaque verifier
+      const oldJwt = jwt.sign(
+        { typ: "access", sub: TEST_USER_ID },
+        JWT_SECRET,
+        { expiresIn: "1h" }
+      );
+      const user = await repository.verifyAccessToken(oldJwt);
+      expect(user).toBeUndefined();
     });
   });
 
   describe("Multi-User Isolation", () => {
-    beforeEach(() => {
-      const sqliteDatabase = new (Database as any)(":memory:");
+    it("should generate different tokens for different users", () => {
+      const token1 = repository.issueToken("access", 3600, "user-1" as UserId);
+      const token2 = repository.issueToken("access", 3600, "user-2" as UserId);
+      expect(token1).not.toBe(token2);
+    });
+
+    it("should verify each token for the correct user", async () => {
+      const sqliteDatabase = new (Database as unknown as typeof Database)(
+        ":memory:"
+      );
       sqliteDatabase.exec(`
-        CREATE TABLE "user" (
+        CREATE TABLE IF NOT EXISTS "user" (
           "id" TEXT PRIMARY KEY,
-          "email" TEXT NOT NULL,
-          "password_hash" TEXT NOT NULL,
+          "username" TEXT NOT NULL,
+          "client_token" TEXT NOT NULL UNIQUE,
           "created_at" INTEGER NOT NULL
         );
-        CREATE TABLE "authorization_code" (
-          "code" TEXT PRIMARY KEY,
-          "user_id" TEXT NOT NULL,
-          "client_id" TEXT NOT NULL,
-          "redirect_uri" TEXT NOT NULL,
-          "scope" TEXT,
-          "expires_at" INTEGER NOT NULL,
-          "created_at" INTEGER NOT NULL,
-          FOREIGN KEY("user_id") REFERENCES "user"("id")
-        );
-        CREATE TABLE "access_token" (
-          "token" TEXT PRIMARY KEY,
-          "user_id" TEXT NOT NULL,
-          "client_id" TEXT,
-          "expires_at" INTEGER NOT NULL,
-          "created_at" INTEGER NOT NULL,
-          FOREIGN KEY("user_id") REFERENCES "user"("id")
-        );
-        CREATE TABLE "refresh_token" (
-          "token" TEXT PRIMARY KEY,
-          "user_id" TEXT NOT NULL,
-          "client_id" TEXT,
-          "expires_at" INTEGER NOT NULL,
-          "created_at" INTEGER NOT NULL,
-          FOREIGN KEY("user_id") REFERENCES "user"("id")
+        CREATE TABLE IF NOT EXISTS "sessions" (
+          "sid" TEXT PRIMARY KEY,
+          "sess" TEXT NOT NULL,
+          "expire" TEXT NOT NULL
         );
       `);
-
-      repository = new UserRepository(sqliteDatabase, JWT_SECRET);
-
-      // Create multiple test users
       sqliteDatabase
         .prepare(
-          `
-        INSERT INTO user (id, email, password_hash, created_at)
-        VALUES (?, ?, ?, ?)
-      `
+          `INSERT INTO "user" (id, username, client_token, created_at) VALUES (?, ?, ?, ?)`
         )
-        .run("user-1", "user1@example.com", "hash1", Date.now());
-
+        .run("user-1", "user1@example.com", "token-1", Date.now());
       sqliteDatabase
         .prepare(
-          `
-        INSERT INTO user (id, email, password_hash, created_at)
-        VALUES (?, ?, ?, ?)
-      `
+          `INSERT INTO "user" (id, username, client_token, created_at) VALUES (?, ?, ?, ?)`
         )
-        .run("user-2", "user2@example.com", "hash2", Date.now());
-    });
+        .run("user-2", "user2@example.com", "token-2", Date.now());
 
-    it("should generate different tokens for different users", () => {
-      const token1 = repository.issueToken(
-        "access",
-        "1h",
-        "user-1" as UserId,
-        "client-id",
-        "http://localhost"
-      );
-      const token2 = repository.issueToken(
-        "access",
-        "1h",
-        "user-2" as UserId,
-        "client-id",
-        "http://localhost"
-      );
+      const repo = new UserRepository(sqliteDatabase, JWT_SECRET);
+      const accessToken1 = repo.issueToken("access", 3600, "user-1" as UserId);
+      const accessToken2 = repo.issueToken("access", 3600, "user-2" as UserId);
 
-      const decoded1 = jwt.verify(token1, JWT_SECRET) as Record<
-        string,
-        unknown
-      >;
-      const decoded2 = jwt.verify(token2, JWT_SECRET) as Record<
-        string,
-        unknown
-      >;
+      const result1 = await repo.verifyAccessToken(accessToken1);
+      const result2 = await repo.verifyAccessToken(accessToken2);
 
-      expect(decoded1.sub).toBe("user-1");
-      expect(decoded2.sub).toBe("user-2");
-    });
-
-    it("should include user id in token claims", () => {
-      const token = repository.issueToken(
-        "access",
-        "1h",
-        "user-1" as UserId,
-        "client-id",
-        "http://localhost"
-      );
-
-      const decoded = jwt.verify(token, JWT_SECRET) as Record<string, unknown>;
-      expect(decoded.sub).toBe("user-1");
+      expect(result1?.id).toBe("user-1");
+      expect(result2?.id).toBe("user-2");
     });
   });
 
-  describe("JWT Payload Structure", () => {
-    it("should have standard OIDC claims in token", () => {
-      const token = repository.issueToken(
-        "access",
-        "1h",
-        "test-user-id" as UserId,
-        "client-id",
-        "http://localhost"
-      );
+  describe("Token Exchange", () => {
+    it("exchangeCode should return opaque access+refresh tokens", async () => {
+      const code = repository.issueCode(TEST_USER_ID);
 
-      const decoded = jwt.verify(token, JWT_SECRET) as Record<string, unknown>;
+      const result = await repository.exchangeCode(code);
 
-      expect(decoded).toHaveProperty("sub"); // Subject (user id)
-      expect(decoded).toHaveProperty("iss"); // Issuer (client id)
-      expect(decoded).toHaveProperty("iat"); // Issued at
-      expect(decoded).toHaveProperty("exp"); // Expiration
-      expect(decoded).toHaveProperty("typ"); // Token type
+      expect(result).toBeDefined();
+      expect(result).toHaveLength(2);
+      const [accessToken, refreshToken] = result!;
+
+      // Neither should look like a JWT
+      expect(accessToken.split(".").length).not.toBe(3);
+      expect(refreshToken.split(".").length).not.toBe(3);
+
+      // Access token should verify and return the correct user
+      const user = await repository.verifyAccessToken(accessToken);
+      expect(user?.id).toBe(TEST_USER_ID);
     });
 
-    it("should mark token type correctly", () => {
-      const accessToken = repository.issueToken(
-        "access",
-        "1h",
-        "test-user-id" as UserId,
-        "client-id",
-        "http://localhost"
-      );
+    it("exchangeRefreshToken should return new opaque access+refresh tokens", async () => {
       const refreshToken = repository.issueToken(
         "refresh",
-        "7d",
-        "test-user-id" as UserId,
-        "client-id",
-        "http://localhost"
+        86_400,
+        TEST_USER_ID
       );
 
-      const accessDecoded = jwt.verify(accessToken, JWT_SECRET) as Record<
-        string,
-        unknown
-      >;
-      const refreshDecoded = jwt.verify(refreshToken, JWT_SECRET) as Record<
-        string,
-        unknown
-      >;
+      const result = await repository.exchangeRefreshToken(refreshToken);
 
-      expect(accessDecoded.typ).toBe("access");
-      expect(refreshDecoded.typ).toBe("refresh");
+      expect(result).toBeDefined();
+      expect(result).toHaveLength(2);
+      const [newAccess] = result!;
+
+      const user = await repository.verifyAccessToken(newAccess);
+      expect(user?.id).toBe(TEST_USER_ID);
     });
 
-    it("should have iat before exp", () => {
-      const token = repository.issueToken(
-        "access",
-        "1h",
-        "test-user-id" as UserId,
-        "client-id",
-        "http://localhost"
-      );
-
-      const decoded = jwt.verify(token, JWT_SECRET) as Record<string, unknown>;
-      const iat = decoded.iat as number;
-      const exp = decoded.exp as number;
-
-      expect(iat).toBeLessThan(exp);
-    });
-  });
-
-  describe("Token Expiration", () => {
-    it("should reject expired access token", () => {
-      // Create a token that expired 1 second ago by manipulating the key
-      const expiredPayload = {
-        sub: "test-user-id",
-        iss: "client-id",
-        exp: Math.floor(Date.now() / 1000) - 1, // 1 second in the past
-        iat: Math.floor(Date.now() / 1000) - 100,
-        typ: "access",
-      };
-
-      const expiredToken = jwt.sign(expiredPayload, JWT_SECRET);
-
-      expect(() => {
-        jwt.verify(expiredToken, JWT_SECRET);
-      }).toThrow("jwt expired");
+    it("exchangeRefreshToken should reject an invalid token", async () => {
+      const result = await repository.exchangeRefreshToken("invalid-token");
+      expect(result).toBeUndefined();
     });
 
-    it("should accept valid (not expired) token", () => {
-      const token = repository.issueToken(
-        "access",
-        "1h",
-        "test-user-id" as UserId,
-        "client-id",
-        "http://localhost"
-      );
-
-      expect(() => {
-        jwt.verify(token, JWT_SECRET);
-      }).not.toThrow();
-    });
-
-    it("should use correct durations for different token types", () => {
-      const beforeAccess = Math.floor(Date.now() / 1000);
-      const accessToken = repository.issueToken(
-        "access",
-        "1h",
-        "test-user-id" as UserId,
-        "client-id",
-        "http://localhost"
-      );
-
-      const beforeRefresh = Math.floor(Date.now() / 1000);
-      const refreshToken = repository.issueToken(
-        "refresh",
-        "7d",
-        "test-user-id" as UserId,
-        "client-id",
-        "http://localhost"
-      );
-
-      const accessDecoded = jwt.verify(accessToken, JWT_SECRET) as Record<
-        string,
-        unknown
-      >;
-      const refreshDecoded = jwt.verify(refreshToken, JWT_SECRET) as Record<
-        string,
-        unknown
-      >;
-
-      // Access token: 1 hour = 3600 seconds
-      const accessExp = accessDecoded.exp as number;
-      const accessDuration = accessExp - beforeAccess;
-      expect(accessDuration).toBeGreaterThanOrEqual(3600 - 5);
-      expect(accessDuration).toBeLessThanOrEqual(3600 + 5);
-
-      // Refresh token: 7 days = 604800 seconds
-      const refreshExp = refreshDecoded.exp as number;
-      const refreshDuration = refreshExp - beforeRefresh;
-      expect(refreshDuration).toBeGreaterThanOrEqual(604_800 - 5);
-      expect(refreshDuration).toBeLessThanOrEqual(604_800 + 5);
-    });
-  });
-
-  describe("Security - Token Signature Verification", () => {
-    it("should reject malformed JWT", () => {
-      const malformed = "not.a.valid.jwt";
-
-      expect(() => {
-        jwt.verify(malformed, JWT_SECRET);
-      }).toThrow();
-    });
-
-    it("should reject JWT with missing signature", () => {
-      const token = repository.issueToken(
-        "access",
-        "1h",
-        "test-user-id" as UserId,
-        "client-id",
-        "http://localhost"
-      );
-
-      // Remove signature
-      const noSignature = token.slice(0, token.lastIndexOf("."));
-
-      expect(() => {
-        jwt.verify(noSignature, JWT_SECRET);
-      }).toThrow();
-    });
-
-    it("should verify token claims are present and correct", () => {
-      const token = repository.issueToken(
-        "access",
-        "1h",
-        "test-user-id" as UserId,
-        "client-id",
-        "http://localhost"
-      );
-
-      const decoded = jwt.verify(token, JWT_SECRET) as Record<string, unknown>;
-
-      expect(decoded.sub).toBe("test-user-id");
-      expect(decoded.iss).toBe("client-id");
-      expect(typeof decoded.iat).toBe("number");
-      expect(typeof decoded.exp).toBe("number");
-      expect(decoded.typ).toBe("access");
+    it("exchangeRefreshToken should reject an expired refresh token", async () => {
+      const expired = repository.issueToken("refresh", -1, TEST_USER_ID);
+      const result = await repository.exchangeRefreshToken(expired);
+      expect(result).toBeUndefined();
     });
   });
 });
