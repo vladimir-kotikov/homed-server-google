@@ -5,6 +5,7 @@ import { BetterSqlite3Instrumentation } from "opentelemetry-plugin-better-sqlite
 Sentry.init({
   dsn: process.env.SENTRY_DSN,
   environment: process.env.NODE_ENV,
+  release: process.env.SENTRY_RELEASE,
   enableLogs: true,
   enableMetrics: true,
   tracesSampleRate: 0.2,

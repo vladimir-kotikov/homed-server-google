@@ -25,7 +25,18 @@ jobs:
       - run: npm test
 
       - uses: superfly/flyctl-actions/setup-flyctl@master
-      - run: flyctl deploy --remote-only
+      - run: flyctl deploy --remote-only --env SENTRY_RELEASE=${{ github.sha }}
         if: github.event_name == 'push'
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+      - name: Create Sentry release
+        if: github.event_name == 'push'
+        uses: getsentry/action-release@v3
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: vlkoti
+          SENTRY_PROJECT: homed-server-google
+        with:
+          environment: production
+          version: ${{ github.sha }}
