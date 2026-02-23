@@ -30,16 +30,24 @@ Sentry.init({
   // that Sentry's Queries insights panel still requires.
   // opentelemetry-plugin-better-sqlite3 uses the new OTel 1.29+ names
   // (db.system.name, db.query.text) but the panel looks for db.system and
-  // db.statement to classify and populate DB query spans.
+  // db.statement to classify and populate DB query spans. The panel also
+  // uses span.description as the query text, and requires span.op = "db".
+  // Note: Sentry determines op from OTel attributes before beforeSendSpan
+  // runs, so we must set op and description explicitly here.
   beforeSendSpan: span => {
     const data = span.data as Record<string, unknown> | undefined;
     if (!data) return span;
 
-    if (data["db.system.name"] && !data["db.system"]) {
-      data["db.system"] = data["db.system.name"];
+    const systemName = data["db.system.name"] as string | undefined;
+    const queryText = data["db.query.text"] as string | undefined;
+
+    if (systemName) {
+      data["db.system"] = systemName;
+      span.op = "db";
     }
-    if (data["db.query.text"] && !data["db.statement"]) {
-      data["db.statement"] = data["db.query.text"];
+    if (queryText) {
+      data["db.statement"] = queryText;
+      span.description = queryText;
     }
 
     return span;
