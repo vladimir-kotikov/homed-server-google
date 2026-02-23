@@ -83,7 +83,7 @@ export class ClientConnection<
         ? "connection.auth_timeout"
         : "connection.handshake_timeout";
 
-      log.error(message);
+      log.warn(message);
       this.close();
     }, timeout);
   }

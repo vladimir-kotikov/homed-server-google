@@ -7,7 +7,9 @@ import debug from "debug";
 import ejs from "ejs";
 import type { NextFunction, Request, Response } from "express";
 import express from "express";
-import rateLimit from "express-rate-limit";
+import rateLimit, {
+  type RateLimitExceededEventHandler,
+} from "express-rate-limit";
 import sessionMiddleware from "express-session";
 import helmet from "helmet";
 import type { IncomingMessage, ServerResponse } from "node:http";
@@ -20,6 +22,7 @@ import type {
 } from "../db/repository.ts";
 import type { DeviceRepository } from "../device.ts";
 import { FulfillmentController } from "../google/fulfillment.ts";
+import { createLogger } from "../logger.ts";
 import {
   clientPasswordOauth20Strategy,
   debugLoggedIn,
@@ -42,6 +45,8 @@ declare module "express-session" {
     returnTo?: string;
   }
 }
+
+const log = createLogger("web");
 
 export class WebApp {
   readonly app: express.Application;
@@ -115,8 +120,22 @@ export class WebApp {
       .use("client-password-oauth20", clientOauthAuthentication)
       .initialize();
 
+    const skipHealthChecks = (req: Request) =>
+      (appConfig.healthcheckIps ?? []).includes(req.ip ?? "");
+
+    const onRateLimitExceeded: RateLimitExceededEventHandler = (
+      req,
+      res,
+      _next,
+      options
+    ) => {
+      log.warn("rate_limit.exceeded", { ip: req.ip, path: req.path });
+      res.status(options.statusCode).send(options.message);
+    };
+
     this.app = express()
       .disable("x-powered-by")
+      // 2 hops are needded for Cloudflare + fly.io proxies
       .set("trust proxy", 2)
       .set("views", "templates")
       .set("view engine", "html")
@@ -137,13 +156,22 @@ export class WebApp {
       )
       .get(
         "/login",
-        rateLimit({ windowMs: 15 * 60 * 1000, max: 5 }),
+        rateLimit({
+          windowMs: 15 * 60 * 1000,
+          max: 5,
+          skip: skipHealthChecks,
+          handler: onRateLimitExceeded,
+        }),
         ensureLoggedOut("/"),
         (_, res) => res.render("signin")
       )
       .get(
         "/auth/google",
-        rateLimit({ max: 10 }),
+        rateLimit({
+          max: 10,
+          skip: skipHealthChecks,
+          handler: onRateLimitExceeded,
+        }),
         passport.authenticate("google-oauth20")
       )
       .get(
@@ -157,7 +185,11 @@ export class WebApp {
       .get("/health", (_, res) => res.json({ status: "ok" }))
       .post(
         "/fulfillment",
-        rateLimit({ max: 100 }),
+        rateLimit({
+          max: 100,
+          skip: skipHealthChecks,
+          handler: onRateLimitExceeded,
+        }),
         passport.authenticate("jwt", { session: false }),
         setSentryUser,
         debugLoggedIn,

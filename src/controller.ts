@@ -208,6 +208,7 @@ export class HomedServerController {
 
     log.info("connection.accept");
     const client = new ClientConnection<User>(socket)
+      .on("error", error => log.error("connection.error", error))
       .on("close", () => {
         Sentry.metrics.gauge("connections.active", this.tcpServer.connections);
         return this.clientDisconnected(client);
