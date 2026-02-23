@@ -64,4 +64,4 @@ const shutdown = (signal: string) => {
 process.on("SIGTERM", shutdown).on("SIGINT", shutdown);
 
 mainController.start(httpPort, tcpPort);
-Sentry.metrics.count("server.start", 1);
+Sentry.metrics.count("server.start");

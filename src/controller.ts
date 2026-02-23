@@ -210,7 +210,9 @@ export class HomedServerController {
     const client = new ClientConnection<User>(socket)
       .on("error", error => log.error("connection.error", error))
       .on("close", () => {
-        Sentry.metrics.gauge("connections.active", this.tcpServer.connections);
+        this.tcpServer.getConnections((_, count) =>
+          Sentry.metrics.gauge("connections.active", count)
+        );
         return this.clientDisconnected(client);
       })
       .on("token", token => this.clientTokenReceived(client, token))
@@ -225,7 +227,10 @@ export class HomedServerController {
         this.clientDeviceUpdated(client, topicToDeviceId(topic), devices)
       )
       .on("fd", (topic, data) => this.deviceDataUpdated(client, topic, data));
-    Sentry.metrics.gauge("connections.active", this.tcpServer.connections);
+
+    this.tcpServer.getConnections((_, count) =>
+      Sentry.metrics.gauge("connections.active", count)
+    );
   };
 
   clientDisconnected = (client: ClientConnection<User>) => {
