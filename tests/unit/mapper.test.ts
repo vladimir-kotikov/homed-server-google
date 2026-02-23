@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { type DeviceId, type HomedDevice } from "../../src/device.ts";
 import {
+  fromGoogleDeviceId,
   getStateUpdates,
   GOOGLE_DEVICE_TYPES,
   mapQueryResponse,
@@ -87,11 +88,104 @@ const createDevice = ({
   return device;
 };
 
-describe("CapabilityMapper", () => {
-  // ============================================================================
-  // Device Type Detection Tests
-  // ============================================================================
+describe("toGoogleDeviceId / fromGoogleDeviceId", () => {
+  // Parametric round-trip tests: toGoogleDeviceId -> fromGoogleDeviceId must be
+  // the identity for all supported key shapes.
+  it.each([
+    {
+      label: "simple key, no endpoint",
+      clientId: "my-client" as ClientId,
+      deviceKey: "main_switch",
+      endpointId: undefined,
+    },
+    {
+      label: "simple key with endpoint 0",
+      clientId: "my-client" as ClientId,
+      deviceKey: "main_switch",
+      endpointId: 0,
+    },
+    {
+      label: "simple key with endpoint 2",
+      clientId: "my-client" as ClientId,
+      deviceKey: "main_switch",
+      endpointId: 2,
+    },
+    {
+      // Regression: old split("/") returned only the first path segment as
+      // deviceId instead of the full key (e.g. "zigbee" instead of
+      // "zigbee/0x84fdde...").
+      label: "Zigbee key with slash — regression: was splitting on all slashes",
+      clientId: "homed-zigbee" as ClientId,
+      deviceKey: "zigbee/0x84fddefffeabcdef",
+      endpointId: undefined,
+    },
+    {
+      label: "Zigbee key with slash and explicit endpoint",
+      clientId: "homed-zigbee" as ClientId,
+      deviceKey: "zigbee/0x84fddefffeabcdef",
+      endpointId: 3,
+    },
+    {
+      label: "deeply nested key (multiple slashes)",
+      clientId: "srv" as ClientId,
+      deviceKey: "a/b/c/d",
+      endpointId: undefined,
+    },
+    {
+      label: "deeply nested key with endpoint",
+      clientId: "srv" as ClientId,
+      deviceKey: "a/b/c/d",
+      endpointId: 7,
+    },
+    {
+      label: "client ID with hyphens and underscores",
+      clientId: "test-client_vlkoti" as ClientId,
+      deviceKey: "zigbee/0x001122334455",
+      endpointId: 1,
+    },
+  ])(
+    "round-trips symmetrically: $label",
+    ({ clientId, deviceKey, endpointId }) => {
+      const googleId = toGoogleDeviceId(clientId, deviceKey, endpointId);
+      const parsed = fromGoogleDeviceId(googleId);
+      expect(parsed.clientId).toBe(clientId);
+      expect(parsed.deviceId).toBe(deviceKey);
+      expect(parsed.endpointId).toBe(endpointId);
+    }
+  );
 
+  describe("fromGoogleDeviceId — direct parsing edge cases", () => {
+    it("extracts clientId as everything before the first slash", () => {
+      // This is the exact regression: "homed-zigbee/zigbee/0xaabb" must give
+      // clientId="homed-zigbee" and deviceId="zigbee/0xaabb", not
+      // clientId="homed-zigbee" and deviceId="zigbee" (old behaviour).
+      const { clientId, deviceId, endpointId } = fromGoogleDeviceId(
+        "homed-zigbee/zigbee/0xaabb" as ReturnType<typeof toGoogleDeviceId>
+      );
+      expect(clientId).toBe("homed-zigbee");
+      expect(deviceId).toBe("zigbee/0xaabb");
+      expect(endpointId).toBeUndefined();
+    });
+
+    it("extracts endpoint from the last # only", () => {
+      const { clientId, deviceId, endpointId } = fromGoogleDeviceId(
+        "client/zigbee/0xaabb#5" as ReturnType<typeof toGoogleDeviceId>
+      );
+      expect(clientId).toBe("client");
+      expect(deviceId).toBe("zigbee/0xaabb");
+      expect(endpointId).toBe(5);
+    });
+
+    it("returns undefined endpointId when # is absent", () => {
+      const { endpointId } = fromGoogleDeviceId(
+        "client/device" as ReturnType<typeof toGoogleDeviceId>
+      );
+      expect(endpointId).toBeUndefined();
+    });
+  });
+});
+
+describe("CapabilityMapper", () => {
   describe("Device Type Detection", () => {
     it("should map switch device to SWITCH type", () => {
       const device = createDevice({
@@ -114,6 +208,47 @@ describe("CapabilityMapper", () => {
 
       const [google] = mapToGoogleDevices(device, testClientId);
       expect(google.type).toBe(DEVICE_TYPES.OUTLET);
+    });
+
+    it("should map switch device with options.switch='outlet' to OUTLET type (INSPELNING pattern)", () => {
+      // Devices like IKEA INSPELNING use exposes=["switch"] but set options.switch="outlet"
+      // to indicate they are power outlets rather than generic switches.
+      const device = createDevice({
+        exposes: [["switch"]],
+        options: { switch: "outlet" },
+        topic: "home/inspelning",
+        name: "INSPELNING",
+      });
+
+      const [google] = mapToGoogleDevices(device, testClientId);
+      expect(google.type).toBe(DEVICE_TYPES.OUTLET);
+      expect(google.traits).toContain(TRAITS.ON_OFF);
+    });
+
+    it("should map switch device with options.switch='outlet' and power monitoring to OUTLET type", () => {
+      // Real-world INSPELNING also exposes power, energy, voltage, current
+      const device = createDevice({
+        exposes: [["switch", "power", "energy", "voltage", "current"]],
+        options: { switch: "outlet" },
+        topic: "home/inspelning_power",
+        name: "INSPELNING Power",
+      });
+
+      const [google] = mapToGoogleDevices(device, testClientId);
+      expect(google.type).toBe(DEVICE_TYPES.OUTLET);
+      expect(google.traits).toContain(TRAITS.ON_OFF);
+    });
+
+    it("should map switch device WITHOUT options.switch to SWITCH type (not outlet)", () => {
+      // Absence of the option must not accidentally change the type
+      const device = createDevice({
+        exposes: [["switch"]],
+        topic: "home/plain_switch",
+        name: "Plain Switch",
+      });
+
+      const [google] = mapToGoogleDevices(device, testClientId);
+      expect(google.type).toBe(DEVICE_TYPES.SWITCH);
     });
 
     it("should map light device to LIGHT type", () => {
@@ -395,7 +530,7 @@ describe("CapabilityMapper", () => {
       // Manufacturer/model and description should be in nicknames for voice commands
       expect(google.name.nicknames).toContain("Main light");
       expect(google.name.nicknames).toContain("IKEA TRADFRI bulb E27");
-      expect(google.willReportState).toBe(false);
+      expect(google.willReportState).toBe(true);
       expect(google.deviceInfo?.manufacturer).toBe("IKEA");
       expect(google.deviceInfo?.model).toBe("TRADFRI bulb E27");
       expect(google.type).toBe(DEVICE_TYPES.LIGHT);

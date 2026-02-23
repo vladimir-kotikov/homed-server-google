@@ -42,18 +42,18 @@ export const toGoogleDeviceId = (
 
 export const fromGoogleDeviceId = (
   googleId: GoogleDeviceId
-): {
-  clientId: ClientId;
-  deviceId: DeviceId;
-  endpointId?: number;
-} => {
-  const [clientId, devicePart] = googleId.split("/");
-  const [deviceId, endpointPart] = devicePart.split("#");
-  const endpointId = endpointPart ? parseInt(endpointPart, 10) : undefined;
+): { clientId: ClientId; deviceId: DeviceId; endpointId?: number } => {
+  // Pattern: <clientId>/<deviceKey>[#<endpointId>]
+  // ([^/]+)  — clientId: everything before the first slash
+  // (.+?)    — deviceKey: non-greedy, stops before the optional #endpoint suffix
+  // (?:#(\d+))?$ — optional endpoint number after #
+  const [, clientId, deviceId, endpointStr] =
+    /^([^/]+)\/(.+?)(?:#(\d+))?$/.exec(googleId)!;
   return {
     clientId: clientId as ClientId,
     deviceId: deviceId as DeviceId,
-    endpointId,
+    endpointId:
+      endpointStr !== undefined ? parseInt(endpointStr, 10) : undefined,
   };
 };
 
@@ -247,19 +247,41 @@ const EXPOSE_TO_TRAITS: Record<
 };
 
 /**
+ * Normalize exposes based on endpoint options.
+ * Replaces logical expose names (e.g. "switch") with the value specified in
+ * options (e.g. options.switch === "outlet") so that device type detection
+ * picks up the correct Google device type.
+ */
+const normalizeExposes = (
+  exposes: string[],
+  options?: EndpointOptions
+): string[] =>
+  exposes.map(expose => {
+    if (expose === "switch" && options?.switch === "outlet") return "outlet";
+    return expose;
+  });
+
+/**
  * Detect device type from exposes
  * Returns the most specific device type based on available exposes
  * Uses priority-based matching for multi-function devices
  */
-const detectDeviceType = (exposes: string[]): string =>
-  // Find first matching device type in priority list
-  // This ensures correct priority for hybrid devices
-  // (e.g., light+thermostat -> light)
-  DEVICE_TYPE_PRIORITY.find(({ exposes: priorityExposes }) =>
-    priorityExposes.some(expose => exposes.includes(expose))
-  )?.type ??
-  // Default to SENSOR if no exposes
-  GOOGLE_DEVICE_TYPES.SENSOR;
+const detectDeviceType = (
+  exposes: string[],
+  options?: EndpointOptions
+): string => {
+  const normalized = normalizeExposes(exposes, options);
+  return (
+    // Find first matching device type in priority list
+    // This ensures correct priority for hybrid devices
+    // (e.g., light+thermostat -> light)
+    DEVICE_TYPE_PRIORITY.find(({ exposes: priorityExposes }) =>
+      priorityExposes.some(expose => normalized.includes(expose))
+    )?.type ??
+    // Default to SENSOR if no exposes
+    GOOGLE_DEVICE_TYPES.SENSOR
+  );
+};
 
 /**
  * Get device type traits based on exposes and options
@@ -432,7 +454,7 @@ const mapToGoogleDevice = (
   options: EndpointOptions,
   endpointId?: number
 ): GoogleDevice => {
-  const deviceType = detectDeviceType(exposes);
+  const deviceType = detectDeviceType(exposes, options);
   const traits = mapExposesToTraits(exposes, options);
   const googleDeviceId = toGoogleDeviceId(
     clientId,
