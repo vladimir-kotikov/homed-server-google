@@ -466,7 +466,7 @@ const mapToGoogleDevice = (
       name,
       nicknames,
     },
-    willReportState: false,
+    willReportState: true,
     attributes:
       Object.keys(attributes).length > 0
         ? (attributes as GoogleDeviceAttributes)
