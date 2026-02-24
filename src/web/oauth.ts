@@ -7,7 +7,10 @@ import * as oauth2orize from "oauth2orize";
 import passport from "passport";
 import appConfig from "../config.ts";
 import { UserRepository, type UserId } from "../db/repository.ts";
+import { createLogger } from "../logger.ts";
 import { bearerAuthMiddleware } from "./middleware.ts";
+
+const log = createLogger("oauth");
 
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
@@ -83,15 +86,35 @@ export class OAuthController {
     user: User,
     done: CodeIssueCallback
   ) => {
+    log.info("oauth.grant_code.start", {
+      clientId: client.id,
+      redirectUri,
+      userId: user.id,
+    });
+
     if (!this.isValidClient(client.id, redirectUri)) {
+      log.warn("oauth.grant_code.invalid_client", {
+        clientId: client.id,
+        redirectUri,
+      });
       return done(null, false);
     }
 
     // Mark user as linked when they grant authorization
     this.userRepository
       .setLinked(user.id, true)
-      .then(() => done(null, this.userRepository.issueCode(user.id)))
-      .catch(done);
+      .then(() => {
+        const code = this.userRepository.issueCode(user.id);
+        log.info("oauth.grant_code.success", {
+          userId: user.id,
+          codeLength: code.length,
+        });
+        done(null, code);
+      })
+      .catch(err => {
+        log.error("oauth.grant_code.error", err);
+        done(err);
+      });
   };
 
   private exchangeCode = (
@@ -100,16 +123,35 @@ export class OAuthController {
     redirectUri: string,
     done: TokenExchangeCallback
   ): void => {
+    log.info("oauth.exchange_code.start", {
+      clientId: client.id,
+      redirectUri,
+      codeLength: code.length,
+    });
+
     if (!this.isValidClient(client.id, redirectUri)) {
+      log.warn("oauth.exchange_code.invalid_client", {
+        clientId: client.id,
+        redirectUri,
+      });
       return done(null, false);
     }
 
     this.userRepository.exchangeCode(code).then(args => {
       if (args === undefined) {
+        log.warn("oauth.exchange_code.failed", {
+          clientId: client.id,
+          codeLength: code.length,
+        });
         return done(null, false);
       }
 
       const [accessToken, refreshToken] = args;
+      log.info("oauth.exchange_code.success", {
+        clientId: client.id,
+        hasAccessToken: !!accessToken,
+        hasRefreshToken: !!refreshToken,
+      });
       // Include expires_in as required by Google
       done(null, accessToken, refreshToken, {
         expires_in: appConfig.accessTokenLifetime,

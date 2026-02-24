@@ -145,11 +145,17 @@ export class UserRepository {
 
   exchangeCode = async (code: string) => {
     const userId = this.verifyToken(code, "code");
-    if (!userId) return undefined;
+    if (!userId) {
+      log.warn("oauth.exchange_code.invalid_code");
+      return undefined;
+    }
     const user = await this.client.query.users.findFirst({
       where: eq(users.id, userId),
     });
-    if (!user) return undefined;
+    if (!user) {
+      log.warn("oauth.exchange_code.user_not_found", { userId });
+      return undefined;
+    }
     return [
       this.issueToken("access", this.accessTokenLifetime, user.id),
       this.issueToken("refresh", this.refreshTokenLifetime, user.id),
