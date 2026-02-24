@@ -119,7 +119,19 @@ export class FulfillmentController {
           payload: { devices: { states } },
         },
       })
-      .catch(error => log.error("homegraph.report_state", error));
+      .catch(error => {
+        // 404 means the agent user entity no longer exists in Home Graph
+        // (e.g. user unlinked the account). Re-register by sending REQUEST_SYNC,
+        // which will prompt Google to call back with a SYNC intent and recreate
+        // the entity.
+        if ((error as { status?: number })?.status === 404) {
+          log.warn("homegraph.report_state.entity_not_found", {
+            reason: "triggering request_sync to re-register agent user",
+          });
+          return this.requestSync(userId);
+        }
+        log.error("homegraph.report_state", error);
+      });
   };
 
   handleFulfillment = async (

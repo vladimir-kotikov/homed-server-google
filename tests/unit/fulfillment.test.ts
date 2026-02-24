@@ -230,6 +230,64 @@ describe("FulfillmentController - State Change Listener", () => {
     ).resolves.not.toThrow();
   });
 
+  it("should trigger requestSync when reportState returns 404 (entity not found)", async () => {
+    const device = createMockDevice();
+    const prevState: DeviceState = { status: "off" };
+    const newState: DeviceState = { status: "on" };
+
+    const notFoundError = Object.assign(
+      new Error("Requested entity was not found."),
+      { status: 404 }
+    );
+    reportStateAndNotificationSpy.mockRejectedValueOnce(notFoundError);
+
+    const eventHandler = vi
+      .mocked(mockDeviceRepository.on)
+      .mock.calls.find(call => call[0] === "deviceStateChanged")?.[1];
+
+    await eventHandler?.({
+      userId,
+      clientId,
+      deviceId,
+      device,
+      prevState,
+      newState,
+    });
+
+    expect(requestSyncSpy).toHaveBeenCalledTimes(1);
+    expect(requestSyncSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        requestBody: { agentUserId: userId, async: true },
+      })
+    );
+  });
+
+  it("should not trigger requestSync for non-404 reportState errors", async () => {
+    const device = createMockDevice();
+    const prevState: DeviceState = { status: "off" };
+    const newState: DeviceState = { status: "on" };
+
+    const serverError = Object.assign(new Error("Internal Server Error"), {
+      status: 500,
+    });
+    reportStateAndNotificationSpy.mockRejectedValueOnce(serverError);
+
+    const eventHandler = vi
+      .mocked(mockDeviceRepository.on)
+      .mock.calls.find(call => call[0] === "deviceStateChanged")?.[1];
+
+    await eventHandler?.({
+      userId,
+      clientId,
+      deviceId,
+      device,
+      prevState,
+      newState,
+    });
+
+    expect(requestSyncSpy).not.toHaveBeenCalled();
+  });
+
   it("should batch multiple device reports in single API call", async () => {
     const device = createMockDevice();
     device.endpoints = [
