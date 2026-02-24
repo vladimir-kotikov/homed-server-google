@@ -38,6 +38,7 @@ const testUser: User = {
   id: process.env.HOMED_USER_ID as UserId,
   username: "Test user",
   clientToken: process.env.HOMED_CLIENT_TOKEN as ClientToken,
+  linked: true,
   createdAt: new Date(),
 };
 

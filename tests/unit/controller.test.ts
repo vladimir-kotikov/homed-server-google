@@ -1,3 +1,4 @@
+import { EventEmitter } from "node:events";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { HomedServerController } from "../../src/controller.ts";
 import { UserRepository } from "../../src/db/repository.ts";
@@ -153,6 +154,79 @@ describe("HomedServerController", () => {
       // State should not be updated
       const state = deviceCache.getDeviceState(userId, deviceId, clientId);
       expect(state).toBeUndefined();
+    });
+  });
+
+  describe("clientConnected — socket error handling", () => {
+    // Minimal socket stub: EventEmitter + the methods clientConnected touches
+    // before handing off to ClientConnection.
+    class MockSocket extends EventEmitter {
+      remoteAddress: string | undefined = "1.2.3.4";
+      write = vi.fn();
+      end = vi.fn();
+    }
+
+    it("does not throw when ECONNRESET fires on a healthcheck socket", () => {
+      controller = new HomedServerController(
+        userDb,
+        deviceCache,
+        httpHandler,
+        undefined,
+        ["1.2.3.4"] // healthcheck IP
+      );
+
+      const socket = new MockSocket();
+      (controller as any).clientConnected(socket);
+
+      // Without the early error listener this would throw synchronously
+      expect(() =>
+        socket.emit(
+          "error",
+          Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" })
+        )
+      ).not.toThrow();
+    });
+
+    it("does not throw when ECONNRESET fires on a max-connections-refused socket", () => {
+      controller = new HomedServerController(
+        userDb,
+        deviceCache,
+        httpHandler,
+        undefined,
+        [],
+        0 // maxConnections = 0 so any connection is over the limit
+      );
+
+      // Make tcpServer.connections return 1 (> 0)
+      const socket = new MockSocket();
+      Object.defineProperty((controller as any).tcpServer, "connections", {
+        get: () => 1,
+        configurable: true,
+      });
+
+      (controller as any).clientConnected(socket);
+
+      expect(() =>
+        socket.emit(
+          "error",
+          Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" })
+        )
+      ).not.toThrow();
+    });
+
+    it("does not throw when ECONNRESET fires before ClientConnection registers its handler", () => {
+      controller = new HomedServerController(userDb, deviceCache, httpHandler);
+
+      const socket = new MockSocket();
+
+      (controller as any).clientConnected(socket);
+
+      expect(() =>
+        socket.emit(
+          "error",
+          Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" })
+        )
+      ).not.toThrow();
     });
   });
 });

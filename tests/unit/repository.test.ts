@@ -1,32 +1,16 @@
-import Database from "better-sqlite3";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   UserRepository,
   type ClientToken,
   type UserId,
 } from "../../src/db/repository.ts";
+import { initializeTestDatabase } from "../integration/testDatabase.ts";
 
 describe("UatasaseerRepository", () => {
   let repository: UserRepository;
 
   beforeEach(() => {
-    const database = new Database(":memory:");
-
-    // Create tables
-    database.exec(`
-      CREATE TABLE IF NOT EXISTS user (
-        id TEXT PRIMARY KEY,
-        username TEXT NOT NULL,
-        client_token TEXT NOT NULL UNIQUE,
-        created_at INTEGER NOT NULL
-      );
-      CREATE TABLE IF NOT EXISTS sessions (
-        sid TEXT PRIMARY KEY,
-        sess TEXT NOT NULL,
-        expire TEXT NOT NULL
-      );
-    `);
-
+    const database = initializeTestDatabase();
     repository = new UserRepository(database, "test-secret");
   });
 

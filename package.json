@@ -11,14 +11,15 @@
   },
   "private": true,
   "scripts": {
-    "prestart": "npm run migrations",
+    "prestart": "npm run db:migrate",
     "start": "node --import ./src/instrument.ts src/index.ts",
-    "dev": "npm run migrations && node src/db/seed.ts && node --import ./src/instrument.ts --watch src/index.ts",
+    "dev": "npm run db:migrate && node src/db/seed.ts && node --import ./src/instrument.ts --watch src/index.ts",
     "lint": "eslint src tests && tsc",
     "format": "prettier --write src tests; eslint src tests --fix",
     "test": "DEBUG=-* vitest run --globals tests",
     "prepare": "husky || true",
-    "migrations": "drizzle-kit push --dialect sqlite --schema src/db/schema.ts --url ${DATABASE_URL}",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
     "node": "node"
   },
   "dependencies": {

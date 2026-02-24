@@ -4,3 +4,5 @@
 !public
 !templates
 !package*.json
+!drizzle
+!drizzle.config.ts

@@ -87,6 +87,33 @@ body {
   margin-bottom: var(--spacing-md);
 }
 
+.status-badge {
+  padding: 0.25rem 0.75rem;
+  border-radius: 12px;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.status-ok {
+  color: #059669;
+  background: #d1fae5;
+}
+
+.status-error {
+  color: #dc2626;
+  background: #fee2e2;
+}
+
+[data-theme="dark"] .status-ok {
+  color: #34d399;
+  background: #064e3b;
+}
+
+[data-theme="dark"] .status-error {
+  color: #f87171;
+  background: #7f1d1d;
+}
+
 .token-container {
   background: var(--background-shade);
   border: 1px solid var(--border-main);

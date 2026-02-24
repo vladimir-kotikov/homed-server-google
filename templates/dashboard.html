@@ -17,7 +17,7 @@
             <h1>Homed Server</h1>
         </div>
         <nav class="user-info">
-            <span class="user-email"><%= email %></span>
+            <span class="user-email"><%= user.username %></span>
             <a href="/logout" class="action-link logout-link">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                     stroke-linecap="round" stroke-linejoin="round">
@@ -43,7 +43,20 @@
                         <span class="copy-text">Copy</span>
                     </a>
                 </div>
-                <div class="token-value"><%= clientToken %></div>
+                <div class="token-value"><%= user.clientToken %></div>
+            </div>
+        </section>
+
+        <section class="card">
+            <h2>Account Status</h2>
+            <p>Check the status of your Google Home integration.</p>
+            <div class="client-item">
+                <span class="client-id">Google Home Integration</span>
+                <% if (user.linked) { %>
+                <span class="status-badge status-ok">● Linked</span>
+                <% } else { %>
+                <span class="status-badge status-error">● Unlinked</span>
+                <% } %>
             </div>
         </section>
 

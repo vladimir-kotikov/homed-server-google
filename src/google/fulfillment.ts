@@ -77,7 +77,7 @@ export class FulfillmentController {
       // device updates trigger for each device, so debounce
       // to avoid multiple rapid sync requests
       .on("devicesUpdated", debounce(this.requestSync, 300))
-      .on("deviceStateChanged", this.handleDeviceStateChanged);
+      .on("deviceStateChanged", this.reportState);
   }
 
   /**
@@ -86,53 +86,63 @@ export class FulfillmentController {
    * changed - Google will call back with SYNC intent
    */
   private requestSync = (userId: UserId) =>
-    this.homegraph?.devices
-      .requestSync({ requestBody: { agentUserId: userId, async: true } })
-      .then(() => log.debug("homegraph.request_sync"))
-      .catch(error => log.error("homegraph.request_sync", error));
+    this.userRepository.isUserLinked(userId).then(linked =>
+      linked
+        ? this.homegraph?.devices
+            .requestSync({ requestBody: { agentUserId: userId, async: true } })
+            .then(() => log.debug("homegraph.request_sync.completed"))
+            .catch(error => log.error("homegraph.request_sync.error", error))
+        : log.debug("homegraph.request_sync.not_linked")
+    );
 
   /**
    * Handle device state change events from repository
    * Maps state to Google format and reports to Home Graph API
    */
-  private handleDeviceStateChanged = async ({
+  private reportState = async ({
     userId,
     clientId,
     device,
     prevState,
     newState,
-  }: DeviceStateChangeEvent) => {
-    const states = getStateUpdates(device, clientId, prevState, newState);
-    if (!states) {
-      return;
-    }
+  }: DeviceStateChangeEvent) =>
+    this.userRepository.isUserLinked(userId).then(linked => {
+      if (!linked) {
+        log.debug("homegraph.report_state.not_linked", { userId });
+        return;
+      }
 
-    log.debug("homegraph.report_state", {
-      devices: Object.keys(states).length,
-    });
+      const states = getStateUpdates(device, clientId, prevState, newState);
+      if (!states) {
+        return;
+      }
 
-    return this.homegraph?.devices
-      .reportStateAndNotification({
-        requestBody: {
-          requestId: crypto.randomUUID(),
-          agentUserId: userId,
-          payload: { devices: { states } },
-        },
-      })
-      .catch(error => {
-        // 404 means the agent user entity no longer exists in Home Graph
-        // (e.g. user unlinked the account). Re-register by sending REQUEST_SYNC,
-        // which will prompt Google to call back with a SYNC intent and recreate
-        // the entity.
-        if ((error as { status?: number })?.status === 404) {
-          log.warn("homegraph.report_state.entity_not_found", {
-            reason: "triggering request_sync to re-register agent user",
-          });
-          return this.requestSync(userId);
-        }
-        log.error("homegraph.report_state", error);
+      log.debug("homegraph.report_state", {
+        devices: Object.keys(states).length,
       });
-  };
+
+      return this.homegraph?.devices
+        .reportStateAndNotification({
+          requestBody: {
+            requestId: crypto.randomUUID(),
+            agentUserId: userId,
+            payload: { devices: { states } },
+          },
+        })
+        .catch(error => {
+          // 404 means the agent user entity no longer exists in Home Graph
+          // (e.g. user unlinked the account). Re-register by sending REQUEST_SYNC,
+          // which will prompt Google to call back with a SYNC intent and recreate
+          // the entity.
+          if ((error as { status?: number })?.status === 404) {
+            log.warn("homegraph.report_state.entity_not_found", {
+              reason: "triggering request_sync to re-register agent user",
+            });
+            return this.requestSync(userId);
+          }
+          log.error("homegraph.report_state", error);
+        });
+    });
 
   handleFulfillment = async (
     user: User,
@@ -238,8 +248,5 @@ export class FulfillmentController {
   };
 
   private handleDisconnect = (user: User) =>
-    this.userRepository
-      .delete(user.id)
-      .then(() => this.deviceRepository.removeClientDevices(user.id))
-      .then(() => ({}));
+    this.userRepository.setLinked(user.id, false).then(() => ({}));
 }

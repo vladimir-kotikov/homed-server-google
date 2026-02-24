@@ -227,8 +227,6 @@ export class DeviceRepository extends EventEmitter<{
     const device = this.getDevice(userId, clientId, deviceId);
     if (device) {
       device.endpoints = endpoints;
-      // It's unclear if we should emit devicesUpdated here as the devices
-      // updated one by one, which triggers a cascade of sync requests. Perhaps easier would be to debounce the homegraph call
       this.emit("devicesUpdated", userId);
     }
   };
@@ -259,6 +257,11 @@ export class DeviceRepository extends EventEmitter<{
     state: Partial<DeviceState>,
     endpointId?: number
   ): void => {
+    const device = this.getDevice(userId, clientId, deviceId);
+    if (!device) {
+      return;
+    }
+
     // Get current state
     const prevState =
       this.deviceState[userId]?.[clientId]?.[deviceId] ??
@@ -294,16 +297,13 @@ export class DeviceRepository extends EventEmitter<{
     this.deviceState[userId][clientId] ??= {};
     this.deviceState[userId][clientId][deviceId] = newState;
 
-    const device = this.getDevice(userId, clientId, deviceId);
-    if (device) {
-      this.emit("deviceStateChanged", {
-        userId,
-        clientId,
-        device,
-        prevState,
-        newState,
-      });
-    }
+    this.emit("deviceStateChanged", {
+      userId,
+      clientId,
+      device,
+      prevState,
+      newState,
+    });
   };
 
   getDeviceState = (
