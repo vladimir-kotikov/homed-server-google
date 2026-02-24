@@ -252,7 +252,7 @@ export class HomedServerController {
   ) => {
     const uniqueId = client.uniqueId;
     if (!uniqueId) {
-      log.error(`client.auth`, { reason: "missing_unique_id" });
+      log.error(`client.auth`, undefined, { reason: "missing_unique_id" });
       client.close();
       return;
     }
@@ -262,7 +262,7 @@ export class HomedServerController {
       .then(user => {
         if (!user) {
           client.close();
-          log.error(`client.auth`, {
+          log.error(`client.auth`, undefined, {
             reason: "invalid_token",
             token: cloak(token, 4),
           });
