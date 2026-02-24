@@ -8,6 +8,7 @@ Sentry.init({
   release: process.env.SENTRY_RELEASE,
   enableLogs: true,
   enableMetrics: true,
+  sampleRate: 0.2,
   tracesSampleRate: 0.2,
   integrations: [
     Sentry.httpIntegration(),
