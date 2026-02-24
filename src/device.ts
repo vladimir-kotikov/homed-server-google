@@ -3,7 +3,10 @@ import type { UserId } from "./db/repository.ts";
 import type { ClientId } from "./homed/client.ts";
 import type { EndpointOptions } from "./homed/schema.ts";
 import type { CommandMessage, DeviceState } from "./homed/types.ts";
+import { createLogger } from "./logger.ts";
 import { fastDeepEqual } from "./utility.ts";
+
+const log = createLogger("device-repo");
 
 export type DeviceId = string & { readonly __deviceId: unique symbol };
 
@@ -20,6 +23,7 @@ export interface HomedDevice {
   model?: string;
   version?: string;
   firmware?: string;
+  available?: boolean; // Device availability status (from client's 'active' field)
 }
 
 export interface HomedEndpoint {
@@ -65,14 +69,52 @@ export class DeviceRepository extends EventEmitter<{
   executeCommand: [ExecuteCommandEvent];
 }> {
   private devices: Record<UserId, Record<ClientId, HomedDevice[]>> = {};
+  private deviceLastSeen = new Map<string, number>();
   private deviceState: Record<
     UserId,
     Record<ClientId, Record<DeviceId, DeviceState>>
   > = {};
 
-  constructor() {
+  constructor(availabilityTimeout: number = 0) {
     super();
+    if (availabilityTimeout > 0) {
+      const intervalMs = Math.min(availabilityTimeout / 3, 10) * 1000;
+      setInterval(
+        () => this.markDevicesUnavailable(availabilityTimeout),
+        intervalMs
+      ).unref(); // Don't let the interval keep the process alive artificially
+
+      log.info(
+        `Device inactivity watchdog started (timeout: ${
+          availabilityTimeout
+        }s, interval: ${intervalMs / 1000}s)`
+      );
+    }
   }
+
+  /**
+   * Marks any device offline whose last device/ message arrived longer ago
+   * than `timeout` seconds.
+   */
+  private markDevicesUnavailable = (timeout: number) => {
+    const now = Date.now();
+    this.deviceLastSeen
+      .entries()
+      .filter(([, lastSeen]) => now - lastSeen >= timeout * 1000)
+      .forEach(([key]) => {
+        const [userId, clientId, deviceId] = key.split("::") as [
+          UserId,
+          ClientId,
+          DeviceId,
+        ];
+
+        this.deviceLastSeen.delete(key);
+        this.updateDeviceState(userId, clientId, deviceId, {
+          available: false,
+        });
+        log.debug("watchdog.offline", { deviceId });
+      });
+  };
 
   getDevice = (
     userId: UserId,
@@ -128,6 +170,13 @@ export class DeviceRepository extends EventEmitter<{
       delete this.devices[userId];
       delete this.deviceState[userId];
     }
+
+    // Clean up watchdog state
+    const prefix = clientId ? `${userId}::${clientId}::` : `${userId}::`;
+    this.deviceLastSeen
+      .keys()
+      .filter(key => key.startsWith(prefix))
+      .forEach(key => this.deviceLastSeen.delete(key));
   };
 
   syncClientDevices = (
@@ -148,6 +197,16 @@ export class DeviceRepository extends EventEmitter<{
       ...existingDevices.filter(ed => !removedDevices.includes(ed)),
       ...addedDevices,
     ];
+
+    // Initialise availability only for newly added devices.
+    // Existing devices have their availability managed by device/ status messages
+    // and the inactivity watchdog; overwriting it here on every periodic status
+    // broadcast would fight both those signals.
+    addedDevices.forEach(device => {
+      if (device.available !== undefined) {
+        this.setDeviceAvailable(userId, clientId, device.key, device.available);
+      }
+    });
 
     // Do not emit devicesUpdated here, wait for exposes to be handled and
     // added via updateDevice to avoid multiple SYNC events and possible
@@ -185,6 +244,10 @@ export class DeviceRepository extends EventEmitter<{
       return;
     }
 
+    // Any device/ message — online or offline — counts as a liveness signal.
+    // Refreshing the watchdog timer here means the watchdog only fires if homed
+    // stops sending device/ messages entirely, regardless of reported status.
+    this.deviceLastSeen.set(`${userId}::${clientId}::${deviceId}`, Date.now());
     // Update availability as state - this flows through normal state change detection
     this.updateDeviceState(userId, clientId, deviceId, { available });
   };

@@ -323,6 +323,7 @@ export class HomedServerController {
             firmware: device.firmware,
             version: device.version,
             endpoints: [],
+            available: device.active !== false, // treat absent as online
           }) as HomedDevice
       );
 
@@ -388,6 +389,7 @@ export class HomedServerController {
     );
   };
 
+  // device/ topic handler
   deviceStatusUpdated = (
     client: ClientConnection<User>,
     deviceId: DeviceId,
@@ -417,6 +419,7 @@ export class HomedServerController {
     });
 
     // Update device state in cache with endpoint-specific data
+    // (this implicitly records device as seen for the inactivity watchdog)
     this.deviceCache.updateDeviceState(
       client.user.id,
       client.uniqueId,

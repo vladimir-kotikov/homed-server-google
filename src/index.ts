@@ -12,7 +12,9 @@ const log = createLogger("main");
 
 const { databaseUrl, tcpPort, httpPort } = appConfig;
 
-const deviceRepository = new DeviceRepository();
+const deviceRepository = new DeviceRepository(
+  appConfig.deviceUnavailableTimeout
+);
 const usersRepository = UserRepository.open(databaseUrl, appConfig.jwtSecret, {
   create: true,
   accessTokenLifetime: appConfig.accessTokenLifetime,

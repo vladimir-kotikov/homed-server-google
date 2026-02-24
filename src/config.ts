@@ -52,4 +52,7 @@ export default {
     1_209_600
   ),
   healthcheckIps: optStringArrayEnvironment("HEALTHCHECK_IPS"),
+  // How long (seconds) a device can be silent before it is marked offline.
+  // 0 = disabled. Defaults to 25s (the Google Home test timeout is 30s).
+  deviceUnavailableTimeout: intEnvironment("DEVICE_UNAVAILABLE_TIMEOUT", 25),
 };
