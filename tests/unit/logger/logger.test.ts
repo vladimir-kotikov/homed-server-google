@@ -179,15 +179,6 @@ describe("Logger", () => {
         category: "test.component",
       });
     });
-
-    it("should capture message to Sentry", () => {
-      logger.warn("test warning");
-
-      expect(Sentry.captureMessage).toHaveBeenCalledWith("test warning", {
-        level: "warning",
-        tags: { component: "test:component" },
-      });
-    });
   });
 
   describe("error", () => {

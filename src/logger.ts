@@ -64,7 +64,6 @@ export class Logger {
     this.log(this.loggers.warn, message, enriched);
     this.addBreadcrumb("warning", message, data);
     Sentry.logger.warn(message, { component: this.component, ...enriched });
-    Sentry.captureMessage(message, this.getCaptureContext("warning", data));
   }
 
   error(message: string, error?: unknown, data?: LogExtra): void {
