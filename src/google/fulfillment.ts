@@ -135,7 +135,7 @@ export class FulfillmentController {
           // which will prompt Google to call back with a SYNC intent and recreate
           // the entity.
           if ((error as { status?: number })?.status === 404) {
-            log.warn("homegraph.report_state.entity_not_found", {
+            log.info("homegraph.report_state.entity_not_found", {
               reason: "triggering request_sync to re-register agent user",
             });
             return this.requestSync(userId);
