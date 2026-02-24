@@ -189,6 +189,11 @@ export class HomedServerController {
     ]).then(() => this.userDb.close());
 
   clientConnected = (socket: net.Socket) => {
+    // Attach early to prevent ECONNRESET from becoming an uncaught exception
+    // if the peer resets before ClientConnection registers its own handler.
+    // ClientConnection will add its own listener for the normal path.
+    socket.on("error", () => {});
+
     if (
       !socket.remoteAddress ||
       this.healthcheckIps.has(socket.remoteAddress)
