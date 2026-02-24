@@ -67,10 +67,24 @@ export class WebApp {
     this.oauthController = oauthController;
     this.deviceRepository = deviceRepository;
 
+    // Store only user ID in session, then look up from database on each request
+    // This ensures session data is always validated against current database state
     // eslint-disable-next-line unicorn/no-null
-    passport.serializeUser((user, done) => done(null, user));
-    // eslint-disable-next-line unicorn/no-null
-    passport.deserializeUser((user, done) => done(null, user as HomedUser));
+    passport.serializeUser((user, done) => done(null, user.id));
+    passport.deserializeUser((id, done) => {
+      return typeof id !== "string"
+        ? // eslint-disable-next-line unicorn/no-null
+          done(null, false)
+        : this.userRepository
+            .getById(id as UserId)
+            // eslint-disable-next-line unicorn/no-null
+            .then(user => done(null, user ?? false))
+            .catch(error => {
+              log.error("session.deserializeUser.error", error, { userId: id });
+              // eslint-disable-next-line unicorn/no-null
+              return done(null, false);
+            });
+    });
 
     const logging = logger({
       ignore: ["/health"],

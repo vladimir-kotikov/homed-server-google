@@ -201,6 +201,11 @@ export class UserRepository {
             }) as Promise<User>)
       );
 
+  getById = (id: UserId) =>
+    this.client.query.users.findFirst({
+      where: eq(users.id, id),
+    });
+
   getByToken = (token: ClientToken) =>
     this.client.query.users.findFirst({
       where: eq(users.clientToken, token),

@@ -34,6 +34,36 @@ describe("UatasaseerRepository", () => {
     });
   });
 
+  describe("getById", () => {
+    it("should find user by id", async () => {
+      const userId = "user123" as UserId;
+      await repository.getOrCreate(userId, "testuser");
+
+      const user = await repository.getById(userId);
+
+      expect(user).toBeDefined();
+      expect(user?.id).toBe(userId);
+      expect(user?.username).toBe("testuser");
+    });
+
+    it("should return undefined for non-existent user", async () => {
+      const userId = "non-existent" as UserId;
+      const user = await repository.getById(userId);
+
+      expect(user).toBeUndefined();
+    });
+
+    it("should return undefined after user deletion", async () => {
+      const userId = "user123" as UserId;
+      await repository.getOrCreate(userId, "testuser");
+      await repository.delete(userId);
+
+      const user = await repository.getById(userId);
+
+      expect(user).toBeUndefined();
+    });
+  });
+
   describe("getByToken", () => {
     it("should find user by token", async () => {
       const userId = "user123" as UserId;
