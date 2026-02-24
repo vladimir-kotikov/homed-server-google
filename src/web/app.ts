@@ -224,14 +224,10 @@ export class WebApp {
   }
 
   private handleHome = (request: Request, response: Response) => {
-    const {
-      user: { id, clientToken, username },
-    } = request as Express.AuthenticatedRequest;
+    const user = (request as Express.AuthenticatedRequest).user;
     response.render("dashboard", {
-      username: id,
-      email: username, // username is actually the email from Google
-      clientToken,
-      connectedClients: this.deviceRepository.getConnectedClientIds(id),
+      user,
+      connectedClients: this.deviceRepository.getConnectedClientIds(user.id),
     });
   };
 

@@ -108,6 +108,7 @@ export const debugLoggedIn = (
           id: process.env.HOMED_USER_ID as UserId,
           username: "Test user",
           clientToken: "empty" as ClientToken,
+          linked: true,
           createdAt: new Date(),
         },
         next

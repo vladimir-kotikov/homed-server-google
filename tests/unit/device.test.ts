@@ -177,6 +177,9 @@ describe("DeviceRepository", () => {
     });
 
     it("should set and merge device state", () => {
+      const device = createMockDevice();
+      repository.syncClientDevices(userId, uniqueId, [device]);
+
       repository.updateDeviceState(userId, uniqueId, deviceId, {
         status: "online",
       });
@@ -285,6 +288,9 @@ describe("DeviceRepository", () => {
 
   describe("getDeviceState", () => {
     it("should get device state with specific client", () => {
+      const device = createMockDevice();
+      repository.syncClientDevices(userId, uniqueId, [device]);
+
       repository.updateDeviceState(userId, uniqueId, deviceId, {
         status: "on",
       });
@@ -295,6 +301,9 @@ describe("DeviceRepository", () => {
     });
 
     it("should find device state across clients when client not specified", () => {
+      const device = createMockDevice();
+      repository.syncClientDevices(userId, uniqueId, [device]);
+
       repository.updateDeviceState(userId, uniqueId, deviceId, {
         status: "on",
       });

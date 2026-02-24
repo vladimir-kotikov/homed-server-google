@@ -27,6 +27,7 @@ export interface User {
   id: UserId;
   username: string;
   clientToken: ClientToken;
+  linked: boolean | null;
   createdAt: Date;
 }
 
@@ -198,6 +199,14 @@ export class UserRepository {
     this.client.query.users.findFirst({
       where: eq(users.clientToken, token),
     });
+
+  isUserLinked = (id: UserId): Promise<boolean> =>
+    this.client.query.users
+      .findFirst({ where: eq(users.id, id) })
+      .then(user => user?.linked ?? false);
+
+  setLinked = async (id: UserId, linked: boolean) =>
+    this.client.update(users).set({ linked }).where(eq(users.id, id)).run();
 
   delete = async (id: UserId) =>
     this.client.delete(users).where(eq(users.id, id)).run();

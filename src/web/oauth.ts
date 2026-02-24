@@ -82,13 +82,17 @@ export class OAuthController {
     redirectUri: string,
     user: User,
     done: CodeIssueCallback
-  ) =>
-    done(
-      null,
-      this.isValidClient(client.id, redirectUri)
-        ? this.userRepository.issueCode(user.id)
-        : false
-    );
+  ) => {
+    if (!this.isValidClient(client.id, redirectUri)) {
+      return done(null, false);
+    }
+
+    // Mark user as linked when they grant authorization
+    this.userRepository
+      .setLinked(user.id, true)
+      .then(() => done(null, this.userRepository.issueCode(user.id)))
+      .catch(done);
+  };
 
   private exchangeCode = (
     client: Client,

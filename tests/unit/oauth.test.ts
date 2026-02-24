@@ -3,10 +3,13 @@
  * Tests UserRepository token routines with opaque AES-256-GCM access/refresh tokens
  * and JWT authorization codes.
  */
-import Database from "better-sqlite3";
 import jwt from "jsonwebtoken";
 import { beforeEach, describe, expect, it } from "vitest";
 import { UserRepository, type UserId } from "../../src/db/repository.ts";
+import {
+  createTestUser,
+  initializeTestDatabase,
+} from "../integration/testDatabase.ts";
 
 describe("UserRepository - Token Routines", () => {
   let repository: UserRepository;
@@ -14,39 +17,16 @@ describe("UserRepository - Token Routines", () => {
   const TEST_USER_ID = "test-user-id" as UserId;
 
   beforeEach(() => {
-    const sqliteDatabase = new (Database as unknown as typeof Database)(
-      ":memory:"
-    );
-
-    // Create schema matching the actual production schema
-    sqliteDatabase.exec(`
-      CREATE TABLE IF NOT EXISTS "user" (
-        "id" TEXT PRIMARY KEY,
-        "username" TEXT NOT NULL,
-        "client_token" TEXT NOT NULL UNIQUE,
-        "created_at" INTEGER NOT NULL
-      );
-      CREATE TABLE IF NOT EXISTS "sessions" (
-        "sid" TEXT PRIMARY KEY,
-        "sess" TEXT NOT NULL,
-        "expire" TEXT NOT NULL
-      );
-    `);
+    const database = initializeTestDatabase();
 
     // Insert a test user
-    sqliteDatabase
-      .prepare(
-        `INSERT INTO "user" (id, username, client_token, created_at)
-         VALUES (?, ?, ?, ?)`
-      )
-      .run(
-        TEST_USER_ID,
-        "testuser@example.com",
-        "test-client-token",
-        Date.now()
-      );
+    createTestUser(database, {
+      id: TEST_USER_ID,
+      username: "testuser@example.com",
+      clientToken: "test-client-token",
+    });
 
-    repository = new UserRepository(sqliteDatabase, JWT_SECRET);
+    repository = new UserRepository(database, JWT_SECRET);
   });
 
   describe("Authorization Code (issueCode)", () => {
@@ -158,34 +138,19 @@ describe("UserRepository - Token Routines", () => {
     });
 
     it("should verify each token for the correct user", async () => {
-      const sqliteDatabase = new (Database as unknown as typeof Database)(
-        ":memory:"
-      );
-      sqliteDatabase.exec(`
-        CREATE TABLE IF NOT EXISTS "user" (
-          "id" TEXT PRIMARY KEY,
-          "username" TEXT NOT NULL,
-          "client_token" TEXT NOT NULL UNIQUE,
-          "created_at" INTEGER NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS "sessions" (
-          "sid" TEXT PRIMARY KEY,
-          "sess" TEXT NOT NULL,
-          "expire" TEXT NOT NULL
-        );
-      `);
-      sqliteDatabase
-        .prepare(
-          `INSERT INTO "user" (id, username, client_token, created_at) VALUES (?, ?, ?, ?)`
-        )
-        .run("user-1", "user1@example.com", "token-1", Date.now());
-      sqliteDatabase
-        .prepare(
-          `INSERT INTO "user" (id, username, client_token, created_at) VALUES (?, ?, ?, ?)`
-        )
-        .run("user-2", "user2@example.com", "token-2", Date.now());
+      const database = initializeTestDatabase();
+      createTestUser(database, {
+        id: "user-1" as UserId,
+        username: "user1@example.com",
+        clientToken: "token-1",
+      });
+      createTestUser(database, {
+        id: "user-2" as UserId,
+        username: "user2@example.com",
+        clientToken: "token-2",
+      });
 
-      const repo = new UserRepository(sqliteDatabase, JWT_SECRET);
+      const repo = new UserRepository(database, JWT_SECRET);
       const accessToken1 = repo.issueToken("access", 3600, "user-1" as UserId);
       const accessToken2 = repo.issueToken("access", 3600, "user-2" as UserId);
 

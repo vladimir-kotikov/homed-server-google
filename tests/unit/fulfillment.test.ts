@@ -70,6 +70,7 @@ describe("FulfillmentController - State Change Listener", () => {
       findById: vi.fn(),
       save: vi.fn(),
       delete: vi.fn(),
+      isUserLinked: vi.fn().mockResolvedValue(true),
     } as unknown as UserRepository;
 
     mockDeviceRepository = {
@@ -241,6 +242,12 @@ describe("FulfillmentController - State Change Listener", () => {
     );
     reportStateAndNotificationSpy.mockRejectedValueOnce(notFoundError);
 
+    // User is still linked - isUserLinked called twice:
+    // once in reportState, once in requestSync
+    (
+      mockUserRepository.isUserLinked as ReturnType<typeof vi.fn>
+    ).mockResolvedValue(true);
+
     const eventHandler = vi
       .mocked(mockDeviceRepository.on)
       .mock.calls.find(call => call[0] === "deviceStateChanged")?.[1];
@@ -254,12 +261,46 @@ describe("FulfillmentController - State Change Listener", () => {
       newState,
     });
 
+    expect(mockUserRepository.isUserLinked).toHaveBeenCalledWith(userId);
     expect(requestSyncSpy).toHaveBeenCalledTimes(1);
     expect(requestSyncSpy).toHaveBeenCalledWith(
       expect.objectContaining({
         requestBody: { agentUserId: userId, async: true },
       })
     );
+  });
+
+  it("should not trigger requestSync for 404 when user has been deleted", async () => {
+    const device = createMockDevice();
+    const prevState: DeviceState = { status: "off" };
+    const newState: DeviceState = { status: "on" };
+
+    const notFoundError = Object.assign(
+      new Error("Requested entity was not found."),
+      { status: 404 }
+    );
+    reportStateAndNotificationSpy.mockRejectedValueOnce(notFoundError);
+
+    // Mock user is not linked (has been unlinked)
+    (
+      mockUserRepository.isUserLinked as ReturnType<typeof vi.fn>
+    ).mockResolvedValueOnce(false);
+
+    const eventHandler = vi
+      .mocked(mockDeviceRepository.on)
+      .mock.calls.find(call => call[0] === "deviceStateChanged")?.[1];
+
+    await eventHandler?.({
+      userId,
+      clientId,
+      deviceId,
+      device,
+      prevState,
+      newState,
+    });
+
+    expect(mockUserRepository.isUserLinked).toHaveBeenCalledWith(userId);
+    expect(requestSyncSpy).not.toHaveBeenCalled();
   });
 
   it("should not trigger requestSync for non-404 reportState errors", async () => {
@@ -330,6 +371,7 @@ describe("FulfillmentController - EXECUTE Intent", () => {
     id: userId,
     clientToken: "token" as ClientToken,
     username: "testuser",
+    linked: true,
     createdAt: new Date(),
   };
   const clientId = createClientId("client1");
@@ -350,6 +392,7 @@ describe("FulfillmentController - EXECUTE Intent", () => {
       findById: vi.fn(),
       save: vi.fn(),
       delete: vi.fn(),
+      isUserLinked: vi.fn().mockResolvedValue(true),
     } as unknown as UserRepository;
 
     mockDeviceRepository = {
