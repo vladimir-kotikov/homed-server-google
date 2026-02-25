@@ -58,15 +58,12 @@ export class ClientConnection<
     this.socket = socket
       .on("data", (data: Buffer) =>
         Sentry.withIsolationScope(scope => {
-          scope.setContext("client", { clientId: this.uniqueId });
-          scope.setContext("connection", connectionContext);
+          scope
+            .setContext("client", { clientId: this.uniqueId })
+            .setContext("connection", connectionContext);
+
           if (this.user) {
-            scope.setUser({
-              id: this.user.id,
-              username: this.user.username,
-              ip_address: connectionContext.remoteAddress,
-            });
-            scope.setTag("userId", this.user.id);
+            scope.setUser({ id: this.user.id, username: this.user.username });
           }
 
           this.receiveData(data);
@@ -256,12 +253,7 @@ export class ClientConnection<
 
   authorize(user: U): void {
     this.user = user;
-    Sentry.setUser({
-      id: this.user.id,
-      username: this.user.username,
-      ip_address: this.socket.remoteAddress,
-    });
-    Sentry.setTag("userId", this.user.id);
+    Sentry.setUser({ id: this.user.id, username: this.user.username });
 
     this.sendMessage({ action: "subscribe", topic: "status/#" });
     clearTimeout(this.timeout);
