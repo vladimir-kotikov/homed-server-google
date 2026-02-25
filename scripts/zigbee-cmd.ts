@@ -207,21 +207,20 @@ client.on("message", (topic, message) => {
 
     if (args.status) {
       console.log(`📥 Topic: ${topic}`);
-      console.log(JSON.stringify(data, null, 2));
+      console.log(JSON.stringify(message, null, 2));
       console.log();
       client.end();
       process.exit(0);
-      return;
     }
 
     if (args.expose) {
       console.log(`📥 Topic: ${topic}`);
-      console.log(JSON.stringify(data, null, 2));
+      console.log(JSON.stringify(message, null, 2));
       console.log();
       return;
     }
 
-    displayResponse(data);
+    displayResponse(message);
   } catch (err) {
     // Ignore parse errors
   }
