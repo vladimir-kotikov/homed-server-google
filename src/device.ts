@@ -11,6 +11,47 @@ const log = createLogger("device-repo");
 export type DeviceId = string & { readonly __deviceId: unique symbol };
 
 /**
+ * Exposes that indicate a device can be actively controlled (actuators)
+ * vs passive sensors that only report data.
+ * Used for device type detection and watchdog monitoring.
+ */
+export const CONTROLLABLE_EXPOSES = new Set([
+  // Switches and relays
+  "switch",
+  "relay",
+  "outlet",
+  // Lights
+  "light",
+  "dimmable_light",
+  "color_light",
+  "brightness",
+  "color",
+  // Covers
+  "cover",
+  "blinds",
+  "curtain",
+  "shutter",
+  // Locks
+  "lock",
+  "door_lock",
+  // Climate control
+  "thermostat",
+  "temperature_controller",
+  // Other actuators
+  "fan",
+  // Actions and scenes
+  "action",
+  "scene",
+]);
+
+/**
+ * Determines if an array of exposes contains any controllable capabilities
+ * (vs just passive sensor/metadata capabilities)
+ */
+export const hasControlCapabilities = (exposes: string[]): boolean =>
+  exposes.some(expose => CONTROLLABLE_EXPOSES.has(expose));
+
+/**
  * Homed device structure as received from TCP clients
  */
 export interface HomedDevice {
@@ -91,6 +132,14 @@ export class DeviceRepository extends EventEmitter<{
       );
     }
   }
+
+  /**
+   * Checks if a device is controllable (has action-capable exposes).
+   * Non-controllable devices (sensors only) should not be monitored by the watchdog
+   * as they may be battery-powered and wake only to push data.
+   */
+  private isDeviceControllable = (device: HomedDevice): boolean =>
+    device.endpoints.some(endpoint => hasControlCapabilities(endpoint.exposes));
 
   /**
    * Marks any device offline whose last device/ message arrived longer ago
@@ -242,10 +291,18 @@ export class DeviceRepository extends EventEmitter<{
       return;
     }
 
-    // Any device/ message — online or offline — counts as a liveness signal.
-    // Refreshing the watchdog timer here means the watchdog only fires if homed
-    // stops sending device/ messages entirely, regardless of reported status.
-    this.deviceLastSeen.set(`${userId}::${clientId}::${deviceId}`, Date.now());
+    // Only track controllable devices in the watchdog.
+    // Non-controllable devices (sensors) may be battery-powered and sleep,
+    // sending data only when they wake up. Tracking them would cause false offline alerts.
+    if (this.isDeviceControllable(device)) {
+      // Any device/ message — online or offline — counts as a liveness signal.
+      // Refreshing the watchdog timer here means the watchdog only fires if homed
+      // stops sending device/ messages entirely, regardless of reported status.
+      this.deviceLastSeen.set(
+        `${userId}::${clientId}::${deviceId}`,
+        Date.now()
+      );
+    }
     // Update availability as state - this flows through normal state change detection
     this.updateDeviceState(userId, clientId, deviceId, { available });
   };

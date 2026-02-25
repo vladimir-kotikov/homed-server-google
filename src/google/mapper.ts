@@ -10,6 +10,7 @@ import type {
   HomedDevice,
   HomedEndpoint,
 } from "../device.ts";
+import { hasControlCapabilities } from "../device.ts";
 import type { ClientId } from "../homed/client.ts";
 import type { EndpointOptions } from "../homed/schema.ts";
 import type { CommandMessage, DeviceState } from "../homed/types.ts";
@@ -302,31 +303,6 @@ const mapExposesToTraits = (
     }, new Set<string>())
     .values()
     .toArray();
-
-/**
- * Determines if an endpoint has control capabilities (vs just metadata)
- */
-const hasControlCapabilities = (exposes: string[]): boolean => {
-  const controlExposes = [
-    "switch",
-    "relay",
-    "outlet",
-    "light",
-    "dimmable_light",
-    "color_light",
-    "brightness",
-    "color",
-    "cover",
-    "blinds",
-    "curtain",
-    "shutter",
-    "lock",
-    "door_lock",
-    "thermostat",
-    "temperature_controller",
-  ];
-  return exposes.some(expose => controlExposes.includes(expose));
-};
 
 /**
  * Get the primary device-level expose from an endpoint
