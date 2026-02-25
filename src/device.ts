@@ -292,17 +292,18 @@ export class DeviceRepository extends EventEmitter<{
     ];
 
     // Initialise availability only for newly added devices.
-    // Existing devices have their availability managed by device/ status messages
-    // and the inactivity watchdog; overwriting it here on every periodic status
-    // broadcast would fight both those signals.
+    // Existing devices have their availability managed by device/ status
+    // messages and the inactivity watchdog; overwriting it here on every
+    // periodic status broadcast would fight both those signals.
     addedDevices.forEach(device => {
       if (device.available !== undefined) {
         this.setDeviceAvailable(userId, clientId, device.key, device.available);
       }
     });
 
-    // Do not emit devicesUpdated here, wait for exposes to be handled and
-    // added via updateDevice to avoid multiple SYNC events and possible
+    if (addedDevices.length > 0 || removedDevices.length > 0) {
+      this.emit("devicesUpdated", userId);
+    }
 
     return [addedDevices, removedDevices];
   };

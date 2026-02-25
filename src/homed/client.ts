@@ -34,10 +34,10 @@ export class ClientConnection<
   error: [Error];
   close: [];
   token: [ClientToken];
-  device: [string, DeviceStatusMessage];
-  expose: [string, DeviceExposesMessage];
-  status: [string, ClientStatusMessage];
-  fd: [string, Record<string, unknown>];
+  device: [string, DeviceStatusMessage | undefined];
+  expose: [string, DeviceExposesMessage | undefined];
+  status: [string, ClientStatusMessage | undefined];
+  fd: [string, Record<string, unknown> | undefined];
 }> {
   private buf: Buffer = Buffer.alloc(0);
   private socket: Socket;

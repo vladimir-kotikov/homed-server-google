@@ -199,11 +199,17 @@ export class HomedServerController {
       .on("token", token => this.clientTokenReceived(client, token))
       // status/# subscription
       .on("status", (_, message) => this.clientStatusUpdated(client, message))
-      .on("device", (topic, message) =>
-        this.deviceStatusUpdated(client, topic, message)
+      .on(
+        "device",
+        (topic, message) =>
+          // Undefined message is a retained tombstone, so just ignore it
+          message && this.deviceStatusUpdated(client, topic, message)
       )
-      .on("expose", (topic, devices) =>
-        this.clientDeviceUpdated(client, topic, devices)
+      .on(
+        "expose",
+        (topic, devices) =>
+          // Undefined message is a retained tombstone, so just ignore it
+          devices && this.clientDeviceUpdated(client, topic, devices)
       )
       .on("fd", (topic, data) => this.deviceDataUpdated(client, topic, data));
 
@@ -269,9 +275,9 @@ export class HomedServerController {
 
   clientStatusUpdated = (
     client: ClientConnection<User>,
-    message: ClientStatusMessage
+    message: ClientStatusMessage | undefined
   ) => {
-    if (!client.uniqueId || !client.user) return;
+    if (!client.uniqueId || !client.user || !message) return;
 
     log.debug("message.devices", {
       devices: message.devices?.length ?? 0,
@@ -373,7 +379,7 @@ export class HomedServerController {
   deviceStatusUpdated = (
     client: ClientConnection<User>,
     topic: string,
-    { status }: DeviceStatusMessage
+    message: DeviceStatusMessage
   ) => {
     if (!client.uniqueId || !client.user) return;
 
@@ -384,16 +390,16 @@ export class HomedServerController {
       client.user.id,
       client.uniqueId,
       deviceId,
-      status === "online"
+      message.status === "online"
     );
   };
 
   deviceDataUpdated = (
     client: ClientConnection<User>,
     topic: string,
-    data: Record<string, unknown>
+    data: Record<string, unknown> | undefined
   ) => {
-    if (!client.user || !client.uniqueId) return;
+    if (!client.user || !client.uniqueId || !data) return;
 
     const { deviceId, endpointId } = parseDeviceTopic(topic);
     Sentry.setContext("homed.device", { deviceId, endpointId });

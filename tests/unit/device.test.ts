@@ -103,6 +103,64 @@ describe("DeviceRepository", () => {
     });
   });
 
+  describe("devicesUpdated event", () => {
+    it("should emit devicesUpdated when devices are added", () => {
+      const device = createMockDevice();
+      const eventSpy = vi.fn();
+      repository.on("devicesUpdated", eventSpy);
+
+      repository.syncClientDevices(userId, uniqueId, [device]);
+
+      expect(eventSpy).toHaveBeenCalledTimes(1);
+      expect(eventSpy).toHaveBeenCalledWith(userId);
+    });
+
+    it("should emit devicesUpdated when devices are removed", () => {
+      const device = createMockDevice();
+      repository.syncClientDevices(userId, uniqueId, [device]);
+
+      const eventSpy = vi.fn();
+      repository.on("devicesUpdated", eventSpy);
+
+      // Remove all devices by syncing empty array
+      repository.syncClientDevices(userId, uniqueId, []);
+
+      expect(eventSpy).toHaveBeenCalledTimes(1);
+      expect(eventSpy).toHaveBeenCalledWith(userId);
+    });
+
+    it("should not emit devicesUpdated when device list unchanged", () => {
+      const device = createMockDevice();
+      repository.syncClientDevices(userId, uniqueId, [device]);
+
+      const eventSpy = vi.fn();
+      repository.on("devicesUpdated", eventSpy);
+
+      // Sync same devices again
+      repository.syncClientDevices(userId, uniqueId, [device]);
+
+      expect(eventSpy).not.toHaveBeenCalled();
+    });
+
+    it("should emit devicesUpdated when both adding and removing devices", () => {
+      const device1 = createMockDevice();
+      const device2 = createMockDevice("zigbee/device2" as DeviceId);
+      const device3 = createMockDevice("zigbee/device3" as DeviceId);
+
+      repository.syncClientDevices(userId, uniqueId, [device1, device2]);
+
+      const eventSpy = vi.fn();
+      repository.on("devicesUpdated", eventSpy);
+
+      // Replace device1 and device2 with device2 and device3
+      // (removes device1, adds device3, keeps device2)
+      repository.syncClientDevices(userId, uniqueId, [device2, device3]);
+
+      expect(eventSpy).toHaveBeenCalledTimes(1);
+      expect(eventSpy).toHaveBeenCalledWith(userId);
+    });
+  });
+
   describe("getDevicesWithClientId", () => {
     it("should get devices for specific client", () => {
       const device = createMockDevice();
