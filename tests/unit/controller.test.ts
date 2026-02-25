@@ -28,6 +28,7 @@ vi.mock("@sentry/node", () => {
     captureMessage: vi.fn(),
     getCurrentScope: vi.fn(emptyScope),
     getIsolationScope: vi.fn(emptyScope),
+    getActiveSpan: vi.fn(() => ({ setAttributes: vi.fn() })),
     setContext: vi.fn(),
     setUser: vi.fn(),
     withIsolationScope: vi.fn((cb: (scope: any) => void) =>

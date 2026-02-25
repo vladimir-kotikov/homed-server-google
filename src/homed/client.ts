@@ -142,7 +142,7 @@ export class ClientConnection<
 
           const parsed = Result.try(packet => {
             log.debug("message.incoming", { size: packet.length });
-            span.setAttribute("messaging.message_payload_size", packet.length);
+            span.setAttribute("messaging.message.body.size", packet.length);
             const decrypted = this.cipher!.decrypt(unescapePacket(packet));
             return JSON.parse(decrypted.toString("utf8"));
           }, packet);

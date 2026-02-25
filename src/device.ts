@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/node";
 import { EventEmitter } from "node:events";
 import type { UserId } from "./db/repository.ts";
 import type { ClientId } from "./homed/client.ts";
@@ -195,8 +196,25 @@ export class DeviceRepository extends EventEmitter<{
     userId: UserId,
     clientId: ClientId,
     deviceId: DeviceId
-  ): HomedDevice | undefined =>
-    this.devices[userId]?.[clientId]?.find(d => d.key === deviceId);
+  ): HomedDevice | undefined => {
+    const device = this.devices[userId]?.[clientId]?.find(
+      d => d.key === deviceId
+    );
+
+    if (device) {
+      Sentry.setContext("homed.device", {
+        deviceId: device.key,
+        manufacturer: device.manufacturer,
+        model: device.model,
+      });
+      Sentry.getActiveSpan()?.setAttributes({
+        "homed.device.manufacturer": device.manufacturer,
+        "homed.device.model": device.model,
+      });
+    }
+
+    return device;
+  };
 
   /**
    * Get all devices for a user with their associated ClientId
