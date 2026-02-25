@@ -168,13 +168,12 @@ export class OAuthController {
       return done(null, false);
     }
 
-    this.userRepository.exchangeRefreshToken(token).then(args => {
-      if (args === undefined) {
+    this.userRepository.exchangeToken(token).then(result => {
+      if (result === undefined) {
         return done(null, false);
       }
-      const [accessToken, refreshToken] = args;
-      // Include expires_in as required by Google
-      done(null, accessToken, refreshToken, {
+      // New refresh token is only returned if the old one is near expiration
+      done(null, ...result, {
         expires_in: appConfig.accessTokenLifetime,
       });
     }, done);

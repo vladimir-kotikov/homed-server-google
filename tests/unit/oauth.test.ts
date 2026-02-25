@@ -181,31 +181,52 @@ describe("UserRepository - Token Routines", () => {
       expect(user?.id).toBe(TEST_USER_ID);
     });
 
-    it("exchangeRefreshToken should return new opaque access+refresh tokens", async () => {
+    it("exchangeRefreshToken should return new opaque access token only when token is not near expiration", async () => {
+      // Token expires in 2 days - not near expiration
       const refreshToken = repository.issueToken(
         "refresh",
-        86_400,
+        2 * 86_400,
         TEST_USER_ID
       );
 
-      const result = await repository.exchangeRefreshToken(refreshToken);
+      const result = await repository.exchangeToken(refreshToken);
 
       expect(result).toBeDefined();
+
+      const user = await repository.verifyAccessToken(result![0]);
+      expect(user?.id).toBe(TEST_USER_ID);
+    });
+
+    it("exchangeRefreshToken should rotate refresh token when near expiration (within 1 day)", async () => {
+      // Token expires in 12 hours - near expiration, should rotate
+      const refreshToken = repository.issueToken(
+        "refresh",
+        12 * 3600,
+        TEST_USER_ID
+      );
+
+      const result = await repository.exchangeToken(refreshToken);
+
+      expect(result).toBeDefined();
+      expect(Array.isArray(result)).toBe(true);
       expect(result).toHaveLength(2);
-      const [newAccess] = result!;
+
+      const [newAccess, newRefresh] = result!;
+      expect(typeof newAccess).toBe("string");
+      expect(typeof newRefresh).toBe("string");
 
       const user = await repository.verifyAccessToken(newAccess);
       expect(user?.id).toBe(TEST_USER_ID);
     });
 
     it("exchangeRefreshToken should reject an invalid token", async () => {
-      const result = await repository.exchangeRefreshToken("invalid-token");
+      const result = await repository.exchangeToken("invalid-token");
       expect(result).toBeUndefined();
     });
 
     it("exchangeRefreshToken should reject an expired refresh token", async () => {
       const expired = repository.issueToken("refresh", -1, TEST_USER_ID);
-      const result = await repository.exchangeRefreshToken(expired);
+      const result = await repository.exchangeToken(expired);
       expect(result).toBeUndefined();
     });
   });

@@ -81,12 +81,12 @@ export class UserRepository {
 
   /**
    * Decrypt and validate an opaque AES-256-GCM token.
-   * Returns the UserId on success, or undefined if invalid/expired/wrong type.
+   * Returns UserId and expiration time, or undefined if invalid/expired/wrong type.
    */
   private verifyToken = (
     token: string,
     expectedType: "code" | "access" | "refresh"
-  ): UserId | undefined => {
+  ): { userId: UserId; expiresAt: number } | undefined => {
     try {
       const buf = Buffer.from(token, "base64url");
       if (buf.length < 29) return undefined; // iv(12) + authTag(16) + 1 byte minimum
@@ -113,7 +113,7 @@ export class UserRepository {
         exp < Math.floor(Date.now() / 1000)
       )
         return undefined;
-      return sub;
+      return { userId: sub, expiresAt: exp };
     } catch {
       return undefined;
     }
@@ -144,16 +144,16 @@ export class UserRepository {
   issueCode = (userId: UserId) => this.issueToken("code", 5 * 60, userId);
 
   exchangeCode = async (code: string) => {
-    const userId = this.verifyToken(code, "code");
-    if (!userId) {
+    const result = this.verifyToken(code, "code");
+    if (!result) {
       log.warn("oauth.exchange_code.invalid_code");
       return undefined;
     }
     const user = await this.client.query.users.findFirst({
-      where: eq(users.id, userId),
+      where: eq(users.id, result.userId),
     });
     if (!user) {
-      log.warn("oauth.exchange_code.user_not_found", { userId });
+      log.warn("oauth.exchange_code.user_not_found", result);
       return undefined;
     }
     return [
@@ -162,17 +162,22 @@ export class UserRepository {
     ];
   };
 
-  exchangeRefreshToken = async (token: string) => {
-    const userId = this.verifyToken(token, "refresh");
-    if (!userId) return undefined;
+  exchangeToken = async (token: string) => {
+    const tokenInfo = this.verifyToken(token, "refresh");
+    if (!tokenInfo) return undefined;
     const user = await this.client.query.users.findFirst({
-      where: eq(users.id, userId),
+      where: eq(users.id, tokenInfo.userId),
     });
     if (!user) return undefined;
+
+    const now = Math.floor(Date.now() / 1000);
     return [
       this.issueToken("access", this.accessTokenLifetime, user.id),
-      this.issueToken("refresh", this.refreshTokenLifetime, user.id),
-    ];
+      // Rotate refresh token if it's expiring within 1 day
+      tokenInfo.expiresAt - now <= 86400
+        ? this.issueToken("refresh", this.refreshTokenLifetime, user.id)
+        : undefined,
+    ] as const;
   };
 
   /**
@@ -180,10 +185,10 @@ export class UserRepository {
    * Used by the Bearer authentication middleware.
    */
   verifyAccessToken = async (rawToken: string): Promise<User | undefined> => {
-    const userId = this.verifyToken(rawToken, "access");
-    if (!userId) return undefined;
+    const result = this.verifyToken(rawToken, "access");
+    if (!result) return undefined;
     return this.client.query.users.findFirst({
-      where: eq(users.id, userId),
+      where: eq(users.id, result.userId),
     });
   };
 

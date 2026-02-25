@@ -235,8 +235,34 @@ describe("OAuth Integration Tests", () => {
       expect(refreshResponse.body).toMatchObject({
         token_type: "Bearer",
         access_token: expect.any(String),
-        refresh_token: expect.any(String),
         expires_in: 3600, // 1 hour as configured
+      });
+      // Should NOT return a new refresh token (no unnecessary rotation)
+      expect(refreshResponse.body.refresh_token).toBeUndefined();
+    });
+
+    it("should rotate refresh token when near expiration (within 1 day)", async () => {
+      // Create a refresh token that expires in 12 hours (near expiration)
+      const nearExpiringRefreshToken = userRepository.issueToken(
+        "refresh",
+        12 * 3600, // 12 hours
+        "test-user-id" as UserId
+      );
+
+      const refreshResponse = await request(webApp.app)
+        .post("/oauth/token")
+        .type("form")
+        .send({
+          ...EXCHANGE_TOKENS_PAYLOAD,
+          refresh_token: nearExpiringRefreshToken,
+        });
+
+      expect(refreshResponse.status).toBe(200);
+      expect(refreshResponse.body).toMatchObject({
+        token_type: "Bearer",
+        access_token: expect.any(String),
+        refresh_token: expect.any(String), // Should get a new refresh token
+        expires_in: 3600,
       });
     });
   });

@@ -102,8 +102,10 @@ describe("Verify expires_in in token response", () => {
     expect(response.body).toMatchObject({
       token_type: "Bearer",
       access_token: expect.any(String),
-      refresh_token: expect.any(String),
       expires_in: 3600,
     });
+    // Should NOT return a new refresh token since it's not near expiration
+    // (refresh token is fresh, default lifetime is 14 days, rotation only happens within 1 day)
+    expect(response.body.refresh_token).toBeUndefined();
   });
 });
