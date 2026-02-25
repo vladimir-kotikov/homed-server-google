@@ -1,21 +1,18 @@
+import { SPAN_STATUS_ERROR } from "@sentry/core";
 import * as Sentry from "@sentry/node";
+import assert from "node:assert";
 import { EventEmitter } from "node:events";
 import { Socket } from "node:net";
-import { match, P } from "ts-pattern";
 import type { ClientToken } from "../db/repository.ts";
-import type { DeviceId } from "../device.ts";
+import { type DeviceId } from "../device.ts";
 import { createLogger } from "../logger.ts";
-import { Err, safeParse, truncate, type Result } from "../utility.ts";
+import { Result, safeParse, truncate } from "../utility.ts";
 import { connectionContextFromSocket } from "./context.ts";
 import { AES128CBC } from "./crypto.ts";
 import { escapePacket, readPacket, unescapePacket } from "./protocol.ts";
 import {
   ClientAuthMessageSchema,
   ClientMessageSchema,
-  ClientStatusMessageSchema,
-  DeviceExposesMessageSchema,
-  DeviceStateMessageSchema,
-  DeviceStatusMessageSchema,
   type ClientStatusMessage,
   type DeviceExposesMessage,
   type DeviceStatusMessage,
@@ -134,99 +131,78 @@ export class ClientConnection<
 
     let [packet, remainder] = readPacket(this.buf);
     while (packet && !this.socket.closed) {
-      let message: unknown;
-      let decrypted: Buffer;
-      try {
-        log.debug("message.incoming", { size: packet.length });
-        decrypted = this.cipher!.decrypt(unescapePacket(packet));
-        message = JSON.parse(decrypted.toString("utf8"));
-      } catch (error) {
-        log.error(`message.decrypt`, error);
-        this.close();
-        return;
-      }
-
-      if (!this.user && !this.uniqueId) {
-        safeParse(message, ClientAuthMessageSchema)
-          .map(({ uniqueId, token }) => {
-            this.uniqueId = uniqueId as ClientId;
-            this.emit("token", token as ClientToken);
-            Sentry.setContext("client", { clientId: uniqueId });
-          })
-          .catch(error => {
-            log.error(`message.auth`, error);
-            this.close();
-          });
-
-        this.buf = remainder;
-        continue;
-      }
-
-      // Stop processing if not yet fully authorized (both uniqueId and user
-      // must be set). Messages will remain in buffer and be processed after
-      // authorization completes
-      if (!this.user) {
-        log.debug("connection.wait_auth");
-        break;
-      }
-
-      Sentry.startSpan(
+      const result = Sentry.startSpan(
         {
           forceTransaction: true,
           name: "client message",
           op: "queue.process",
-          attributes: { "messaging.message.body.size": decrypted.length },
         },
         span => {
-          return this.parseMessage(message)
-            .map(([event, topic, data]) => {
-              // Extract deviceId from topic if present (e.g., "fd/deviceId" -> "deviceId")
-              let topicName = topic;
-              const topicParts = topic.split("/");
-              if (topicParts.length > 1) {
-                Sentry.setContext("homed.device", {
-                  deviceId: topicParts.slice(1).join("/"),
-                });
-                topicName = topicParts.slice(0, 2).join("/") + "/{deviceId}";
-              }
-              span.setAttributes({ "messaging.destination.name": topicName });
+          assert(packet, "Packet is undefined despite loop condition.");
 
-              this.emit(event, topic, data);
-            })
-            .catch(error => {
-              log.error("message.parse", error, {
-                rawMessage: truncate(message, 100),
-              });
-              this.close();
+          const parsed = Result.try(packet => {
+            log.debug("message.incoming", { size: packet.length });
+            span.setAttribute("messaging.message_payload_size", packet.length);
+            const decrypted = this.cipher!.decrypt(unescapePacket(packet));
+            return JSON.parse(decrypted.toString("utf8"));
+          }, packet);
+
+          const handled = !this.uniqueId
+            ? this.handleAuthMessage(parsed)
+            : this.user
+              ? this.handleClientMessage(parsed, span)
+              : // Stop processing if not yet fully authorized (both uniqueId
+                // and user must be set). Messages will remain in buffer and be
+                // processed after authorization completes
+                Result.of(false);
+
+          return handled.catch(err => {
+            span.setStatus({
+              code: SPAN_STATUS_ERROR,
+              message: "message_error",
             });
+            log.error("message.process", err);
+            this.close();
+            return false;
+          });
         }
       );
+
+      if (result.flat() === false) {
+        break;
+      }
 
       this.buf = remainder;
       [packet, remainder] = readPacket(this.buf);
     }
   }
 
-  private parseMessage = (
-    rawMessage: unknown
-  ): Result<[string, string, unknown]> =>
-    safeParse(rawMessage, ClientMessageSchema).flatMap(({ topic, message }) =>
-      match(topic)
-        .with(P.string.startsWith("status/"), () =>
-          safeParse(message, ClientStatusMessageSchema)
-        )
-        .with(P.string.startsWith("expose/"), () =>
-          safeParse(message, DeviceExposesMessageSchema)
-        )
-        .with(P.string.startsWith("device/"), () =>
-          safeParse(message, DeviceStatusMessageSchema)
-        )
-        .with(P.string.startsWith("fd/"), () =>
-          safeParse(message, DeviceStateMessageSchema)
-        )
-        .otherwise(() => new Err(`Unknown message topic ${topic}`))
-        .map(data => [topic.split("/")[0], topic, data] as const)
-    );
+  private handleAuthMessage = (message: Result<unknown>): Result<void> =>
+    message
+      .flatMap(raw => safeParse(raw, ClientAuthMessageSchema))
+      .map(({ uniqueId, token }) => {
+        Sentry.setContext("client", { clientId: uniqueId });
+        this.uniqueId = uniqueId as ClientId;
+        this.emit("token", token as ClientToken);
+      });
+
+  private handleClientMessage = (
+    parsed: Result<unknown>,
+    span: Sentry.Span
+  ): Result<void> =>
+    parsed
+      .flatMap(raw => safeParse(raw, ClientMessageSchema))
+      .map(({ topic, message }) => {
+        // topic is is prefix/zigbee[/deviceAddress[/endpointId]], but to
+        // avoid hign cardinality strip device identifiers
+        const segments = topic.split("/", 2);
+        span.setAttribute(
+          "messaging.destination.name",
+          segments.join("/") + "/*"
+        );
+
+        this.emit(segments[0], topic, message);
+      });
 
   // Public solely for testing purposes
   sendMessage(message: ServerMessage): void {

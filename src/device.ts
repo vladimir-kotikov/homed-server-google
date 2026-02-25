@@ -7,6 +7,8 @@ import { createLogger } from "./logger.ts";
 import { fastDeepEqual } from "./utility.ts";
 
 const log = createLogger("device-repo");
+const DEVICE_TOPIC_RE =
+  /^(?<prefix>[^/]+)\/(?<deviceId>.+?)(?:\/(?<endpointId>\d+))?$/;
 
 export type DeviceId = string & { readonly __deviceId: unique symbol };
 
@@ -50,6 +52,30 @@ export const CONTROLLABLE_EXPOSES = new Set([
  */
 export const hasControlCapabilities = (exposes: string[]): boolean =>
   exposes.some(expose => CONTROLLABLE_EXPOSES.has(expose));
+
+/**
+ * Parse device ID and optional endpoint ID from topic
+ * Examples:
+ *   - "fd/zigbee/device" → {prefix: "fd", deviceId: "zigbee/device", endpointId: undefined}
+ *   - "fd/zigbee/device/1" → {prefix: "fd", deviceId: "zigbee/device", endpointId: 1}
+ *   - "status/zigbee" -> {prefix: "status", deviceId: undefined, endpointId: undefined}
+ */
+export const parseDeviceTopic = (
+  topic: string
+): { prefix: string; deviceId: DeviceId; endpointId?: number } => {
+  const match = topic.match(DEVICE_TOPIC_RE);
+  if (!match || !match.groups) {
+    throw new Error(`Invalid topic format: ${topic}`);
+  }
+
+  return {
+    prefix: match.groups.prefix,
+    deviceId: match.groups.deviceId as DeviceId,
+    endpointId: match.groups.endpointId
+      ? parseInt(match.groups.endpointId, 10)
+      : undefined,
+  };
+};
 
 /**
  * Homed device structure as received from TCP clients

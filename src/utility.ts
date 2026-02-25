@@ -1,33 +1,66 @@
 import * as Sentry from "@sentry/node";
 import zod from "zod";
 
-export class Ok<T> {
-  readonly value: T;
+export abstract class Result<T> {
+  static of = <T>(value: T): Ok<T> => Ok.of(value);
+  static throw = (error: Error | string): Err => Err.throw(error);
+  static try = <T, Args extends unknown[]>(
+    fn: (...args: Args) => T,
+    ...args: Args
+  ): Result<T> => {
+    try {
+      return Ok.of(fn(...args));
+    } catch (error) {
+      return Err.throw(error instanceof Error ? error : String(error));
+    }
+  };
 
-  constructor(value: T) {
+  abstract isOk(): this is Ok<T>;
+  abstract flat(): T;
+  abstract fold<U>(onOk: (value: T) => U, onErr: (error: Error) => U): U;
+  abstract map<U>(fn: (value: T) => U): Result<U>;
+  abstract catch<U>(fn: (error: Error) => U): Ok<T | U>;
+
+  flatMap = <U>(fn: (value: T) => Result<U>): Result<U> => this.map(fn).flat();
+  toPromise = (): Promise<T> =>
+    this.fold(res => Promise.resolve(res), Promise.reject);
+}
+
+export class Ok<T> extends Result<T> {
+  private readonly value: T;
+
+  private constructor(value: T) {
+    super();
     this.value = value;
   }
 
-  map = <U>(fn: (value: T) => U): Ok<U> => new Ok(fn(this.value));
-  flatMap = <U>(fn: (value: T) => Result<U>): Result<U> => fn(this.value);
-  catch = <U>(_: (error: never) => U): Ok<T> => this;
-  toPromise = (): Promise<T> => Promise.resolve(this.value);
+  static of = <T>(value: T): Ok<T> => new Ok(value);
+
+  isOk = (): this is Ok<T> => true;
+  map = <U>(fn: (value: T) => U): Ok<U> => Ok.of(fn(this.value));
+  catch = (): Ok<T> => this;
+  fold = <U>(fn: (value: T) => U): U => fn(this.value);
+  flat = (): T => this.value;
 }
 
-export class Err {
+export class Err extends Result<never> {
   private readonly error: Error;
 
-  constructor(error: Error | string) {
+  private constructor(error: Error | string) {
+    super();
     this.error = typeof error === "string" ? new Error(error) : error;
   }
 
-  map = <U>(_: (value: never) => U): Err => this;
-  flatMap: <U>(_: (value: never) => Result<U>) => Result<U> = () => this;
-  catch: <U>(fn: (error: Error) => U) => Ok<U> = fn => new Ok(fn(this.error));
-  toPromise = (): Promise<never> => Promise.reject(this.error);
-}
+  static throw = (error: Error | string): Err => new Err(error);
 
-export type Result<T> = Ok<T> | Err;
+  isOk = (): this is Ok<never> => false;
+  map = <U>(_: (value: never) => U): Err => this;
+  catch: <U>(fn: (error: Error) => U) => Ok<U> = fn => Ok.of(fn(this.error));
+  fold = <U>(_: never, onErr: (error: Error) => U): U => onErr(this.error);
+  flat = (): never => {
+    throw this.error;
+  };
+}
 
 export const safeParse = <T extends zod.ZodType>(
   value: unknown,
@@ -35,11 +68,11 @@ export const safeParse = <T extends zod.ZodType>(
 ): Result<zod.infer<T>> => {
   const { data, success, error } = schema.safeParse(value);
   if (success) {
-    return new Ok(data);
+    return Result.of(data);
   }
 
   Sentry.captureException(error);
-  return new Err(error);
+  return Result.throw(error);
 };
 
 /**

@@ -9,11 +9,12 @@ import {
   type User,
   type UserId,
 } from "./db/repository.ts";
-import type {
-  DeviceId,
-  DeviceRepository,
-  HomedDevice,
-  HomedEndpoint,
+import {
+  parseDeviceTopic,
+  type DeviceId,
+  type DeviceRepository,
+  type HomedDevice,
+  type HomedEndpoint,
 } from "./device.ts";
 import { ClientConnection, type ClientId } from "./homed/client.ts";
 import type {
@@ -28,31 +29,6 @@ import { cloak, truncate } from "./utility.ts";
 import { WebApp } from "./web/app.ts";
 
 const log = createLogger("controller");
-
-/**
- * Parse device ID and optional endpoint ID from topic
- * Examples:
- *   - "fd/zigbee/device" → {deviceId: "zigbee/device", endpointId: undefined}
- *   - "fd/zigbee/device/1" → {deviceId: "zigbee/device", endpointId: 1}
- */
-const parseTopicDeviceId = (
-  topic: string
-): { deviceId: DeviceId; endpointId?: number } => {
-  const parts = topic.split("/").slice(1); // Remove topic prefix (fd, device, etc)
-
-  // Check if last part is a numeric endpoint ID
-  const lastPart = parts[parts.length - 1];
-  if (lastPart && /^\d+$/.test(lastPart)) {
-    const endpointId = parseInt(lastPart, 10);
-    const deviceId = parts.slice(0, -1).join("/") as DeviceId;
-    return { deviceId, endpointId };
-  }
-
-  return { deviceId: parts.join("/") as DeviceId };
-};
-
-const topicToDeviceId = (topic: string): DeviceId =>
-  parseTopicDeviceId(topic).deviceId;
 
 /**
  * A main controller that wires up HTTP and TCP servers and manages clients and
@@ -222,14 +198,12 @@ export class HomedServerController {
       })
       .on("token", token => this.clientTokenReceived(client, token))
       // status/# subscription
-      .on("status", (topic, message) =>
-        this.clientStatusUpdated(client, topicToDeviceId(topic), message)
-      )
+      .on("status", (_, message) => this.clientStatusUpdated(client, message))
       .on("device", (topic, message) =>
-        this.deviceStatusUpdated(client, topicToDeviceId(topic), message)
+        this.deviceStatusUpdated(client, topic, message)
       )
       .on("expose", (topic, devices) =>
-        this.clientDeviceUpdated(client, topicToDeviceId(topic), devices)
+        this.clientDeviceUpdated(client, topic, devices)
       )
       .on("fd", (topic, data) => this.deviceDataUpdated(client, topic, data));
 
@@ -295,8 +269,6 @@ export class HomedServerController {
 
   clientStatusUpdated = (
     client: ClientConnection<User>,
-    // unused for now, since we only support zigbee devices
-    _topic: string,
     message: ClientStatusMessage
   ) => {
     if (!client.uniqueId || !client.user) return;
@@ -346,10 +318,13 @@ export class HomedServerController {
 
   clientDeviceUpdated = (
     client: ClientConnection<User>,
-    deviceId: DeviceId,
+    topic: string,
     message: DeviceExposesMessage
   ) => {
     if (!client.uniqueId || !client.user) return;
+
+    const { deviceId } = parseDeviceTopic(topic);
+    Sentry.setContext("homed.device", { deviceId });
 
     log.debug("message.exposes", {
       deviceId,
@@ -397,17 +372,21 @@ export class HomedServerController {
   // device/ topic handler
   deviceStatusUpdated = (
     client: ClientConnection<User>,
-    deviceId: DeviceId,
+    topic: string,
     { status }: DeviceStatusMessage
-  ) =>
-    client.user &&
-    client.uniqueId &&
+  ) => {
+    if (!client.uniqueId || !client.user) return;
+
+    const { deviceId } = parseDeviceTopic(topic);
+    Sentry.setContext("homed.device", { deviceId });
+
     this.deviceCache.setDeviceAvailable(
       client.user.id,
       client.uniqueId,
       deviceId,
       status === "online"
     );
+  };
 
   deviceDataUpdated = (
     client: ClientConnection<User>,
@@ -416,7 +395,8 @@ export class HomedServerController {
   ) => {
     if (!client.user || !client.uniqueId) return;
 
-    const { deviceId, endpointId } = parseTopicDeviceId(topic);
+    const { deviceId, endpointId } = parseDeviceTopic(topic);
+    Sentry.setContext("homed.device", { deviceId, endpointId });
 
     log.debug("message.state", {
       deviceId,
