@@ -55,4 +55,9 @@ export default {
   // How long (seconds) a device can be silent before it is marked offline.
   // 0 = disabled. Defaults to 25s (the Google Home test timeout is 30s).
   deviceUnavailableTimeout: intEnvironment("DEVICE_UNAVAILABLE_TIMEOUT", 25),
+  // How long (seconds) to keep devices in memory after client disconnect.
+  // Devices are marked offline immediately on disconnect, but persist for
+  // this duration to handle reconnections. 0 = disabled (old behavior).
+  // Defaults to 2 days (172800 seconds).
+  clientStaleTimeout: intEnvironment("CLIENT_STALE_TIMEOUT", 2 * 24 * 60 * 60),
 };

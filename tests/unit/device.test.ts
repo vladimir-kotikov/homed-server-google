@@ -889,4 +889,313 @@ describe("DeviceRepository", () => {
       expect(state?.available).toBeUndefined();
     });
   });
+
+  describe("markClientDevicesOffline", () => {
+    it("marks all devices from a client as unavailable", () => {
+      const device1 = createMockDevice();
+      const device2 = createMockDevice("zigbee/device2" as DeviceId);
+      repository.syncClientDevices(userId, uniqueId, [device1, device2]);
+
+      // Set both devices online first
+      repository.setDeviceAvailable(userId, uniqueId, deviceId, true);
+      repository.setDeviceAvailable(
+        userId,
+        uniqueId,
+        "zigbee/device2" as DeviceId,
+        true
+      );
+
+      // Mark all client devices offline
+      repository.setDevicesOffline(userId, uniqueId);
+
+      const state1 = repository.getDeviceState(userId, deviceId, uniqueId);
+      const state2 = repository.getDeviceState(
+        userId,
+        "zigbee/device2" as DeviceId,
+        uniqueId
+      );
+
+      expect(state1?.available).toBe(false);
+      expect(state2?.available).toBe(false);
+    });
+
+    it("emits state change events for all marked devices", () => {
+      const device1 = createMockDevice();
+      const device2 = createMockDevice("zigbee/device2" as DeviceId);
+      repository.syncClientDevices(userId, uniqueId, [device1, device2]);
+      repository.setDeviceAvailable(userId, uniqueId, deviceId, true);
+      repository.setDeviceAvailable(
+        userId,
+        uniqueId,
+        "zigbee/device2" as DeviceId,
+        true
+      );
+
+      const listener = vi.fn();
+      repository.on("deviceStateChanged", listener);
+
+      repository.setDevicesOffline(userId, uniqueId);
+
+      expect(listener).toHaveBeenCalledTimes(2);
+      expect(listener).toHaveBeenCalledWith(
+        expect.objectContaining({
+          newState: expect.objectContaining({ available: false }),
+        })
+      );
+    });
+
+    it("does not affect devices from other clients", () => {
+      const client2 = createClientId("client2");
+      const device1 = createMockDevice();
+      const device2 = createMockDevice("zigbee/device2" as DeviceId);
+
+      repository.syncClientDevices(userId, uniqueId, [device1]);
+      repository.syncClientDevices(userId, client2, [device2]);
+      repository.setDeviceAvailable(userId, uniqueId, deviceId, true);
+      repository.setDeviceAvailable(
+        userId,
+        client2,
+        "zigbee/device2" as DeviceId,
+        true
+      );
+
+      repository.setDevicesOffline(userId, uniqueId);
+
+      const state1 = repository.getDeviceState(userId, deviceId, uniqueId);
+      const state2 = repository.getDeviceState(
+        userId,
+        "zigbee/device2" as DeviceId,
+        client2
+      );
+
+      expect(state1?.available).toBe(false);
+      expect(state2?.available).toBe(true); // Other client unaffected
+    });
+
+    it("handles clients with no devices gracefully", () => {
+      expect(() =>
+        repository.setDevicesOffline(userId, uniqueId)
+      ).not.toThrow();
+    });
+  });
+
+  describe("stale client cleanup", () => {
+    const STALE_TIMEOUT_S = 60; // 1 minute for testing
+    const CLEANUP_INTERVAL_MS = (STALE_TIMEOUT_S / 24) * 1000; // 2.5 seconds
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+      repository = new DeviceRepository(0, STALE_TIMEOUT_S);
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("removes devices from clients that haven't synced in timeout period", () => {
+      const device = createMockDevice();
+      repository.syncClientDevices(userId, uniqueId, [device]);
+
+      // Advance past the stale timeout
+      vi.advanceTimersByTime(STALE_TIMEOUT_S * 1000 + CLEANUP_INTERVAL_MS);
+
+      const devices = repository.getDevices(userId);
+      expect(devices).toHaveLength(0);
+    });
+
+    it("emits devicesUpdated event when cleaning up stale clients", () => {
+      const device = createMockDevice();
+      repository.syncClientDevices(userId, uniqueId, [device]);
+
+      const listener = vi.fn();
+      repository.on("devicesUpdated", listener);
+
+      vi.advanceTimersByTime(STALE_TIMEOUT_S * 1000 + CLEANUP_INTERVAL_MS);
+
+      expect(listener).toHaveBeenCalledWith(userId);
+    });
+
+    it("does not remove devices from recently active clients", () => {
+      const device = createMockDevice();
+      repository.syncClientDevices(userId, uniqueId, [device]);
+
+      // Advance time but refresh before timeout
+      vi.advanceTimersByTime(STALE_TIMEOUT_S * 1000 - 1000);
+      repository.syncClientDevices(userId, uniqueId, [device]);
+
+      // Advance past original timeout but not past refreshed timestamp
+      vi.advanceTimersByTime(STALE_TIMEOUT_S * 1000);
+
+      const devices = repository.getDevices(userId);
+      expect(devices).toHaveLength(1);
+    });
+
+    it("keeps active clients while removing stale ones", () => {
+      const client2 = createClientId("client2");
+      const device1 = createMockDevice();
+      const device2 = createMockDevice("zigbee/device2" as DeviceId);
+
+      repository.syncClientDevices(userId, uniqueId, [device1]);
+      repository.syncClientDevices(userId, client2, [device2]);
+
+      // Advance time and refresh only client2
+      vi.advanceTimersByTime(STALE_TIMEOUT_S * 1000 - 1000);
+      repository.syncClientDevices(userId, client2, [device2]);
+
+      // Advance to expire uniqueId but not client2
+      vi.advanceTimersByTime(STALE_TIMEOUT_S * 1000);
+
+      const devices = repository.getDevices(userId);
+      expect(devices).toHaveLength(1);
+      expect(devices[0].clientId).toBe(client2);
+    });
+
+    it("handles multiple stale clients for same user", () => {
+      const client2 = createClientId("client2");
+      const device1 = createMockDevice();
+      const device2 = createMockDevice("zigbee/device2" as DeviceId);
+
+      repository.syncClientDevices(userId, uniqueId, [device1]);
+      repository.syncClientDevices(userId, client2, [device2]);
+
+      vi.advanceTimersByTime(STALE_TIMEOUT_S * 1000 + CLEANUP_INTERVAL_MS);
+
+      const devices = repository.getDevices(userId);
+      expect(devices).toHaveLength(0);
+    });
+
+    it("cleans up stale clients separately per user", () => {
+      const user2 = createUserId("user2");
+      const device = createMockDevice();
+
+      repository.syncClientDevices(userId, uniqueId, [device]);
+      repository.syncClientDevices(user2, uniqueId, [device]);
+
+      // Advance and refresh only user2
+      vi.advanceTimersByTime(STALE_TIMEOUT_S * 1000 - 1000);
+      repository.syncClientDevices(user2, uniqueId, [device]);
+
+      vi.advanceTimersByTime(STALE_TIMEOUT_S * 1000);
+
+      const devices1 = repository.getDevices(userId);
+      const devices2 = repository.getDevices(user2);
+
+      expect(devices1).toHaveLength(0); // Stale
+      expect(devices2).toHaveLength(1); // Recently active
+    });
+
+    it("does not run cleanup when staleClientTimeout is 0", () => {
+      vi.useRealTimers();
+      const repoWithoutCleanup = new DeviceRepository(0, 0);
+      const device = createMockDevice();
+
+      repoWithoutCleanup.syncClientDevices(userId, uniqueId, [device]);
+
+      // Device should remain even without any timer logic
+      const devices = repoWithoutCleanup.getDevices(userId);
+      expect(devices).toHaveLength(1);
+    });
+
+    it("cleans up client lastSeen tracking when devices removed", () => {
+      const device = createMockDevice();
+      repository.syncClientDevices(userId, uniqueId, [device]);
+
+      repository.removeClientDevices(userId, uniqueId);
+
+      const listener = vi.fn();
+      repository.on("devicesUpdated", listener);
+
+      // Should not emit event for already-removed client
+      vi.advanceTimersByTime(STALE_TIMEOUT_S * 1000 + CLEANUP_INTERVAL_MS);
+
+      expect(listener).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("client last-seen tracking", () => {
+    it("updates client last-seen on syncClientDevices", () => {
+      const STALE_TIMEOUT_S = 60;
+      vi.useFakeTimers();
+      repository = new DeviceRepository(0, STALE_TIMEOUT_S);
+
+      const device = createMockDevice();
+      repository.syncClientDevices(userId, uniqueId, [device]);
+
+      // Advance time then sync again
+      vi.advanceTimersByTime(30000); // 30 seconds
+      repository.syncClientDevices(userId, uniqueId, [device]);
+
+      // Advance to original expiry - should still exist due to refresh
+      vi.advanceTimersByTime(40000); // Total 70s, but refreshed at 30s
+
+      const devices = repository.getDevices(userId);
+      expect(devices).toHaveLength(1);
+
+      vi.useRealTimers();
+    });
+
+    it("tracks multiple clients independently", () => {
+      const STALE_TIMEOUT_S = 60;
+      vi.useFakeTimers();
+      repository = new DeviceRepository(0, STALE_TIMEOUT_S);
+
+      const client2 = createClientId("client2");
+      const device = createMockDevice();
+
+      repository.syncClientDevices(userId, uniqueId, [device]);
+      vi.advanceTimersByTime(20000);
+      repository.syncClientDevices(userId, client2, [device]);
+
+      // Advance to expire first client
+      vi.advanceTimersByTime(50000); // Total 70s, first expired, second at 50s
+
+      const devices = repository.getDevices(userId);
+      expect(devices).toHaveLength(1);
+      expect(devices[0].clientId).toBe(client2);
+
+      vi.useRealTimers();
+    });
+
+    it("cleans up lastSeen on removeClientDevices with clientId", () => {
+      const STALE_TIMEOUT_S = 60;
+      const CLEANUP_INTERVAL_MS = (STALE_TIMEOUT_S / 24) * 1000;
+      vi.useFakeTimers();
+      repository = new DeviceRepository(0, STALE_TIMEOUT_S);
+
+      const device = createMockDevice();
+      repository.syncClientDevices(userId, uniqueId, [device]);
+      repository.removeClientDevices(userId, uniqueId);
+
+      const listener = vi.fn();
+      repository.on("devicesUpdated", listener);
+
+      // Should not trigger cleanup for removed client
+      vi.advanceTimersByTime(STALE_TIMEOUT_S * 1000 + CLEANUP_INTERVAL_MS);
+      expect(listener).not.toHaveBeenCalled();
+
+      vi.useRealTimers();
+    });
+
+    it("cleans up all lastSeen entries on removeClientDevices without clientId", () => {
+      const STALE_TIMEOUT_S = 60;
+      const CLEANUP_INTERVAL_MS = (STALE_TIMEOUT_S / 24) * 1000;
+      vi.useFakeTimers();
+      repository = new DeviceRepository(0, STALE_TIMEOUT_S);
+
+      const client2 = createClientId("client2");
+      const device = createMockDevice();
+
+      repository.syncClientDevices(userId, uniqueId, [device]);
+      repository.syncClientDevices(userId, client2, [device]);
+      repository.removeClientDevices(userId); // Remove all for user
+
+      const listener = vi.fn();
+      repository.on("devicesUpdated", listener);
+
+      vi.advanceTimersByTime(STALE_TIMEOUT_S * 1000 + CLEANUP_INTERVAL_MS);
+      expect(listener).not.toHaveBeenCalled();
+
+      vi.useRealTimers();
+    });
+  });
 });

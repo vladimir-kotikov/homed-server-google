@@ -138,13 +138,21 @@ export class DeviceRepository extends EventEmitter<{
 }> {
   private devices: Record<UserId, Record<ClientId, HomedDevice[]>> = {};
   private deviceLastSeen = new Map<string, number>();
+  private clientLastSeen = new Map<string, number>();
   private deviceState: Record<
     UserId,
     Record<ClientId, Record<DeviceId, DeviceState>>
   > = {};
+  private staleClientTimeout: number;
 
-  constructor(availabilityTimeout: number = 0) {
+  constructor(
+    availabilityTimeout: number = 0,
+    staleClientTimeout: number = 2 * 24 * 60 * 60
+  ) {
+    // Default: 2 days
     super();
+    this.staleClientTimeout = staleClientTimeout;
+
     if (availabilityTimeout > 0) {
       const intervalMs = Math.min(availabilityTimeout / 3, 10) * 1000;
       setInterval(
@@ -156,6 +164,22 @@ export class DeviceRepository extends EventEmitter<{
         `Device inactivity watchdog started (timeout: ${
           availabilityTimeout
         }s, interval: ${intervalMs / 1000}s)`
+      );
+    }
+
+    if (staleClientTimeout > 0) {
+      // Run cleanup every hour or 1/24th of timeout, whichever is smaller
+      const cleanupIntervalMs =
+        Math.min(staleClientTimeout / 24, 60 * 60) * 1000;
+      setInterval(
+        () => this.cleanupStaleClients(staleClientTimeout),
+        cleanupIntervalMs
+      ).unref();
+
+      log.info(
+        `Stale client cleanup started (timeout: ${
+          staleClientTimeout / (24 * 60 * 60)
+        } days, interval: ${cleanupIntervalMs / (60 * 1000)} minutes)`
       );
     }
   }
@@ -190,6 +214,36 @@ export class DeviceRepository extends EventEmitter<{
         });
         log.debug("watchdog.offline", { deviceId });
       });
+  };
+
+  /**
+   * Removes devices from clients that haven't been seen in `timeout` seconds.
+   * This prevents memory bloat from disconnected clients while keeping devices
+   * persistent across short-term disconnections.
+   */
+  private cleanupStaleClients = (timeout: number) => {
+    const now = Date.now();
+    const staleClients: Array<[UserId, ClientId]> = [];
+
+    this.clientLastSeen
+      .entries()
+      .filter(([, lastSeen]) => now - lastSeen >= timeout * 1000)
+      .forEach(([key]) => {
+        const [userId, clientId] = key.split("::") as [UserId, ClientId];
+        staleClients.push([userId, clientId]);
+        this.clientLastSeen.delete(key);
+      });
+
+    staleClients.forEach(([userId, clientId]) => {
+      const deviceCount = this.devices[userId]?.[clientId]?.length ?? 0;
+      if (deviceCount > 0) {
+        log.info(
+          `Removing ${deviceCount} devices from stale client ${clientId}`
+        );
+        this.removeClientDevices(userId, clientId);
+        this.emit("devicesUpdated", userId);
+      }
+    });
   };
 
   getDevice = (
@@ -259,9 +313,15 @@ export class DeviceRepository extends EventEmitter<{
     if (clientId) {
       delete this.devices[userId]?.[clientId];
       delete this.deviceState[userId]?.[clientId];
+      this.clientLastSeen.delete(`${userId}::${clientId}`);
     } else {
       delete this.devices[userId];
       delete this.deviceState[userId];
+      // Clean up all client last seen for this user
+      this.clientLastSeen
+        .keys()
+        .filter(key => key.startsWith(`${userId}::`))
+        .forEach(key => this.clientLastSeen.delete(key));
     }
 
     // Clean up watchdog state
@@ -277,6 +337,9 @@ export class DeviceRepository extends EventEmitter<{
     clientId: ClientId,
     newDevices: HomedDevice[]
   ): [HomedDevice[], HomedDevice[]] => {
+    // Mark client as active/seen to prevent stale cleanup
+    this.clientLastSeen.set(`${userId}::${clientId}`, Date.now());
+
     const existingDevices = this.devices[userId]?.[clientId] ?? [];
     const addedDevices = newDevices.filter(
       nd => !existingDevices.some(ed => ed.key === nd.key)
@@ -322,6 +385,25 @@ export class DeviceRepository extends EventEmitter<{
     if (device) {
       device.endpoints = endpoints;
       this.emit("devicesUpdated", userId);
+    }
+  };
+
+  /**
+   * Mark all devices from a client as unavailable.
+   * Called when a client disconnects to signal devices are offline
+   * without removing them from memory.
+   */
+  setDevicesOffline = (userId: UserId, clientId: ClientId): void => {
+    const devices = this.devices[userId]?.[clientId] ?? [];
+    devices.forEach(device =>
+      this.setDeviceAvailable(userId, clientId, device.key, false)
+    );
+
+    if (devices.length > 0) {
+      log.debug("client.devices_offline", {
+        clientId,
+        devices: devices.length,
+      });
     }
   };
 

@@ -221,7 +221,9 @@ export class HomedServerController {
   clientDisconnected = (client: ClientConnection<User>) => {
     if (client.user && client.uniqueId) {
       delete this.clients[client.user.id]?.[client.uniqueId];
-      this.deviceCache.removeClientDevices(client.user.id, client.uniqueId);
+      // Mark devices as offline instead of removing them
+      // They will be automatically removed after the stale timeout (default: 2 days)
+      this.deviceCache.setDevicesOffline(client.user.id, client.uniqueId);
     }
     log.debug("connection.close");
   };
