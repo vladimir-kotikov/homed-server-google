@@ -5,7 +5,12 @@ import type { Request, Response } from "express";
 import { Router } from "express";
 import * as oauth2orize from "oauth2orize";
 import passport from "passport";
+import { csrfSync } from "csrf-sync";
 import appConfig from "../config.ts";
+
+const { csrfSynchronisedProtection, generateToken } = csrfSync({
+  getTokenFromRequest: req => req.body._csrf as string,
+});
 import { UserRepository, type UserId } from "../db/repository.ts";
 import { createLogger } from "../logger.ts";
 import { bearerAuthMiddleware } from "./middleware.ts";
@@ -215,12 +220,14 @@ export class OAuthController {
             clientId: request.oauth2.client.id,
             scopes: request.oauth2.req.scope,
             transaction_id: request.oauth2.transactionID,
+            csrfToken: generateToken(request),
           });
         }
       )
       .post(
         "/authorize/consent",
         ensureLoggedIn(),
+        csrfSynchronisedProtection,
         this.oauth2Server.decision()
       )
       .post(

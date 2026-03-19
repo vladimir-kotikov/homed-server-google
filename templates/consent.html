@@ -47,6 +47,7 @@
 
         <form id="approveForm" method="POST" action="/oauth/authorize/consent">
             <input type="hidden" name="transaction_id" value="<%= transaction_id %>">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
             <div class="buttons">
                 <button type="submit" name="authorize" value="Approve" class="approve">Approve</button>
                 <button type="submit" name="cancel" value="Deny" class="deny">Deny</button>
