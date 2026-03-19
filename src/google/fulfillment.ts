@@ -47,6 +47,7 @@ export class FulfillmentController {
   private userRepository: UserRepository;
   private deviceRepository: DeviceRepository;
   private homegraph?: ReturnType<typeof google.homegraph>;
+  private debouncedRequestSync!: (userId: UserId) => void;
 
   constructor(
     userRepository: UserRepository,
@@ -73,11 +74,18 @@ export class FulfillmentController {
       }
     }
 
+    this.debouncedRequestSync = debounce(this.requestSync, 300);
     this.deviceRepository
       // device updates trigger for each device, so debounce
       // to avoid multiple rapid sync requests
-      .on("devicesUpdated", debounce(this.requestSync, 300))
+      .on("devicesUpdated", this.debouncedRequestSync)
       .on("deviceStateChanged", this.reportState);
+  }
+
+  close() {
+    this.deviceRepository
+      .off("devicesUpdated", this.debouncedRequestSync)
+      .off("deviceStateChanged", this.reportState);
   }
 
   /**

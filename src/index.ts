@@ -54,6 +54,7 @@ const mainController = new HomedServerController(
 
 const shutdown = (signal: string) => {
   log.info(`Received ${signal}, shutting down gracefully...`);
+  fulfillmentController.close();
   return mainController
     .stop()
     .then(() => Sentry.close(2000))
