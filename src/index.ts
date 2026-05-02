@@ -24,8 +24,12 @@ const deviceRepository = new DeviceRepository(
   appConfig.clientStaleTimeout
 );
 
-// Load persisted devices from database
-await deviceRepository.init();
+// Load persisted devices in the background — do not block server startup.
+// If init() is still running when the first TCP client connects,
+// syncClientDevices() will repopulate state as it did before persistence.
+deviceRepository.init().catch(err => {
+  log.error("device.init.failed", err);
+});
 
 const oauthController = new OAuthController(
   usersRepository,
