@@ -17,10 +17,8 @@ Sentry.init({
     Sentry.requestDataIntegration(),
     Sentry.expressIntegration(),
     Sentry.processSessionIntegration(),
-    Sentry.localVariablesIntegration({ captureAllExceptions: true }),
     Sentry.zodErrorsIntegration(),
   ],
-  includeLocalVariables: true,
   sendClientReports: true,
   sendDefaultPii: true,
   beforeSendTransaction: transaction =>
