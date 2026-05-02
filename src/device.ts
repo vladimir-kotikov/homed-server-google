@@ -145,6 +145,7 @@ export class DeviceRepository extends EventEmitter<{
   > = {};
   private staleClientTimeout: number;
   private userRepository: UserRepository;
+  private shuttingDown = false;
 
   constructor(
     userRepository: UserRepository,
@@ -185,6 +186,15 @@ export class DeviceRepository extends EventEmitter<{
         } days, interval: ${cleanupIntervalMs / (60 * 1000)} minutes)`
       );
     }
+  }
+
+  /**
+   * Signal that the application is shutting down.
+   * Suppresses all further fire-and-forget DB writes so they don't race
+   * against the database connection being closed.
+   */
+  shutdown(): void {
+    this.shuttingDown = true;
   }
 
   /**
@@ -293,10 +303,12 @@ export class DeviceRepository extends EventEmitter<{
     });
 
     // Also cleanup stale devices from database (older than timeout)
-    const staleThreshold = new Date(now - timeout * 1000);
-    this.userRepository.deleteStaleDevices(staleThreshold).catch(err => {
-      log.error("device.cleanup.db_delete_failed", err);
-    });
+    if (!this.shuttingDown) {
+      const staleThreshold = new Date(now - timeout * 1000);
+      this.userRepository.deleteStaleDevices(staleThreshold).catch(err => {
+        log.error("device.cleanup.db_delete_failed", err);
+      });
+    }
   };
 
   getDevice = (
@@ -369,9 +381,11 @@ export class DeviceRepository extends EventEmitter<{
       this.clientLastSeen.delete(`${userId}::${clientId}`);
 
       // Delete from database (async, don't block)
-      this.userRepository.deleteClientDevices(userId, clientId).catch(err => {
-        log.error("device.remove.db_delete_failed", err);
-      });
+      if (!this.shuttingDown) {
+        this.userRepository.deleteClientDevices(userId, clientId).catch(err => {
+          log.error("device.remove.db_delete_failed", err);
+        });
+      }
     } else {
       // Capture client list BEFORE deleting in-memory state
       const clientIds = Object.keys(this.devices[userId] ?? {}) as ClientId[];
@@ -385,13 +399,15 @@ export class DeviceRepository extends EventEmitter<{
         .forEach(key => this.clientLastSeen.delete(key));
 
       // Delete all devices for this user from database (async, don't block)
-      Promise.all(
-        clientIds.map(cid =>
-          this.userRepository.deleteClientDevices(userId, cid)
-        )
-      ).catch(err => {
-        log.error("device.remove_user.db_delete_failed", err);
-      });
+      if (!this.shuttingDown) {
+        Promise.all(
+          clientIds.map(cid =>
+            this.userRepository.deleteClientDevices(userId, cid)
+          )
+        ).catch(err => {
+          log.error("device.remove_user.db_delete_failed", err);
+        });
+      }
     }
 
     // Clean up watchdog state
@@ -439,11 +455,13 @@ export class DeviceRepository extends EventEmitter<{
     }
 
     // Persist devices to database (async, don't block)
-    this.userRepository
-      .saveDevices(userId, clientId, this.devices[userId][clientId])
-      .catch(err => {
-        log.error("device.sync.db_save_failed", err);
-      });
+    if (!this.shuttingDown) {
+      this.userRepository
+        .saveDevices(userId, clientId, this.devices[userId][clientId])
+        .catch(err => {
+          log.error("device.sync.db_save_failed", err);
+        });
+    }
 
     return [addedDevices, removedDevices];
   };
@@ -511,11 +529,13 @@ export class DeviceRepository extends EventEmitter<{
     this.updateDeviceState(userId, clientId, deviceId, { available });
 
     // Persist availability to database (async, don't block)
-    this.userRepository
-      .setDeviceAvailable(userId, clientId, deviceId, available)
-      .catch(err => {
-        log.error("device.set_available.db_update_failed", err);
-      });
+    if (!this.shuttingDown) {
+      this.userRepository
+        .setDeviceAvailable(userId, clientId, deviceId, available)
+        .catch(err => {
+          log.error("device.set_available.db_update_failed", err);
+        });
+    }
   };
 
   updateDeviceState = (

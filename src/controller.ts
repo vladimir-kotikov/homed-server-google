@@ -155,14 +155,16 @@ export class HomedServerController {
     log.info(`TCP Server listening on port tcp://0.0.0.0:${tcpPort}`);
   };
 
-  stop = () =>
-    Promise.allSettled([
+  stop = () => {
+    this.deviceCache.shutdown();
+    return Promise.allSettled([
       ...Object.entries(this.clients)
         .flatMap(([, clients]) => Object.values(clients))
         .map(client => client.close()),
       promisify(this.httpServer.close.bind(this.httpServer))(),
       promisify(this.tcpServer.close.bind(this.tcpServer))(),
     ]).then(() => this.userDb.close());
+  };
 
   clientConnected = (socket: net.Socket) => {
     // Attach early to prevent ECONNRESET from becoming an uncaught exception
