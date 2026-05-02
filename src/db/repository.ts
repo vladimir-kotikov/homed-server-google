@@ -1,10 +1,12 @@
 import Database from "better-sqlite3";
-import { eq } from "drizzle-orm";
+import { and, eq, lt, sql } from "drizzle-orm";
 import { BetterSQLite3Database, drizzle } from "drizzle-orm/better-sqlite3";
 import crypto from "node:crypto";
+import type { DeviceId, HomedDevice } from "../device.ts";
+import type { ClientId } from "../homed/client.ts";
 import { createLogger } from "../logger.ts";
 import * as schema from "./schema.ts";
-import { users } from "./schema.ts";
+import { devices, users } from "./schema.ts";
 
 const log = createLogger("user");
 
@@ -211,6 +213,8 @@ export class UserRepository {
       where: eq(users.id, id),
     });
 
+  getAll = () => this.client.query.users.findMany();
+
   getByToken = (token: ClientToken) =>
     this.client.query.users.findFirst({
       where: eq(users.clientToken, token),
@@ -226,4 +230,130 @@ export class UserRepository {
 
   delete = async (id: UserId) =>
     this.client.delete(users).where(eq(users.id, id)).run();
+
+  // Device persistence methods
+
+  /**
+   * Save or update devices in database
+   */
+  saveDevices = async (
+    userId: UserId,
+    clientId: ClientId,
+    deviceList: HomedDevice[]
+  ): Promise<void> => {
+    if (deviceList.length === 0) return;
+
+    const transaction = this.database.transaction(() => {
+      for (const device of deviceList) {
+        this.client
+          .insert(devices)
+          .values({
+            userId,
+            clientId,
+            deviceId: device.key,
+            deviceData: JSON.stringify(device),
+            lastSeen: new Date(),
+            available: device.available ?? true,
+          })
+          .onConflictDoUpdate({
+            target: [devices.userId, devices.clientId, devices.deviceId],
+            set: {
+              deviceData: sql`excluded.device_data`,
+              lastSeen: sql`excluded.last_seen`,
+              available: sql`excluded.available`,
+            },
+          })
+          .run();
+      }
+    });
+
+    transaction();
+  };
+
+  /**
+   * Load all devices for a user
+   */
+  loadDevices = async (
+    userId: UserId
+  ): Promise<
+    Array<{ clientId: ClientId; device: HomedDevice; available: boolean }>
+  > => {
+    const rows = await this.client.query.devices.findMany({
+      where: eq(devices.userId, userId),
+    });
+
+    return rows.map(row => ({
+      clientId: row.clientId,
+      device: JSON.parse(row.deviceData) as HomedDevice,
+      available: row.available ?? true,
+    }));
+  };
+
+  /**
+   * Load devices for a specific client
+   */
+  loadClientDevices = async (
+    userId: UserId,
+    clientId: ClientId
+  ): Promise<HomedDevice[]> => {
+    const rows = await this.client.query.devices.findMany({
+      where: and(eq(devices.userId, userId), eq(devices.clientId, clientId)),
+    });
+
+    return rows.map(row => JSON.parse(row.deviceData) as HomedDevice);
+  };
+
+  /**
+   * Update device availability status
+   */
+  setDeviceAvailable = async (
+    userId: UserId,
+    clientId: ClientId,
+    deviceId: DeviceId,
+    available: boolean
+  ) => {
+    await this.client
+      .update(devices)
+      .set({ available, lastSeen: new Date() })
+      .where(
+        and(
+          eq(devices.userId, userId),
+          eq(devices.clientId, clientId),
+          eq(devices.deviceId, deviceId)
+        )
+      )
+      .run();
+  };
+
+  /**
+   * Update last seen timestamp for all devices of a client
+   */
+  updateClientLastSeen = async (userId: UserId, clientId: ClientId) => {
+    await this.client
+      .update(devices)
+      .set({ lastSeen: new Date() })
+      .where(and(eq(devices.userId, userId), eq(devices.clientId, clientId)))
+      .run();
+  };
+
+  /**
+   * Delete all devices for a specific client
+   */
+  deleteClientDevices = async (userId: UserId, clientId: ClientId) => {
+    await this.client
+      .delete(devices)
+      .where(and(eq(devices.userId, userId), eq(devices.clientId, clientId)))
+      .run();
+  };
+
+  /**
+   * Delete devices that haven't been seen since the given timestamp
+   */
+  deleteStaleDevices = async (olderThan: Date) => {
+    const result = await this.client
+      .delete(devices)
+      .where(lt(devices.lastSeen, olderThan))
+      .run();
+    return result.changes;
+  };
 }

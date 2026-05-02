@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DeviceRepository, type DeviceId } from "../../src/device.ts";
 import type { DeviceState } from "../../src/homed/types.ts";
+import type { UserId } from "../../src/db/repository.ts";
 import {
   createClientId,
   createDeviceId,
   createMockDevice,
+  createMockUserRepository,
   createUserId,
 } from "../factories.ts";
 
@@ -24,7 +26,7 @@ describe("DeviceRepository", () => {
   const deviceId = createDeviceId();
 
   beforeEach(() => {
-    repository = new DeviceRepository();
+    repository = new DeviceRepository(createMockUserRepository());
   });
 
   describe("syncClientDevices", () => {
@@ -701,7 +703,10 @@ describe("DeviceRepository", () => {
   describe("availability watchdog", () => {
     beforeEach(() => {
       vi.useFakeTimers();
-      repository = new DeviceRepository(WATCHDOG_TIMEOUT_S);
+      repository = new DeviceRepository(
+        createMockUserRepository(),
+        WATCHDOG_TIMEOUT_S
+      );
     });
 
     afterEach(() => {
@@ -985,7 +990,11 @@ describe("DeviceRepository", () => {
 
     beforeEach(() => {
       vi.useFakeTimers();
-      repository = new DeviceRepository(0, STALE_TIMEOUT_S);
+      repository = new DeviceRepository(
+        createMockUserRepository(),
+        0,
+        STALE_TIMEOUT_S
+      );
     });
 
     afterEach(() => {
@@ -1086,7 +1095,11 @@ describe("DeviceRepository", () => {
 
     it("does not run cleanup when staleClientTimeout is 0", () => {
       vi.useRealTimers();
-      const repoWithoutCleanup = new DeviceRepository(0, 0);
+      const repoWithoutCleanup = new DeviceRepository(
+        createMockUserRepository(),
+        0,
+        0
+      );
       const device = createMockDevice();
 
       repoWithoutCleanup.syncClientDevices(userId, uniqueId, [device]);
@@ -1116,7 +1129,11 @@ describe("DeviceRepository", () => {
     it("updates client last-seen on syncClientDevices", () => {
       const STALE_TIMEOUT_S = 60;
       vi.useFakeTimers();
-      repository = new DeviceRepository(0, STALE_TIMEOUT_S);
+      repository = new DeviceRepository(
+        createMockUserRepository(),
+        0,
+        STALE_TIMEOUT_S
+      );
 
       const device = createMockDevice();
       repository.syncClientDevices(userId, uniqueId, [device]);
@@ -1137,7 +1154,11 @@ describe("DeviceRepository", () => {
     it("tracks multiple clients independently", () => {
       const STALE_TIMEOUT_S = 60;
       vi.useFakeTimers();
-      repository = new DeviceRepository(0, STALE_TIMEOUT_S);
+      repository = new DeviceRepository(
+        createMockUserRepository(),
+        0,
+        STALE_TIMEOUT_S
+      );
 
       const client2 = createClientId("client2");
       const device = createMockDevice();
@@ -1160,7 +1181,11 @@ describe("DeviceRepository", () => {
       const STALE_TIMEOUT_S = 60;
       const CLEANUP_INTERVAL_MS = (STALE_TIMEOUT_S / 24) * 1000;
       vi.useFakeTimers();
-      repository = new DeviceRepository(0, STALE_TIMEOUT_S);
+      repository = new DeviceRepository(
+        createMockUserRepository(),
+        0,
+        STALE_TIMEOUT_S
+      );
 
       const device = createMockDevice();
       repository.syncClientDevices(userId, uniqueId, [device]);
@@ -1180,7 +1205,11 @@ describe("DeviceRepository", () => {
       const STALE_TIMEOUT_S = 60;
       const CLEANUP_INTERVAL_MS = (STALE_TIMEOUT_S / 24) * 1000;
       vi.useFakeTimers();
-      repository = new DeviceRepository(0, STALE_TIMEOUT_S);
+      repository = new DeviceRepository(
+        createMockUserRepository(),
+        0,
+        STALE_TIMEOUT_S
+      );
 
       const client2 = createClientId("client2");
       const device = createMockDevice();
@@ -1196,6 +1225,192 @@ describe("DeviceRepository", () => {
       expect(listener).not.toHaveBeenCalled();
 
       vi.useRealTimers();
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Persistence — init() and DB side-effects
+// ---------------------------------------------------------------------------
+
+describe("DeviceRepository — persistence", () => {
+  const userId = createUserId("user1");
+  const clientId = createClientId("client1");
+
+  describe("init()", () => {
+    it("resolves without error when the database is empty", async () => {
+      const repo = new DeviceRepository(createMockUserRepository());
+      await expect(repo.init()).resolves.toBeUndefined();
+    });
+
+    it("loads persisted devices into the in-memory store", async () => {
+      const device = createMockDevice();
+      const userRepo = createMockUserRepository();
+      userRepo.getAll.mockResolvedValue([{ id: userId } as never]);
+      userRepo.loadDevices.mockResolvedValue([
+        { clientId, device, available: true },
+      ]);
+
+      const repo = new DeviceRepository(userRepo);
+      await repo.init();
+
+      const loaded = repo.getDevices(userId);
+      expect(loaded).toHaveLength(1);
+      expect(loaded[0].device.key).toBe(device.key);
+      expect(loaded[0].clientId).toBe(clientId);
+    });
+
+    it("restores device availability in the state store", async () => {
+      const device = createMockDevice();
+      const userRepo = createMockUserRepository();
+      userRepo.getAll.mockResolvedValue([{ id: userId } as never]);
+      userRepo.loadDevices.mockResolvedValue([
+        { clientId, device, available: false },
+      ]);
+
+      const repo = new DeviceRepository(userRepo);
+      await repo.init();
+
+      const withState = repo.getDevicesWithState(userId);
+      expect(withState[0].state.available).toBe(false);
+    });
+
+    it("loads devices for multiple users and clients", async () => {
+      const userId2 = createUserId("user2");
+      const clientId2 = createClientId("client2");
+      const device1 = createMockDevice(createDeviceId("dev/1"));
+      const device2 = createMockDevice(createDeviceId("dev/2"));
+
+      const userRepo = createMockUserRepository();
+      userRepo.getAll.mockResolvedValue([
+        { id: userId } as never,
+        { id: userId2 } as never,
+      ]);
+      userRepo.loadDevices.mockImplementation(async (uid: UserId) =>
+        uid === userId
+          ? [{ clientId, device: device1, available: true }]
+          : [{ clientId: clientId2, device: device2, available: true }]
+      );
+
+      const repo = new DeviceRepository(userRepo);
+      await repo.init();
+
+      expect(repo.getDevices(userId)).toHaveLength(1);
+      expect(repo.getDevices(userId2)).toHaveLength(1);
+    });
+
+    it("does not add duplicate devices when called twice", async () => {
+      const device = createMockDevice();
+      const userRepo = createMockUserRepository();
+      userRepo.getAll.mockResolvedValue([{ id: userId } as never]);
+      userRepo.loadDevices.mockResolvedValue([
+        { clientId, device, available: true },
+      ]);
+
+      const repo = new DeviceRepository(userRepo);
+      await repo.init();
+      await repo.init();
+
+      expect(repo.getDevices(userId)).toHaveLength(1);
+    });
+  });
+
+  describe("syncClientDevices — persistence side-effects", () => {
+    it("calls saveDevices with the updated device list after sync", () => {
+      const userRepo = createMockUserRepository();
+      const repo = new DeviceRepository(userRepo);
+      const device = createMockDevice();
+
+      repo.syncClientDevices(userId, clientId, [device]);
+
+      expect(userRepo.saveDevices).toHaveBeenCalledWith(userId, clientId, [
+        device,
+      ]);
+    });
+
+    it("calls saveDevices with the merged list after a second sync", () => {
+      const userRepo = createMockUserRepository();
+      const repo = new DeviceRepository(userRepo);
+      const device1 = createMockDevice(createDeviceId("dev/1"));
+      const device2 = createMockDevice(createDeviceId("dev/2"));
+
+      repo.syncClientDevices(userId, clientId, [device1]);
+      repo.syncClientDevices(userId, clientId, [device1, device2]);
+
+      const lastCall = userRepo.saveDevices.mock.calls.at(-1)!;
+      expect(lastCall[2]).toHaveLength(2);
+    });
+  });
+
+  describe("setDeviceAvailable — persistence side-effects", () => {
+    it("calls setDeviceAvailable on the repository when availability changes", () => {
+      const userRepo = createMockUserRepository();
+      const repo = new DeviceRepository(userRepo);
+      const device = createMockDevice();
+      repo.syncClientDevices(userId, clientId, [device]);
+      userRepo.setDeviceAvailable.mockClear();
+
+      repo.setDeviceAvailable(userId, clientId, device.key, false);
+
+      expect(userRepo.setDeviceAvailable).toHaveBeenCalledWith(
+        userId,
+        clientId,
+        device.key,
+        false
+      );
+    });
+
+    it("does not call the repository for a non-existent device", () => {
+      const userRepo = createMockUserRepository();
+      const repo = new DeviceRepository(userRepo);
+
+      repo.setDeviceAvailable(
+        userId,
+        clientId,
+        createDeviceId("no-such"),
+        false
+      );
+
+      expect(userRepo.setDeviceAvailable).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("removeClientDevices — persistence side-effects", () => {
+    it("calls deleteClientDevices when a specific client is removed", () => {
+      const userRepo = createMockUserRepository();
+      const repo = new DeviceRepository(userRepo);
+      const device = createMockDevice();
+      repo.syncClientDevices(userId, clientId, [device]);
+      userRepo.deleteClientDevices.mockClear();
+
+      repo.removeClientDevices(userId, clientId);
+
+      expect(userRepo.deleteClientDevices).toHaveBeenCalledWith(
+        userId,
+        clientId
+      );
+    });
+
+    it("calls deleteClientDevices for every client when the whole user is removed", () => {
+      const client2 = createClientId("client2");
+      const userRepo = createMockUserRepository();
+      const repo = new DeviceRepository(userRepo);
+      const device = createMockDevice();
+      repo.syncClientDevices(userId, clientId, [device]);
+      repo.syncClientDevices(userId, client2, [device]);
+      userRepo.deleteClientDevices.mockClear();
+
+      repo.removeClientDevices(userId);
+
+      expect(userRepo.deleteClientDevices).toHaveBeenCalledWith(
+        userId,
+        clientId
+      );
+      expect(userRepo.deleteClientDevices).toHaveBeenCalledWith(
+        userId,
+        client2
+      );
+      expect(userRepo.deleteClientDevices).toHaveBeenCalledTimes(2);
     });
   });
 });

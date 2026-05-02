@@ -41,6 +41,18 @@ export function initializeTestDatabase(): Database.Database {
     )
   `);
 
+  client.run(sql`
+    CREATE TABLE "device" (
+      "user_id" TEXT NOT NULL,
+      "client_id" TEXT NOT NULL,
+      "device_id" TEXT NOT NULL,
+      "device_data" TEXT NOT NULL,
+      "last_seen" INTEGER NOT NULL,
+      "available" INTEGER,
+      PRIMARY KEY ("user_id", "client_id", "device_id")
+    )
+  `);
+
   return database;
 }
 

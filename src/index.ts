@@ -12,15 +12,20 @@ const log = createLogger("main");
 
 const { databaseUrl, tcpPort, httpPort } = appConfig;
 
-const deviceRepository = new DeviceRepository(
-  appConfig.deviceUnavailableTimeout,
-  appConfig.clientStaleTimeout
-);
 const usersRepository = UserRepository.open(databaseUrl, appConfig.jwtSecret, {
   create: true,
   accessTokenLifetime: appConfig.accessTokenLifetime,
   refreshTokenLifetime: appConfig.refreshTokenLifetime,
 });
+
+const deviceRepository = new DeviceRepository(
+  usersRepository,
+  appConfig.deviceUnavailableTimeout,
+  appConfig.clientStaleTimeout
+);
+
+// Load persisted devices from database
+await deviceRepository.init();
 
 const oauthController = new OAuthController(
   usersRepository,

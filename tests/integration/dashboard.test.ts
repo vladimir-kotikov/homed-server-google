@@ -9,6 +9,7 @@ import { DeviceRepository } from "../../src/device.ts";
 import type { ClientId } from "../../src/homed/client.ts";
 import { WebApp } from "../../src/web/app.ts";
 import { OAuthController } from "../../src/web/oauth.ts";
+import { createMockUserRepository } from "../factories.ts";
 import { createTestUserRepository } from "./testDatabase.ts";
 
 const JWT_SECRET = "test-secret";
@@ -24,7 +25,7 @@ describe("Dashboard - Connected Clients", () => {
     const { repository: userRepository, user } =
       createTestUserRepository(JWT_SECRET);
     userId = user.id;
-    deviceRepository = new DeviceRepository();
+    deviceRepository = new DeviceRepository(createMockUserRepository());
 
     const oauthController = new OAuthController(
       userRepository,

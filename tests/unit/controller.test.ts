@@ -9,6 +9,7 @@ import {
   createClientToken,
   createDeviceId,
   createMockDevice,
+  createMockUserRepository,
   createUserId,
 } from "../factories.ts";
 
@@ -52,7 +53,7 @@ describe("HomedServerController", () => {
   const deviceId = createDeviceId("zigbee/device1");
 
   beforeEach(() => {
-    deviceCache = new DeviceRepository();
+    deviceCache = new DeviceRepository(createMockUserRepository());
     userDb = UserRepository.open(":memory:", "test-secret", { create: true });
 
     // Mock WebApp with handleRequest

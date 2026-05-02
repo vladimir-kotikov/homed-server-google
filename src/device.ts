@@ -1,6 +1,6 @@
 import * as Sentry from "@sentry/node";
 import { EventEmitter } from "node:events";
-import type { UserId } from "./db/repository.ts";
+import type { UserId, UserRepository } from "./db/repository.ts";
 import type { ClientId } from "./homed/client.ts";
 import type { EndpointOptions } from "./homed/schema.ts";
 import type { CommandMessage, DeviceState } from "./homed/types.ts";
@@ -144,13 +144,16 @@ export class DeviceRepository extends EventEmitter<{
     Record<ClientId, Record<DeviceId, DeviceState>>
   > = {};
   private staleClientTimeout: number;
+  private userRepository: UserRepository;
 
   constructor(
+    userRepository: UserRepository,
     availabilityTimeout: number = 0,
     staleClientTimeout: number = 2 * 24 * 60 * 60
   ) {
     // Default: 2 days
     super();
+    this.userRepository = userRepository;
     this.staleClientTimeout = staleClientTimeout;
 
     if (availabilityTimeout > 0) {
@@ -181,6 +184,50 @@ export class DeviceRepository extends EventEmitter<{
           staleClientTimeout / (24 * 60 * 60)
         } days, interval: ${cleanupIntervalMs / (60 * 1000)} minutes)`
       );
+    }
+  }
+
+  /**
+   * Initialize device repository by loading persisted devices from database
+   * Should be called after construction before using the repository
+   */
+  async init(): Promise<void> {
+    log.info("Loading devices from database...");
+    const allUsers = await this.userRepository.getAll();
+
+    for (const user of allUsers) {
+      const persistedDevices = await this.userRepository.loadDevices(user.id);
+
+      for (const { clientId, device, available } of persistedDevices) {
+        // Initialize in-memory structures
+        this.devices[user.id] = this.devices[user.id] || {};
+        this.devices[user.id][clientId] = this.devices[user.id][clientId] || [];
+
+        // Only add if not already present (shouldn't happen but just in case)
+        const existingDevice = this.devices[user.id][clientId].find(
+          d => d.key === device.key
+        );
+
+        if (!existingDevice) {
+          // Update device with persisted availability status
+          device.available = available;
+          this.devices[user.id][clientId].push(device);
+        }
+
+        // Initialize device state (will be updated by clients when they connect)
+        this.deviceState[user.id] = this.deviceState[user.id] || {};
+        this.deviceState[user.id][clientId] =
+          this.deviceState[user.id][clientId] || {};
+        this.deviceState[user.id][clientId][device.key] = {
+          available,
+        };
+      }
+
+      if (persistedDevices.length > 0) {
+        log.info(
+          `Loaded ${persistedDevices.length} devices for user ${user.id}`
+        );
+      }
     }
   }
 
@@ -243,6 +290,12 @@ export class DeviceRepository extends EventEmitter<{
         this.removeClientDevices(userId, clientId);
         this.emit("devicesUpdated", userId);
       }
+    });
+
+    // Also cleanup stale devices from database (older than timeout)
+    const staleThreshold = new Date(now - timeout * 1000);
+    this.userRepository.deleteStaleDevices(staleThreshold).catch(err => {
+      log.error("device.cleanup.db_delete_failed", err);
     });
   };
 
@@ -314,7 +367,15 @@ export class DeviceRepository extends EventEmitter<{
       delete this.devices[userId]?.[clientId];
       delete this.deviceState[userId]?.[clientId];
       this.clientLastSeen.delete(`${userId}::${clientId}`);
+
+      // Delete from database (async, don't block)
+      this.userRepository.deleteClientDevices(userId, clientId).catch(err => {
+        log.error("device.remove.db_delete_failed", err);
+      });
     } else {
+      // Capture client list BEFORE deleting in-memory state
+      const clientIds = Object.keys(this.devices[userId] ?? {}) as ClientId[];
+
       delete this.devices[userId];
       delete this.deviceState[userId];
       // Clean up all client last seen for this user
@@ -322,6 +383,15 @@ export class DeviceRepository extends EventEmitter<{
         .keys()
         .filter(key => key.startsWith(`${userId}::`))
         .forEach(key => this.clientLastSeen.delete(key));
+
+      // Delete all devices for this user from database (async, don't block)
+      Promise.all(
+        clientIds.map(cid =>
+          this.userRepository.deleteClientDevices(userId, cid)
+        )
+      ).catch(err => {
+        log.error("device.remove_user.db_delete_failed", err);
+      });
     }
 
     // Clean up watchdog state
@@ -367,6 +437,13 @@ export class DeviceRepository extends EventEmitter<{
     if (addedDevices.length > 0 || removedDevices.length > 0) {
       this.emit("devicesUpdated", userId);
     }
+
+    // Persist devices to database (async, don't block)
+    this.userRepository
+      .saveDevices(userId, clientId, this.devices[userId][clientId])
+      .catch(err => {
+        log.error("device.sync.db_save_failed", err);
+      });
 
     return [addedDevices, removedDevices];
   };
@@ -432,6 +509,13 @@ export class DeviceRepository extends EventEmitter<{
     }
     // Update availability as state - this flows through normal state change detection
     this.updateDeviceState(userId, clientId, deviceId, { available });
+
+    // Persist availability to database (async, don't block)
+    this.userRepository
+      .setDeviceAvailable(userId, clientId, deviceId, available)
+      .catch(err => {
+        log.error("device.set_available.db_update_failed", err);
+      });
   };
 
   updateDeviceState = (
