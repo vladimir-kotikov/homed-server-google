@@ -314,13 +314,21 @@ export class HomedServerController {
           }) as HomedDevice
       );
 
-    const [added] = this.deviceCache.syncClientDevices(
+    const [added, , endpointsNeeded] = this.deviceCache.syncClientDevices(
       client.user.id,
       client.uniqueId,
       homedDevices
     );
 
     added.forEach(({ topic }) => {
+      client.subscribe(`expose/${topic}`);
+      client.subscribe(`device/${topic}`);
+    });
+
+    // Re-subscribe to expose/ for devices that are already cached but have no
+    // endpoints yet (e.g. server restarted with stale DB rows). The retained
+    // MQTT message will be re-delivered and endpoints will be populated.
+    endpointsNeeded.forEach(({ topic }) => {
       client.subscribe(`expose/${topic}`);
       client.subscribe(`device/${topic}`);
     });

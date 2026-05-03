@@ -422,7 +422,7 @@ export class DeviceRepository extends EventEmitter<{
     userId: UserId,
     clientId: ClientId,
     newDevices: HomedDevice[]
-  ): [HomedDevice[], HomedDevice[]] => {
+  ): [HomedDevice[], HomedDevice[], HomedDevice[]] => {
     // Mark client as active/seen to prevent stale cleanup
     this.clientLastSeen.set(`${userId}::${clientId}`, Date.now());
 
@@ -432,6 +432,16 @@ export class DeviceRepository extends EventEmitter<{
     );
     const removedDevices = existingDevices.filter(
       ed => !newDevices.some(nd => nd.key === ed.key)
+    );
+    // Existing devices whose endpoints are empty — happens when the server
+    // restarts and reloads stale DB rows before endpoints were ever populated.
+    // We need to re-subscribe to expose/ for these so the client sends fresh
+    // capability data and the endpoints get properly filled in.
+    const endpointsNeeded = existingDevices.filter(
+      ed =>
+        !removedDevices.includes(ed) &&
+        ed.endpoints.length === 0 &&
+        newDevices.some(nd => nd.key === ed.key)
     );
 
     this.devices[userId] = this.devices[userId] || {};
@@ -463,7 +473,7 @@ export class DeviceRepository extends EventEmitter<{
         });
     }
 
-    return [addedDevices, removedDevices];
+    return [addedDevices, removedDevices, endpointsNeeded];
   };
 
   /**

@@ -860,6 +860,95 @@ describe("DeviceRepository", () => {
     });
   });
 
+  describe("syncClientDevices — endpointsNeeded (third return value)", () => {
+    it("is empty when added devices have no prior cache entry", () => {
+      const device = createMockDevice();
+      const [added, , endpointsNeeded] = repository.syncClientDevices(
+        userId,
+        uniqueId,
+        [device]
+      );
+      // Brand-new device goes into 'added', not 'endpointsNeeded'
+      expect(added).toHaveLength(1);
+      expect(endpointsNeeded).toHaveLength(0);
+    });
+
+    it("is empty when existing devices already have endpoints", () => {
+      const device = createMockDevice();
+      repository.syncClientDevices(userId, uniqueId, [device]);
+      // Populate endpoints (simulates expose/ message arriving)
+      repository.updateDevice(userId, uniqueId, deviceId, [
+        { id: 1, exposes: ["switch"], options: undefined },
+      ]);
+
+      const [, , endpointsNeeded] = repository.syncClientDevices(
+        userId,
+        uniqueId,
+        [device]
+      );
+      expect(endpointsNeeded).toHaveLength(0);
+    });
+
+    it("contains existing devices with empty endpoints — the stale-DB scenario", () => {
+      // Simulate server restart: device loaded from DB with no endpoints
+      const device = createMockDevice();
+      device.endpoints = [];
+      repository.syncClientDevices(userId, uniqueId, [device]);
+      // endpoints stay [] — no expose/ message ever arrived
+
+      // Second sync (client reconnects): device is already in cache but has no endpoints
+      const [added, , endpointsNeeded] = repository.syncClientDevices(
+        userId,
+        uniqueId,
+        [device]
+      );
+      expect(added).toHaveLength(0); // not new
+      expect(endpointsNeeded).toHaveLength(1);
+      expect(endpointsNeeded[0].key).toBe(deviceId);
+    });
+
+    it("does not include removed devices in endpointsNeeded", () => {
+      const device1 = createMockDevice();
+      const device2 = createMockDevice("zigbee/device2" as DeviceId);
+      device1.endpoints = [];
+      device2.endpoints = [];
+      repository.syncClientDevices(userId, uniqueId, [device1, device2]);
+
+      // Next sync: device2 disappears from status message
+      const [, removed, endpointsNeeded] = repository.syncClientDevices(
+        userId,
+        uniqueId,
+        [device1]
+      );
+      expect(removed).toHaveLength(1);
+      expect(endpointsNeeded).toHaveLength(1);
+      expect(endpointsNeeded[0].key).toBe(deviceId); // only device1, not removed device2
+    });
+
+    it("clears from endpointsNeeded once endpoints are populated", () => {
+      const device = createMockDevice();
+      device.endpoints = [];
+      repository.syncClientDevices(userId, uniqueId, [device]);
+
+      // First reconnect: endpointsNeeded is returned
+      const [, , needed1] = repository.syncClientDevices(userId, uniqueId, [
+        device,
+      ]);
+      expect(needed1).toHaveLength(1);
+
+      // expose/ message arrives, endpoints get populated
+      repository.updateDevice(userId, uniqueId, deviceId, [
+        { id: 1, exposes: ["light"], options: undefined },
+      ]);
+
+      // Next sync: endpoints are filled, no longer needed
+      const [, , needed2] = repository.syncClientDevices(userId, uniqueId, [
+        device,
+      ]);
+      expect(needed2).toHaveLength(0);
+    });
+  });
+
   describe("syncClientDevices availability seeding", () => {
     it("seeds availability for newly added devices", () => {
       const device = createMockDevice();
