@@ -159,6 +159,115 @@ describe("HomedServerController", () => {
     });
   });
 
+  describe("clientStatusUpdated", () => {
+    const mockClient = () => ({
+      user: { id: userId, clientToken },
+      uniqueId: clientId,
+      subscribe: vi.fn(),
+    });
+
+    it("should sync a zigbee device from status/zigbee", () => {
+      controller = new HomedServerController(userDb, deviceCache, httpHandler);
+
+      (controller as any).clientStatusUpdated(mockClient(), "status/zigbee", {
+        devices: [
+          {
+            ieeeAddress: "00:11:22:33:44:55:66:77",
+            name: "Living room switch",
+            cloud: true,
+            active: true,
+          },
+        ],
+        names: false,
+      });
+
+      const device = deviceCache.getDevice(
+        userId,
+        clientId,
+        createDeviceId("zigbee/00:11:22:33:44:55:66:77")
+      );
+      expect(device?.name).toBe("Living room switch");
+    });
+
+    it("should skip the zigbee coordinator entry", () => {
+      controller = new HomedServerController(userDb, deviceCache, httpHandler);
+
+      (controller as any).clientStatusUpdated(mockClient(), "status/zigbee", {
+        devices: [
+          {
+            ieeeAddress: "00:00:00:00:00:00:00:00",
+            name: "HOMEd Coordinator",
+            cloud: true,
+            active: true,
+          },
+        ],
+        names: false,
+      });
+
+      const device = deviceCache.getDevice(
+        userId,
+        clientId,
+        createDeviceId("zigbee/00:00:00:00:00:00:00:00")
+      );
+      expect(device).toBeUndefined();
+    });
+
+    it("should sync a custom (virtual) device from status/custom", () => {
+      controller = new HomedServerController(userDb, deviceCache, httpHandler);
+
+      (controller as any).clientStatusUpdated(mockClient(), "status/custom", {
+        devices: [
+          {
+            id: "tv-power",
+            name: "TV Power",
+            cloud: true,
+            active: true,
+          },
+        ],
+        names: false,
+      });
+
+      const device = deviceCache.getDevice(
+        userId,
+        clientId,
+        createDeviceId("custom/tv-power")
+      );
+      expect(device?.name).toBe("TV Power");
+    });
+
+    it("should fall back to id as name for an unnamed custom device", () => {
+      controller = new HomedServerController(userDb, deviceCache, httpHandler);
+
+      (controller as any).clientStatusUpdated(mockClient(), "status/custom", {
+        devices: [{ id: "tv-power", cloud: true, active: true }],
+        names: false,
+      });
+
+      const device = deviceCache.getDevice(
+        userId,
+        clientId,
+        createDeviceId("custom/tv-power")
+      );
+      expect(device?.name).toBe("tv-power");
+    });
+
+    it("should skip custom devices without the cloud flag", () => {
+      controller = new HomedServerController(userDb, deviceCache, httpHandler);
+
+      (controller as any).clientStatusUpdated(mockClient(), "status/custom", {
+        devices: [{ id: "tv-power", name: "TV Power", active: true }],
+        names: false,
+      });
+
+      const device = deviceCache.getDevice(
+        userId,
+        clientId,
+        createDeviceId("custom/tv-power")
+      );
+      expect(device).toBeUndefined();
+    });
+  });
+
   describe("clientConnected — socket error handling", () => {
     // Minimal socket stub: EventEmitter + the methods clientConnected touches
     // before handing off to ClientConnection.

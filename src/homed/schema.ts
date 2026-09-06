@@ -221,8 +221,26 @@ export const ZigbeeDeviceInfoSchema = z
     version: z.coerce.string().optional(),
   })
   .loose();
+export type ZigbeeDeviceInfo = z.infer<typeof ZigbeeDeviceInfoSchema>;
 
-export const DeviceInfoSchema = z.union([ZigbeeDeviceInfoSchema]);
+export const CustomDeviceInfoSchema = z
+  .object({
+    id: z.string(),
+    name: z.string().optional(),
+    note: z.string().optional(),
+    discovery: z.boolean().optional(),
+    cloud: z.boolean().optional(),
+    active: z.boolean().optional(),
+    real: z.boolean().optional(),
+  })
+  .loose();
+export type CustomDeviceInfo = z.infer<typeof CustomDeviceInfoSchema>;
+
+export const DeviceInfoSchema = z.union([
+  ZigbeeDeviceInfoSchema,
+  CustomDeviceInfoSchema,
+]);
+export type DeviceInfo = z.infer<typeof DeviceInfoSchema>;
 
 export const ClientStatusMessageSchema = z
   .object({

@@ -3,6 +3,7 @@ import http from "node:http";
 import https from "node:https";
 import net from "node:net";
 import { promisify } from "node:util";
+import { match, P } from "ts-pattern";
 import {
   UserRepository,
   type ClientToken,
@@ -19,9 +20,12 @@ import {
 import { ClientConnection, type ClientId } from "./homed/client.ts";
 import type {
   ClientStatusMessage,
+  CustomDeviceInfo,
   DeviceExposesMessage,
+  DeviceInfo,
   DeviceStatusMessage,
   EndpointOptions,
+  ZigbeeDeviceInfo,
 } from "./homed/schema.ts";
 import type { CommandMessage } from "./homed/types.ts";
 import { createLogger } from "./logger.ts";
@@ -29,6 +33,48 @@ import { cloak, truncate } from "./utility.ts";
 import { WebApp } from "./web/app.ts";
 
 const log = createLogger("controller");
+
+/**
+ * Normalize a raw status/<service> device entry into the generic HomedDevice
+ * shape (minus endpoints, filled in once expose/ arrives). Each Homed service
+ * publishes a differently-shaped device identity (zigbee: ieeeAddress +
+ * manufacturer/model; custom: id + note), discriminated here by which
+ * identifying field is present. Returns undefined for devices that shouldn't
+ * be synced to Google (not cloud-enabled, removed, or the zigbee coordinator).
+ */
+const normalizeDeviceInfo = (
+  device: DeviceInfo,
+  byName: boolean | undefined
+): Omit<HomedDevice, "endpoints"> | undefined =>
+  match(device)
+    .returnType<Omit<HomedDevice, "endpoints"> | undefined>()
+    .with({ ieeeAddress: P.string }, (zigbee: ZigbeeDeviceInfo) =>
+      !zigbee.cloud || zigbee.removed || zigbee.name === "HOMEd Coordinator"
+        ? undefined
+        : {
+            key: `zigbee/${zigbee.ieeeAddress}` as DeviceId,
+            topic: `zigbee/${byName ? zigbee.name : zigbee.ieeeAddress}`,
+            name: zigbee.name ?? zigbee.ieeeAddress,
+            description: zigbee.description,
+            manufacturer: zigbee.manufacturerName,
+            model: zigbee.modelName,
+            firmware: zigbee.firmware,
+            version: zigbee.version,
+            available: zigbee.active !== false, // treat absent as online
+          }
+    )
+    .with({ id: P.string }, (custom: CustomDeviceInfo) =>
+      !custom.cloud
+        ? undefined
+        : {
+            key: `custom/${custom.id}` as DeviceId,
+            topic: `custom/${byName ? (custom.name ?? custom.id) : custom.id}`,
+            name: custom.name ?? custom.id,
+            description: custom.note,
+            available: custom.active !== false,
+          }
+    )
+    .exhaustive();
 
 /**
  * A main controller that wires up HTTP and TCP servers and manages clients and
@@ -200,7 +246,9 @@ export class HomedServerController {
       })
       .on("token", token => this.clientTokenReceived(client, token))
       // status/# subscription
-      .on("status", (_, message) => this.clientStatusUpdated(client, message))
+      .on("status", (topic, message) =>
+        this.clientStatusUpdated(client, topic, message)
+      )
       .on(
         "device",
         (topic, message) =>
@@ -279,40 +327,23 @@ export class HomedServerController {
 
   clientStatusUpdated = (
     client: ClientConnection<User>,
+    topic: string,
     message: ClientStatusMessage | undefined
   ) => {
     if (!client.uniqueId || !client.user || !message) return;
 
     log.debug("message.devices", {
+      topic,
       devices: message.devices?.length ?? 0,
     });
 
-    // TODO: This method only concerned with zigbee devices, as others
-    // are not yet supported in the Homed server. Once other device types
-    // are supported, this method should be updated accordingly.
     const { devices, names: byName } = message;
     if (!devices) return;
 
     const homedDevices = devices
-      .filter(
-        ({ name, removed, cloud }) =>
-          name && name !== "HOMEd Coordinator" && cloud && !removed
-      )
-      .map(
-        device =>
-          ({
-            key: `zigbee/${device.ieeeAddress}` as DeviceId,
-            topic: `zigbee/${byName ? device.name : device.ieeeAddress}`,
-            name: device.name,
-            description: device.description,
-            manufacturer: device.manufacturerName,
-            model: device.modelName,
-            firmware: device.firmware,
-            version: device.version,
-            endpoints: [],
-            available: device.active !== false, // treat absent as online
-          }) as HomedDevice
-      );
+      .map(device => normalizeDeviceInfo(device, byName))
+      .filter(device => device !== undefined)
+      .map(device => ({ ...device, endpoints: [] }) as HomedDevice);
 
     const [added, , endpointsNeeded] = this.deviceCache.syncClientDevices(
       client.user.id,
