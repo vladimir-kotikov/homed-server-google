@@ -44,13 +44,26 @@ console.log(`MQTT DEVICE DEBUG: ${deviceTopic}`);
 console.log(`MQTT Broker: mqtt://${mqttHost}:${mqttPort}`);
 console.log(`${"=".repeat(80)}\n`);
 
-console.log("🔌 Connecting to MQTT broker...");
+function connectClient(useAuth: boolean) {
+  console.log(
+    useAuth
+      ? "🔌 Connecting to MQTT broker (authenticated)..."
+      : "🔌 Retrying without credentials (broker allows anonymous?)..."
+  );
+  return mqtt.connect(`mqtt://${mqttHost}:${mqttPort}`, {
+    clientId: `debug-${Date.now()}`,
+    clean: true,
+    connectTimeout: 5000,
+    ...(useAuth && {
+      username: process.env.MQTT_USERNAME,
+      password: process.env.MQTT_PASSWORD,
+    }),
+  });
+}
 
-const client = mqtt.connect(`mqtt://${mqttHost}:${mqttPort}`, {
-  clientId: `debug-${Date.now()}`,
-  clean: true,
-  connectTimeout: 5000,
-});
+const hasAuth = Boolean(process.env.MQTT_USERNAME || process.env.MQTT_PASSWORD);
+let triedWithoutAuth = !hasAuth;
+let client = connectClient(hasAuth);
 
 const data: {
   status?: any;
@@ -62,71 +75,92 @@ const data: {
 let receivedCount = 0;
 const expectedTopics = ["status", "expose", "device", "fd"];
 
-client.on("connect", () => {
-  console.log("✅ Connected to MQTT broker\n");
-  console.log("📡 Subscribing to topics:");
+function attachHandlers(c: typeof client) {
+  c.on("connect", () => {
+    console.log("✅ Connected to MQTT broker\n");
+    console.log("📡 Subscribing to topics:");
 
-  // Subscribe to all relevant topics for this device
-  const topics = [
-    `homed/status/${deviceTopic}`,
-    `homed/expose/${deviceTopic}`,
-    `homed/device/${deviceTopic}`,
-    `homed/fd/${deviceTopic}`,
-  ];
+    // Subscribe to all relevant topics for this device
+    const topics = [
+      `homed/status/${deviceTopic}`,
+      `homed/expose/${deviceTopic}`,
+      `homed/device/${deviceTopic}`,
+      `homed/fd/${deviceTopic}`,
+    ];
 
-  topics.forEach(topic => {
-    client.subscribe(topic, err => {
-      if (err) {
-        console.error(`   ❌ Failed to subscribe to ${topic}: ${err.message}`);
-      } else {
-        console.log(`   ✓ ${topic}`);
-      }
+    topics.forEach(topic => {
+      c.subscribe(topic, err => {
+        if (err) {
+          console.error(
+            `   ❌ Failed to subscribe to ${topic}: ${err.message}`
+          );
+        } else {
+          console.log(`   ✓ ${topic}`);
+        }
+      });
     });
+
+    console.log("\n⏳ Waiting for messages (timeout: 5 seconds)...\n");
+
+    // Set timeout to exit after 5 seconds
+    setTimeout(() => {
+      console.log(`\n${"─".repeat(80)}`);
+      console.log(`Received ${receivedCount} message(s)\n`);
+      displayResults();
+      c.end();
+      process.exit(0);
+    }, 5000);
   });
 
-  console.log("\n⏳ Waiting for messages (timeout: 5 seconds)...\n");
+  c.on("message", (topic, message) => {
+    receivedCount++;
+    const topicType = topic.split("/")[1]; // Skip 'homed/' prefix
 
-  // Set timeout to exit after 5 seconds
-  setTimeout(() => {
-    console.log(`\n${"─".repeat(80)}`);
-    console.log(`Received ${receivedCount} message(s)\n`);
-    displayResults();
-    client.end();
-    process.exit(0);
-  }, 5000);
-});
+    try {
+      const payload = JSON.parse(message.toString());
+      console.log(`📨 ${topic}`);
+      console.log(
+        `   ${JSON.stringify(payload, null, 2).split("\n").join("\n   ")}\n`
+      );
 
-client.on("message", (topic, message) => {
-  receivedCount++;
-  const topicType = topic.split("/")[1]; // Skip 'homed/' prefix
+      // Store the data
+      if (topicType === "status") {
+        data.status = payload;
+      } else if (topicType === "expose") {
+        data.expose = payload;
+      } else if (topicType === "device") {
+        data.device = payload;
+      } else if (topicType === "fd") {
+        data.state = payload;
+      }
+    } catch (err) {
+      console.log(`📨 ${topic}`);
+      console.log(`   Raw: ${message.toString()}\n`);
+    }
+  });
 
-  try {
-    const payload = JSON.parse(message.toString());
-    console.log(`📨 ${topic}`);
-    console.log(
-      `   ${JSON.stringify(payload, null, 2).split("\n").join("\n   ")}\n`
+  c.on("error", err => {
+    const isAuthError = /not authorized|bad username or password/i.test(
+      err.message
     );
 
-    // Store the data
-    if (topicType === "status") {
-      data.status = payload;
-    } else if (topicType === "expose") {
-      data.expose = payload;
-    } else if (topicType === "device") {
-      data.device = payload;
-    } else if (topicType === "fd") {
-      data.state = payload;
+    if (isAuthError && !triedWithoutAuth) {
+      console.log(
+        `⚠️  Authenticated connect rejected (${err.message}). Retrying anonymously...`
+      );
+      triedWithoutAuth = true;
+      c.end(true);
+      client = connectClient(false);
+      attachHandlers(client);
+      return;
     }
-  } catch (err) {
-    console.log(`📨 ${topic}`);
-    console.log(`   Raw: ${message.toString()}\n`);
-  }
-});
 
-client.on("error", err => {
-  console.error(`❌ MQTT Error: ${err.message}`);
-  process.exit(1);
-});
+    console.error(`❌ MQTT Error: ${err.message}`);
+    process.exit(1);
+  });
+}
+
+attachHandlers(client);
 
 function displayResults() {
   console.log(`\n${"=".repeat(80)}`);
