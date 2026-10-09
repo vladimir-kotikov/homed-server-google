@@ -158,17 +158,27 @@ export class DeviceRepository extends EventEmitter<{
     Record<ClientId, Record<DeviceId, DeviceState>>
   > = {};
   private staleClientTimeout: number;
+  private syncSettleMs: number;
+  // Devices whose expose/ message (capabilities) is still expected; `done`
+  // settles when it arrives or after syncSettleMs.
+  // Key: `${userId}::${clientId}::${deviceId}`
+  private pendingExposes = new Map<
+    string,
+    { done: Promise<void>; resolve: () => void }
+  >();
   private userRepository: UserRepository;
   private shuttingDown = false;
 
   constructor(
     userRepository: UserRepository,
-    staleClientTimeout: number = 2 * 24 * 60 * 60
+    staleClientTimeout: number = 2 * 24 * 60 * 60,
+    syncSettleMs: number = 0
   ) {
     // Default: 2 days
     super();
     this.userRepository = userRepository;
     this.staleClientTimeout = staleClientTimeout;
+    this.syncSettleMs = syncSettleMs;
 
     if (staleClientTimeout > 0) {
       // Run cleanup every hour or 1/24th of timeout, whichever is smaller
@@ -221,6 +231,9 @@ export class DeviceRepository extends EventEmitter<{
           // Update device with persisted availability status
           device.available = available;
           this.devices[user.id][clientId].push(device);
+          if (device.endpoints.length === 0) {
+            this.expectEndpoints(user.id, clientId, device.key);
+          }
         }
 
         // Initialize device state (will be updated by clients when they connect)
@@ -378,20 +391,30 @@ export class DeviceRepository extends EventEmitter<{
     }
   };
 
+  /**
+   * Sync the devices reported by one homed service of a client.
+   *
+   * A client reports its devices per service (status/zigbee, status/custom,
+   * ...), so when `service` is given only that service's devices (key prefix
+   * `<service>/`) can be removed; other services' devices are left untouched.
+   */
   syncClientDevices = (
     userId: UserId,
     clientId: ClientId,
-    newDevices: HomedDevice[]
+    newDevices: HomedDevice[],
+    service?: string
   ): [HomedDevice[], HomedDevice[], HomedDevice[]] => {
     // Mark client as active/seen to prevent stale cleanup
     this.clientLastSeen.set(`${userId}::${clientId}`, Date.now());
 
     const existingDevices = this.devices[userId]?.[clientId] ?? [];
+    const prefix = service ? `${service}/` : "";
     const addedDevices = newDevices.filter(
       nd => !existingDevices.some(ed => ed.key === nd.key)
     );
     const removedDevices = existingDevices.filter(
-      ed => !newDevices.some(nd => nd.key === ed.key)
+      ed =>
+        ed.key.startsWith(prefix) && !newDevices.some(nd => nd.key === ed.key)
     );
     // Existing devices whose endpoints are empty — happens when the server
     // restarts and reloads stale DB rows before endpoints were ever populated.
@@ -419,6 +442,10 @@ export class DeviceRepository extends EventEmitter<{
         this.setDeviceAvailable(userId, clientId, device.key, device.available);
       }
     });
+
+    [...addedDevices, ...endpointsNeeded].forEach(device =>
+      this.expectEndpoints(userId, clientId, device.key)
+    );
 
     if (addedDevices.length > 0 || removedDevices.length > 0) {
       this.emit("devicesUpdated", userId);
@@ -448,10 +475,56 @@ export class DeviceRepository extends EventEmitter<{
   ): void => {
     const device = this.getDevice(userId, clientId, deviceId);
     if (device) {
+      this.pendingExposes.get(`${userId}::${clientId}::${deviceId}`)?.resolve();
+      // A client reconnect re-sends unchanged capabilities; only tell Google
+      // (REQUEST_SYNC) when something changed
+      const changed = !fastDeepEqual(device.endpoints, endpoints);
       device.endpoints = endpoints;
-      this.emit("devicesUpdated", userId);
+      if (changed) {
+        this.emit("devicesUpdated", userId);
+      }
     }
   };
+
+  private expectEndpoints = (
+    userId: UserId,
+    clientId: ClientId,
+    deviceId: DeviceId
+  ) => {
+    const key = `${userId}::${clientId}::${deviceId}`;
+    if (this.syncSettleMs <= 0 || this.pendingExposes.has(key)) return;
+
+    let finish!: () => void;
+    const done = new Promise<void>(resolve => (finish = resolve));
+    const timer = setTimeout(finish, this.syncSettleMs).unref();
+    const entry = {
+      done,
+      resolve: () => {
+        clearTimeout(timer);
+        finish();
+      },
+    };
+
+    this.pendingExposes.set(key, entry);
+    void done.then(
+      () =>
+        this.pendingExposes.get(key) === entry &&
+        this.pendingExposes.delete(key)
+    );
+  };
+
+  /**
+   * Resolves once every device of the user whose capabilities (expose/) were
+   * just requested has them, or after `syncSettleMs` at most. Google removes
+   * devices missing from a SYNC (and their rooms), so SYNC must not answer
+   * while the device list is still being rebuilt after a reconnect/restart.
+   */
+  whenSettled = (userId: UserId): Promise<void> =>
+    Promise.all(
+      [...this.pendingExposes]
+        .filter(([key]) => key.startsWith(`${userId}::`))
+        .map(([, { done }]) => done)
+    ).then(() => undefined);
 
   /**
    * Mark all devices from a client as unavailable.

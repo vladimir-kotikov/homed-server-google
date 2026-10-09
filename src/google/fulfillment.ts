@@ -185,6 +185,10 @@ export class FulfillmentController {
       );
 
   private handleSync = async (user: User): Promise<SyncResponsePayload> => {
+    // Google drops devices missing from SYNC (and their room assignments), so
+    // let a reconnecting client finish announcing its devices first
+    await this.deviceRepository.whenSettled(user.id);
+
     const devicesWithStates = this.deviceRepository
       .getDevicesWithState(user.id)
       .filter(({ device }) => device.endpoints.length > 0);

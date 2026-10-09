@@ -1332,3 +1332,223 @@ describe("DeviceRepository — persistence", () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Per-service sync and SYNC settling (Google drops devices missing from SYNC)
+// ---------------------------------------------------------------------------
+
+describe("DeviceRepository — per-service sync", () => {
+  const userId = createUserId("user1");
+  const clientId = createClientId("client1");
+  const zigbee = () => createMockDevice(createDeviceId("zigbee/dev1"), "Lamp");
+  const custom = () => createMockDevice(createDeviceId("custom/tv"), "TV");
+  let repo: DeviceRepository;
+
+  beforeEach(() => {
+    repo = new DeviceRepository(createMockUserRepository());
+  });
+
+  const keys = () => repo.getDevices(userId).map(({ device }) => device.key);
+
+  it("keeps another service's devices when a service syncs its own list", () => {
+    repo.syncClientDevices(userId, clientId, [zigbee()], "zigbee");
+    repo.syncClientDevices(userId, clientId, [custom()], "custom");
+
+    expect(keys().sort()).toEqual(["custom/tv", "zigbee/dev1"]);
+  });
+
+  it("keeps existing devices (and their endpoints) across alternating service messages", () => {
+    repo.syncClientDevices(userId, clientId, [zigbee()], "zigbee");
+    repo.updateDevice(userId, clientId, createDeviceId("zigbee/dev1"), [
+      { id: 0, exposes: ["light"] },
+    ]);
+
+    repo.syncClientDevices(userId, clientId, [custom()], "custom");
+    const [added, removed] = repo.syncClientDevices(
+      userId,
+      clientId,
+      [zigbee()],
+      "zigbee"
+    );
+
+    expect(added).toHaveLength(0);
+    expect(removed).toHaveLength(0);
+    expect(
+      repo.getDevice(userId, clientId, createDeviceId("zigbee/dev1"))?.endpoints
+    ).toHaveLength(1);
+  });
+
+  it("still removes a device that disappeared from its own service", () => {
+    repo.syncClientDevices(userId, clientId, [zigbee(), custom()]);
+
+    const [, removed] = repo.syncClientDevices(userId, clientId, [], "zigbee");
+
+    expect(removed.map(d => d.key)).toEqual(["zigbee/dev1"]);
+    expect(keys()).toEqual(["custom/tv"]);
+  });
+
+  it("treats an empty list from one service as 'no devices' for that service only", () => {
+    repo.syncClientDevices(userId, clientId, [zigbee(), custom()]);
+
+    repo.syncClientDevices(userId, clientId, [], "custom");
+
+    expect(keys()).toEqual(["zigbee/dev1"]);
+  });
+});
+
+describe("DeviceRepository — updateDevice", () => {
+  const userId = createUserId("user1");
+  const clientId = createClientId("client1");
+  const deviceId = createDeviceId("zigbee/dev1");
+  let repo: DeviceRepository;
+  let updated: ReturnType<typeof vi.fn<(userId: UserId) => void>>;
+
+  beforeEach(() => {
+    repo = new DeviceRepository(createMockUserRepository());
+    repo.syncClientDevices(userId, clientId, [createMockDevice(deviceId)]);
+    updated = vi.fn<(userId: UserId) => void>();
+    repo.on("devicesUpdated", updated);
+  });
+
+  it("emits devicesUpdated when the capabilities changed", () => {
+    repo.updateDevice(userId, clientId, deviceId, [
+      { id: 0, exposes: ["light"] },
+    ]);
+
+    expect(updated).toHaveBeenCalledExactlyOnceWith(userId);
+  });
+
+  it("does not emit devicesUpdated when a reconnect re-sends identical capabilities", () => {
+    repo.updateDevice(userId, clientId, deviceId, [
+      { id: 0, exposes: ["light"] },
+    ]);
+    updated.mockClear();
+
+    repo.updateDevice(userId, clientId, deviceId, [
+      { id: 0, exposes: ["light"] },
+    ]);
+
+    expect(updated).not.toHaveBeenCalled();
+  });
+});
+
+describe("DeviceRepository — whenSettled", () => {
+  const userId = createUserId("user1");
+  const otherUser = createUserId("user2");
+  const clientId = createClientId("client1");
+  const deviceId = createDeviceId("zigbee/dev1");
+  const SETTLE_MS = 5_000;
+  let repo: DeviceRepository;
+
+  const settled = () => {
+    const done = vi.fn();
+    const promise = repo.whenSettled(userId).then(done);
+    return { done, promise };
+  };
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    repo = new DeviceRepository(createMockUserRepository(), 0, SETTLE_MS);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("resolves immediately when no device is waiting for capabilities", async () => {
+    await expect(repo.whenSettled(userId)).resolves.toBeUndefined();
+  });
+
+  it("resolves as soon as the announced device's capabilities arrive", async () => {
+    repo.syncClientDevices(userId, clientId, [createMockDevice(deviceId)]);
+    const { done, promise } = settled();
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(done).not.toHaveBeenCalled();
+
+    repo.updateDevice(userId, clientId, deviceId, [
+      { id: 0, exposes: ["light"] },
+    ]);
+    await promise;
+
+    expect(done).toHaveBeenCalled();
+  });
+
+  it("waits for every announced device", async () => {
+    const second = createDeviceId("zigbee/dev2");
+    repo.syncClientDevices(userId, clientId, [
+      createMockDevice(deviceId),
+      createMockDevice(second),
+    ]);
+    const { done, promise } = settled();
+
+    repo.updateDevice(userId, clientId, deviceId, [
+      { id: 0, exposes: ["light"] },
+    ]);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(done).not.toHaveBeenCalled();
+
+    repo.updateDevice(userId, clientId, second, [
+      { id: 0, exposes: ["light"] },
+    ]);
+    await promise;
+    expect(done).toHaveBeenCalled();
+  });
+
+  it("gives up after the settle timeout when capabilities never arrive", async () => {
+    repo.syncClientDevices(userId, clientId, [createMockDevice(deviceId)]);
+    const { done, promise } = settled();
+
+    await vi.advanceTimersByTimeAsync(SETTLE_MS - 1);
+    expect(done).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1);
+    await promise;
+    expect(done).toHaveBeenCalled();
+  });
+
+  it("does not make later calls wait once the timeout has passed", async () => {
+    repo.syncClientDevices(userId, clientId, [createMockDevice(deviceId)]);
+    await vi.advanceTimersByTimeAsync(SETTLE_MS);
+
+    await expect(repo.whenSettled(userId)).resolves.toBeUndefined();
+  });
+
+  it("is not held up by another user's devices", async () => {
+    repo.syncClientDevices(otherUser, clientId, [createMockDevice(deviceId)]);
+
+    await expect(repo.whenSettled(userId)).resolves.toBeUndefined();
+  });
+
+  it("waits for devices restored from the database until the client re-announces them", async () => {
+    const userRepo = createMockUserRepository();
+    userRepo.getAll.mockResolvedValue([{ id: userId } as never]);
+    userRepo.loadDevices.mockResolvedValue([
+      {
+        clientId,
+        // persisted at announce time, so capabilities are not stored
+        device: { ...createMockDevice(deviceId), endpoints: [] },
+        available: true,
+      },
+    ]);
+    repo = new DeviceRepository(userRepo, 0, SETTLE_MS);
+    await repo.init();
+    const { done, promise } = settled();
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(done).not.toHaveBeenCalled();
+
+    repo.updateDevice(userId, clientId, deviceId, [
+      { id: 0, exposes: ["light"] },
+    ]);
+    await promise;
+    expect(done).toHaveBeenCalled();
+  });
+
+  it("never waits when the settle timeout is 0", async () => {
+    repo = new DeviceRepository(createMockUserRepository());
+    repo.syncClientDevices(userId, clientId, [createMockDevice(deviceId)]);
+
+    await expect(repo.whenSettled(userId)).resolves.toBeUndefined();
+  });
+});

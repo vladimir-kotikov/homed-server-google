@@ -55,6 +55,11 @@ export default {
   // How long (seconds) to wait after a client disconnects before marking its
   // devices offline, so a quick reconnect is invisible to Google. 0 = immediate.
   clientDisconnectGrace: intEnvironment("CLIENT_DISCONNECT_GRACE", 30),
+  // How long (seconds) SYNC may wait for devices to finish announcing their
+  // capabilities after a client (re)connect or server restart, so Google never
+  // sees a partial device list (it would drop the devices and their rooms).
+  // 0 = don't wait.
+  syncSettleTimeout: intEnvironment("SYNC_SETTLE_TIMEOUT", 5),
   // How long (seconds) to keep devices in memory after client disconnect.
   // Devices are marked offline immediately on disconnect, but persist for
   // this duration to handle reconnections. 0 = disabled (old behavior).

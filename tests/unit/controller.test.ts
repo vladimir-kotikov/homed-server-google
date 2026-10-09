@@ -189,6 +189,87 @@ describe("HomedServerController", () => {
       expect(device?.name).toBe("Living room switch");
     });
 
+    it("keeps devices (and their capabilities) of other services across status messages", () => {
+      controller = new HomedServerController(userDb, deviceCache, httpHandler);
+      const client = mockClient();
+      const zigbeeStatus = {
+        devices: [
+          {
+            ieeeAddress: "00:11:22:33:44:55:66:77",
+            name: "Lamp",
+            cloud: true,
+            active: true,
+          },
+        ],
+        names: false,
+      };
+      const customStatus = {
+        devices: [{ id: "tv", name: "TV", cloud: true, active: true }],
+        names: false,
+      };
+      const lampId = createDeviceId("zigbee/00:11:22:33:44:55:66:77");
+
+      (controller as any).clientStatusUpdated(
+        client,
+        "status/zigbee",
+        zigbeeStatus
+      );
+      deviceCache.updateDevice(userId, clientId, lampId, [
+        { id: 0, exposes: ["light"] },
+      ]);
+      // A reconnect replays the retained status messages of every service
+      (controller as any).clientStatusUpdated(
+        client,
+        "status/custom",
+        customStatus
+      );
+      (controller as any).clientStatusUpdated(
+        client,
+        "status/zigbee",
+        zigbeeStatus
+      );
+
+      expect(
+        deviceCache.getDevice(userId, clientId, lampId)?.endpoints
+      ).toHaveLength(1);
+      expect(
+        deviceCache.getDevice(userId, clientId, createDeviceId("custom/tv"))
+      ).toBeDefined();
+    });
+
+    it("removes a device from its own service when it disappears from that service's list", () => {
+      controller = new HomedServerController(userDb, deviceCache, httpHandler);
+      const client = mockClient();
+      const tv = { id: "tv", name: "TV", cloud: true, active: true };
+      const lamp = {
+        ieeeAddress: "00:11:22:33:44:55:66:77",
+        name: "Lamp",
+        cloud: true,
+        active: true,
+      };
+
+      (controller as any).clientStatusUpdated(client, "status/zigbee", {
+        devices: [lamp],
+      });
+      (controller as any).clientStatusUpdated(client, "status/custom", {
+        devices: [tv],
+      });
+      (controller as any).clientStatusUpdated(client, "status/custom", {
+        devices: [],
+      });
+
+      expect(
+        deviceCache.getDevice(userId, clientId, createDeviceId("custom/tv"))
+      ).toBeUndefined();
+      expect(
+        deviceCache.getDevice(
+          userId,
+          clientId,
+          createDeviceId("zigbee/00:11:22:33:44:55:66:77")
+        )
+      ).toBeDefined();
+    });
+
     it("should skip the zigbee coordinator entry", () => {
       controller = new HomedServerController(userDb, deviceCache, httpHandler);
 
@@ -422,7 +503,7 @@ describe("HomedServerController — disconnect grace", () => {
     expect((controller as any).clients[userId][clientId]).toBe(newClient);
   });
 
-  it("marks devices offline immediately when the grace period is 0", () => {
+  it("marks devices offline on the next tick when no grace period is configured", () => {
     controller = new HomedServerController(userDb, deviceCache, {
       handleRequest: vi.fn(),
     } as unknown as WebApp);
@@ -430,6 +511,7 @@ describe("HomedServerController — disconnect grace", () => {
     connect(client);
 
     controller.clientDisconnected(client);
+    vi.advanceTimersByTime(0);
 
     expect(setDevicesOffline).toHaveBeenCalledExactlyOnceWith(userId, clientId);
   });

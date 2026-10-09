@@ -9,6 +9,7 @@ import type { SmartHomeRequest } from "../../src/google/schema.ts";
 import type {
   ExecuteResponsePayload,
   SmartHomeResponseBase,
+  SyncResponsePayload,
 } from "../../src/google/types.ts";
 import type { DeviceState } from "../../src/homed/types.ts";
 import {
@@ -748,5 +749,77 @@ describe("FulfillmentController - EXECUTE Intent", () => {
     expect(response.payload.commands).toHaveLength(1);
     expect(response.payload.commands[0].status).toBe("OFFLINE");
     expect(response.payload.commands[0].errorCode).toBe("deviceOffline");
+  });
+});
+
+describe("FulfillmentController - SYNC Intent", () => {
+  const userId = createUserId("user1");
+  const user: User = {
+    id: userId,
+    clientToken: "token" as ClientToken,
+    username: "testuser",
+    linked: true,
+    createdAt: new Date(),
+  };
+  const clientId = createClientId("client1");
+  const syncRequest = {
+    requestId: "req-sync",
+    inputs: [{ intent: "action.devices.SYNC" as const }],
+  } satisfies SmartHomeRequest;
+
+  const lamp = () => {
+    const device = createMockDevice(createDeviceId("device1"), "Lamp");
+    device.endpoints = [{ id: 0, exposes: ["switch"], options: {} }];
+    return device;
+  };
+
+  let getDevicesWithState: ReturnType<typeof vi.fn>;
+  let whenSettled: ReturnType<typeof vi.fn>;
+  let controller: InstanceType<typeof FulfillmentController>;
+
+  beforeEach(() => {
+    vi.stubEnv("GOOGLE_APPLICATION_CREDENTIALS", "/path/to/credentials.json");
+    getDevicesWithState = vi.fn(() => [
+      { clientId, device: lamp(), state: {} },
+    ]);
+    whenSettled = vi.fn().mockResolvedValue(undefined);
+
+    const deviceRepository = {
+      getDevicesWithState,
+      whenSettled,
+      on: vi.fn(() => deviceRepository),
+      off: vi.fn(),
+    } as unknown as DeviceRepository;
+    controller = new FulfillmentController(
+      {
+        isUserLinked: vi.fn().mockResolvedValue(true),
+      } as unknown as UserRepository,
+      deviceRepository
+    );
+  });
+
+  it("returns the cached devices", async () => {
+    const response = (await controller.handleFulfillment(
+      user,
+      syncRequest
+    )) as SmartHomeResponseBase<SyncResponsePayload>;
+
+    expect(response.payload.devices.map(d => d.id)).toEqual([
+      `${clientId}/device1`,
+    ]);
+  });
+
+  it("does not read the device list until devices have finished announcing themselves", async () => {
+    let settle!: () => void;
+    whenSettled.mockReturnValue(new Promise<void>(r => (settle = r)));
+
+    const response = controller.handleFulfillment(user, syncRequest);
+    await Promise.resolve();
+    expect(whenSettled).toHaveBeenCalledWith(userId);
+    expect(getDevicesWithState).not.toHaveBeenCalled();
+
+    settle();
+    await response;
+    expect(getDevicesWithState).toHaveBeenCalledOnce();
   });
 });

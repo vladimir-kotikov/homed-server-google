@@ -377,10 +377,13 @@ export class HomedServerController {
       .filter(device => device !== undefined)
       .map(device => ({ ...device, endpoints: [] }) as HomedDevice);
 
+    // topic is `status/<service>[/<instance>]`; each service reports only its
+    // own devices, so only that service's devices may be removed
     const [added, , endpointsNeeded] = this.deviceCache.syncClientDevices(
       client.user.id,
       client.uniqueId,
-      homedDevices
+      homedDevices,
+      topic.split("/")[1]
     );
 
     added.forEach(({ topic }) => {

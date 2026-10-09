@@ -20,7 +20,8 @@ const usersRepository = UserRepository.open(databaseUrl, appConfig.jwtSecret, {
 
 const deviceRepository = new DeviceRepository(
   usersRepository,
-  appConfig.clientStaleTimeout
+  appConfig.clientStaleTimeout,
+  appConfig.syncSettleTimeout * 1000
 );
 
 // Load persisted devices in the background — do not block server startup.
