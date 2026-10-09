@@ -145,6 +145,8 @@ export class FulfillmentController {
           if ((error as { status?: number })?.status === 404) {
             log.info("homegraph.report_state.entity_not_found", {
               reason: "triggering request_sync to re-register agent user",
+              googleDeviceIds: Object.keys(states),
+              error: (error as Error).message,
             });
             return this.requestSync(userId);
           }

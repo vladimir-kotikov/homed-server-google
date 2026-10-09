@@ -613,10 +613,19 @@ export const getStateUpdates = (
   const prevStates = mapToGoogleStates(device, clientId, prevState);
   const newStates = mapToGoogleStates(device, clientId, newState);
 
+  // Home Graph only knows devices that SYNC returned, and SYNC drops devices
+  // without traits; reporting state for the rest gets a 404
+  const synced = new Set(
+    mapToGoogleDevices(device, clientId)
+      .filter(({ traits }) => traits.length > 0)
+      .map(({ id }) => id)
+  );
+
   // Only return state changes - filter out unchanged states
   const stateUpdates = filterDict(
     newStates,
     (googleDeviceId, newGoogleState) =>
+      synced.has(googleDeviceId as GoogleDeviceId) &&
       !fastDeepEqual(
         newGoogleState,
         prevStates[googleDeviceId as GoogleDeviceId]

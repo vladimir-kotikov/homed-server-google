@@ -2944,6 +2944,20 @@ describe("CapabilityMapper", () => {
       );
     });
 
+    it("should not report state for devices without traits (never synced)", () => {
+      // A battery remote: SYNC drops it, so Home Graph would 404 on its state
+      const device = createDevice({ exposes: [["battery", "action"]] });
+
+      const report = getStateUpdates(
+        device,
+        testClientId,
+        { available: true },
+        { available: false }
+      );
+
+      expect(report).toBeUndefined();
+    });
+
     it("should handle availability reflected in online status", () => {
       const device = createDevice({
         exposes: [["switch"]],
