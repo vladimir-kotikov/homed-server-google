@@ -102,6 +102,9 @@ export class HomedServerController {
 
   private clients: Record<UserId, Record<ClientId, ClientConnection<User>>> =
     {};
+  private disconnectGraceMs: number;
+  // Pending "mark devices offline" timers, keyed by `${userId}::${clientId}`
+  private offlineTimers = new Map<string, NodeJS.Timeout>();
 
   constructor(
     userDatabase: UserRepository,
@@ -110,7 +113,8 @@ export class HomedServerController {
     sslOptions?: { cert: string; key: string },
     healtcheckIps: string[] = [],
     maxConnections: number = 100,
-    maxConnectionsPerUser: number = 5
+    maxConnectionsPerUser: number = 5,
+    disconnectGraceMs: number = 0
   ) {
     this.userDb = userDatabase;
     this.httpHandler = httpHandler;
@@ -118,6 +122,7 @@ export class HomedServerController {
     this.healthcheckIps = new Set(healtcheckIps);
     this.maxConnections = maxConnections;
     this.maxConnectionsPerUser = maxConnectionsPerUser;
+    this.disconnectGraceMs = disconnectGraceMs;
 
     this.httpServer = sslOptions
       ? https.createServer(sslOptions)
@@ -203,6 +208,8 @@ export class HomedServerController {
 
   stop = () => {
     this.deviceCache.shutdown();
+    this.offlineTimers.forEach(clearTimeout);
+    this.offlineTimers.clear();
     return Promise.allSettled([
       ...Object.entries(this.clients)
         .flatMap(([, clients]) => Object.values(clients))
@@ -270,12 +277,39 @@ export class HomedServerController {
 
   clientDisconnected = (client: ClientConnection<User>) => {
     if (client.user && client.uniqueId) {
-      delete this.clients[client.user.id]?.[client.uniqueId];
-      // Mark devices as offline instead of removing them
-      // They will be automatically removed after the stale timeout (default: 2 days)
-      this.deviceCache.setDevicesOffline(client.user.id, client.uniqueId);
+      const { id: userId } = client.user;
+      const clientId = client.uniqueId;
+      // A newer connection from the same client already replaced this one
+      // (e.g. a stuck connection closing late): it owns the devices now.
+      if (this.clients[userId]?.[clientId] === client) {
+        delete this.clients[userId][clientId];
+        this.markOfflineAfterGrace(userId, clientId);
+      }
     }
     log.debug("connection.close");
+  };
+
+  /**
+   * Mark devices offline instead of removing them (they are removed after the
+   * stale timeout, default 2 days). The mark is delayed by the grace period so
+   * a quick reconnect never shows up as an outage; clientTokenReceived cancels it.
+   */
+  private markOfflineAfterGrace = (userId: UserId, clientId: ClientId) => {
+    const key = `${userId}::${clientId}`;
+    const markOffline = () => {
+      this.offlineTimers.delete(key);
+      this.deviceCache.setDevicesOffline(userId, clientId);
+    };
+
+    clearTimeout(this.offlineTimers.get(key));
+    if (this.disconnectGraceMs <= 0) {
+      markOffline();
+      return;
+    }
+    this.offlineTimers.set(
+      key,
+      setTimeout(markOffline, this.disconnectGraceMs).unref()
+    );
   };
 
   clientTokenReceived = (
@@ -317,6 +351,8 @@ export class HomedServerController {
         client.authorize(user);
         this.clients[user.id] = this.clients[user.id] || {};
         this.clients[user.id][uniqueId] = client;
+        clearTimeout(this.offlineTimers.get(`${user.id}::${uniqueId}`));
+        this.offlineTimers.delete(`${user.id}::${uniqueId}`);
         log.debug(`client.auth`, { userId: user.id, uniqueId });
       })
       .catch(error => {

@@ -800,6 +800,57 @@ describe("DeviceRepository", () => {
       ).toBe(true);
     });
 
+    it("treats fd/ state messages as liveness", () => {
+      repository.syncClientDevices(userId, uniqueId, [createMockDevice()]);
+      repository.setDeviceAvailable(userId, uniqueId, deviceId, true);
+
+      // Only fd/ state arrives (no device/ messages) for 2 timeouts
+      for (let i = 0; i < 4; i++) {
+        vi.advanceTimersByTime(WATCHDOG_TIMEOUT_S * 500);
+        repository.updateDeviceState(userId, uniqueId, deviceId, {
+          status: "on",
+          level: i,
+        } as never);
+      }
+
+      expect(
+        repository.getDeviceState(userId, deviceId, uniqueId)?.available
+      ).toBe(true);
+    });
+
+    it("recovers a watchdog-offline device on fd/ state, but not a disconnected one", () => {
+      repository.syncClientDevices(userId, uniqueId, [createMockDevice()]);
+      repository.setDeviceAvailable(userId, uniqueId, deviceId, true);
+      vi.advanceTimersByTime(WATCHDOG_TIMEOUT_S * 1000 + WATCHDOG_INTERVAL_MS);
+      repository.updateDeviceState(userId, uniqueId, deviceId, {
+        status: "on",
+      } as never);
+      expect(
+        repository.getDeviceState(userId, deviceId, uniqueId)?.available
+      ).toBe(true);
+
+      repository.setDevicesOffline(userId, uniqueId);
+      repository.updateDeviceState(userId, uniqueId, deviceId, {
+        status: "off",
+      } as never);
+      expect(
+        repository.getDeviceState(userId, deviceId, uniqueId)?.available
+      ).toBe(false);
+    });
+
+    it("does not watch battery remotes that only expose action", () => {
+      const remote = createMockDevice();
+      remote.endpoints = [{ id: 0, exposes: ["battery", "action"] }];
+      repository.syncClientDevices(userId, uniqueId, [remote]);
+      repository.setDeviceAvailable(userId, uniqueId, deviceId, true);
+
+      vi.advanceTimersByTime(WATCHDOG_TIMEOUT_S * 1000 * 3);
+
+      expect(
+        repository.getDeviceState(userId, deviceId, uniqueId)?.available
+      ).toBe(true);
+    });
+
     it("does not mark a device offline more than once per stale entry", () => {
       const device = createMockDevice();
       repository.syncClientDevices(userId, uniqueId, [device]);

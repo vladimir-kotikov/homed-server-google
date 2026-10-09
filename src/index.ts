@@ -58,7 +58,10 @@ const mainController = new HomedServerController(
   deviceRepository,
   httpHandler,
   sslOptions,
-  appConfig.healthcheckIps
+  appConfig.healthcheckIps,
+  undefined,
+  undefined,
+  appConfig.clientDisconnectGrace * 1000
 );
 
 const shutdown = (signal: string) => {

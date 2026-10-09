@@ -53,8 +53,12 @@ export default {
   ),
   healthcheckIps: optStringArrayEnvironment("HEALTHCHECK_IPS"),
   // How long (seconds) a device can be silent before it is marked offline.
-  // 0 = disabled. Defaults to 25s (the Google Home test timeout is 30s).
-  deviceUnavailableTimeout: intEnvironment("DEVICE_UNAVAILABLE_TIMEOUT", 25),
+  // 0 = disabled (default): homed already reports device/ offline itself, and
+  // silence is normal for devices that only report on change.
+  deviceUnavailableTimeout: intEnvironment("DEVICE_UNAVAILABLE_TIMEOUT", 0),
+  // How long (seconds) to wait after a client disconnects before marking its
+  // devices offline, so a quick reconnect is invisible to Google. 0 = immediate.
+  clientDisconnectGrace: intEnvironment("CLIENT_DISCONNECT_GRACE", 30),
   // How long (seconds) to keep devices in memory after client disconnect.
   // Devices are marked offline immediately on disconnect, but persist for
   // this duration to handle reconnections. 0 = disabled (old behavior).

@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { HomedServerController } from "../../src/controller.ts";
 import { UserRepository } from "../../src/db/repository.ts";
 import { DeviceRepository, type DeviceId } from "../../src/device.ts";
@@ -339,5 +339,98 @@ describe("HomedServerController", () => {
         )
       ).not.toThrow();
     });
+  });
+});
+
+describe("HomedServerController — disconnect grace", () => {
+  const userId = createUserId("user1");
+  const clientId = createClientId("client1");
+  const GRACE_MS = 30_000;
+
+  let deviceCache: DeviceRepository;
+  let userDb: UserRepository;
+  let controller: HomedServerController;
+  let setDevicesOffline: ReturnType<typeof vi.spyOn>;
+
+  const fakeClient = () =>
+    ({
+      user: { id: userId },
+      uniqueId: clientId,
+      authorize: vi.fn(),
+      close: vi.fn(),
+    }) as any;
+
+  const connect = (client: ReturnType<typeof fakeClient>) => {
+    (controller as any).clients[userId] ??= {};
+    (controller as any).clients[userId][clientId] = client;
+  };
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    deviceCache = new DeviceRepository(createMockUserRepository());
+    setDevicesOffline = vi.spyOn(deviceCache, "setDevicesOffline");
+    userDb = UserRepository.open(":memory:", "test-secret", { create: true });
+    controller = new HomedServerController(
+      userDb,
+      deviceCache,
+      { handleRequest: vi.fn() } as unknown as WebApp,
+      undefined,
+      [],
+      100,
+      5,
+      GRACE_MS
+    );
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("marks devices offline only after the grace period", () => {
+    const client = fakeClient();
+    connect(client);
+
+    controller.clientDisconnected(client);
+    vi.advanceTimersByTime(GRACE_MS - 1);
+    expect(setDevicesOffline).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(1);
+    expect(setDevicesOffline).toHaveBeenCalledExactlyOnceWith(userId, clientId);
+  });
+
+  it("never marks devices offline when the client reconnects within the grace period", async () => {
+    const oldClient = fakeClient();
+    connect(oldClient);
+    controller.clientDisconnected(oldClient);
+
+    vi.spyOn(userDb, "getByToken").mockResolvedValue({ id: userId } as any);
+    controller.clientTokenReceived(fakeClient(), createClientToken("t"));
+    await vi.advanceTimersByTimeAsync(GRACE_MS * 2);
+
+    expect(setDevicesOffline).not.toHaveBeenCalled();
+  });
+
+  it("ignores a stale connection closing after a newer one replaced it", () => {
+    const oldClient = fakeClient();
+    const newClient = fakeClient();
+    connect(newClient);
+
+    controller.clientDisconnected(oldClient);
+    vi.advanceTimersByTime(GRACE_MS * 2);
+
+    expect(setDevicesOffline).not.toHaveBeenCalled();
+    expect((controller as any).clients[userId][clientId]).toBe(newClient);
+  });
+
+  it("marks devices offline immediately when the grace period is 0", () => {
+    controller = new HomedServerController(userDb, deviceCache, {
+      handleRequest: vi.fn(),
+    } as unknown as WebApp);
+    const client = fakeClient();
+    connect(client);
+
+    controller.clientDisconnected(client);
+
+    expect(setDevicesOffline).toHaveBeenCalledExactlyOnceWith(userId, clientId);
   });
 });
