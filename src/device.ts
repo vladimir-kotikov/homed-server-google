@@ -138,6 +138,22 @@ export class DeviceRepository extends EventEmitter<{
 }> {
   private devices: Record<UserId, Record<ClientId, HomedDevice[]>> = {};
   private deviceLastSeen = new Map<string, number>();
+  // Diagnostics only (shown on the dashboard); timestamps in epoch ms
+  private deviceDiag = new Map<
+    string,
+    {
+      statusAt?: number; // last device/ status message (or disconnect/sync)
+      statusValue?: boolean;
+      stateAt?: number; // last fd/ state message
+      watchdogAt?: number; // last time the inactivity watchdog fired
+    }
+  >();
+  private diag = (userId: UserId, clientId: ClientId, deviceId: DeviceId) => {
+    const key = `${userId}::${clientId}::${deviceId}`;
+    const entry = this.deviceDiag.get(key) ?? {};
+    this.deviceDiag.set(key, entry);
+    return entry;
+  };
   private clientLastSeen = new Map<string, number>();
   private deviceState: Record<
     UserId,
@@ -247,7 +263,12 @@ export class DeviceRepository extends EventEmitter<{
    * as they may be battery-powered and wake only to push data.
    */
   private isDeviceControllable = (device: HomedDevice): boolean =>
-    device.endpoints.some(endpoint => hasControlCapabilities(endpoint.exposes));
+    device.endpoints.some(endpoint =>
+      // action/scene alone = battery remote: silent until a button is pressed
+      hasControlCapabilities(
+        endpoint.exposes.filter(e => e !== "action" && e !== "scene")
+      )
+    );
 
   /**
    * Marks any device offline whose last device/ message arrived longer ago
@@ -266,6 +287,7 @@ export class DeviceRepository extends EventEmitter<{
         ];
 
         this.deviceLastSeen.delete(key);
+        this.diag(userId, clientId, deviceId).watchdogAt = now;
         this.updateDeviceState(userId, clientId, deviceId, {
           available: false,
         });
@@ -523,6 +545,11 @@ export class DeviceRepository extends EventEmitter<{
       return;
     }
 
+    Object.assign(this.diag(userId, clientId, deviceId), {
+      statusAt: Date.now(),
+      statusValue: available,
+    });
+
     // Only track controllable devices in the watchdog.
     // Non-controllable devices (sensors) may be battery-powered and sleep,
     // sending data only when they wake up. Tracking them would cause false offline alerts.
@@ -558,6 +585,25 @@ export class DeviceRepository extends EventEmitter<{
     const device = this.getDevice(userId, clientId, deviceId);
     if (!device) {
       return;
+    }
+
+    // An fd/ state message is a liveness signal: refresh the watchdog and
+    // bring back a device the watchdog (and only the watchdog) marked offline.
+    if (!("available" in state)) {
+      const diag = this.diag(userId, clientId, deviceId);
+      diag.stateAt = Date.now();
+      if (this.isDeviceControllable(device)) {
+        this.deviceLastSeen.set(
+          `${userId}::${clientId}::${deviceId}`,
+          diag.stateAt
+        );
+      }
+      if (
+        diag.watchdogAt !== undefined &&
+        diag.watchdogAt >= (diag.statusAt ?? 0)
+      ) {
+        state = { ...state, available: true };
+      }
     }
 
     // Get current state
@@ -628,6 +674,26 @@ export class DeviceRepository extends EventEmitter<{
       .filter(([, devices]) => devices.length > 0)
       .map(([clientId]) => clientId as ClientId);
   };
+
+  /**
+   * Per-device availability diagnostics for the dashboard: when we last got a
+   * device/ status vs. fd/ state message, and when the watchdog last fired.
+   */
+  getDiagnostics = (userId: UserId) =>
+    this.getDevices(userId).map(({ device, clientId }) => {
+      const diag = this.deviceDiag.get(`${userId}::${clientId}::${device.key}`);
+      return {
+        clientId,
+        clientSyncedAt: this.clientLastSeen.get(`${userId}::${clientId}`),
+        deviceId: device.key,
+        name: device.name,
+        model: [device.manufacturer, device.model].filter(Boolean).join(" "),
+        controllable: this.isDeviceControllable(device),
+        available:
+          this.deviceState[userId]?.[clientId]?.[device.key]?.available,
+        ...diag,
+      };
+    });
 
   // Used only for debugging
   getDevicesStates = (userId: UserId) =>
