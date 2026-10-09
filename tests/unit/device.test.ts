@@ -695,222 +695,6 @@ describe("DeviceRepository", () => {
     });
   });
 
-  // Watchdog timeout used across all availability watchdog tests.
-  // interval = min(30/3, 10) * 1000 = 10_000 ms
-  const WATCHDOG_TIMEOUT_S = 30;
-  const WATCHDOG_INTERVAL_MS = 10_000;
-
-  describe("availability watchdog", () => {
-    beforeEach(() => {
-      vi.useFakeTimers();
-      repository = new DeviceRepository(
-        createMockUserRepository(),
-        WATCHDOG_TIMEOUT_S
-      );
-    });
-
-    afterEach(() => {
-      vi.useRealTimers();
-    });
-
-    it("marks a device offline after it stops sending device/ messages", () => {
-      const device = createMockDevice();
-      repository.syncClientDevices(userId, uniqueId, [device]);
-      repository.setDeviceAvailable(userId, uniqueId, deviceId, true);
-
-      // Advance past the timeout — watchdog fires at next interval tick
-      vi.advanceTimersByTime(WATCHDOG_TIMEOUT_S * 1000 + WATCHDOG_INTERVAL_MS);
-
-      const state = repository.getDeviceState(userId, deviceId, uniqueId);
-      expect(state?.available).toBe(false);
-    });
-
-    it("emits a single deviceStateChanged event when marking offline", () => {
-      const device = createMockDevice();
-      repository.syncClientDevices(userId, uniqueId, [device]);
-      repository.setDeviceAvailable(userId, uniqueId, deviceId, true);
-
-      const listener = vi.fn();
-      repository.on("deviceStateChanged", listener);
-
-      vi.advanceTimersByTime(WATCHDOG_TIMEOUT_S * 1000 + WATCHDOG_INTERVAL_MS);
-
-      expect(listener).toHaveBeenCalledTimes(1);
-      expect(listener).toHaveBeenCalledWith(
-        expect.objectContaining({
-          newState: expect.objectContaining({ available: false }),
-        })
-      );
-    });
-
-    it("does not mark a device offline if device/ messages arrive within the timeout", () => {
-      const device = createMockDevice();
-      repository.syncClientDevices(userId, uniqueId, [device]);
-      repository.setDeviceAvailable(userId, uniqueId, deviceId, true);
-
-      // Refresh before the timeout expires
-      vi.advanceTimersByTime(WATCHDOG_TIMEOUT_S * 1000 - 1);
-      repository.setDeviceAvailable(userId, uniqueId, deviceId, true);
-
-      // Advance well past the original timestamp — but lastSeen was just refreshed
-      vi.advanceTimersByTime(WATCHDOG_TIMEOUT_S * 1000);
-
-      const state = repository.getDeviceState(userId, deviceId, uniqueId);
-      expect(state?.available).toBe(true);
-    });
-
-    it("refreshes the watchdog timer on device/offline messages too", () => {
-      // Even a device/offline message is a liveness signal — homed is still
-      // reporting, so the watchdog should not fire on top of it.
-      const device = createMockDevice();
-      repository.syncClientDevices(userId, uniqueId, [device]);
-      repository.setDeviceAvailable(userId, uniqueId, deviceId, true);
-
-      vi.advanceTimersByTime(WATCHDOG_TIMEOUT_S * 1000 - 1);
-      // homed sends an explicit offline
-      repository.setDeviceAvailable(userId, uniqueId, deviceId, false);
-
-      // Advance further — the watchdog should not override the explicit offline
-      // with another offline (no extra event), and the timer was refreshed
-      const listener = vi.fn();
-      repository.on("deviceStateChanged", listener);
-
-      vi.advanceTimersByTime(WATCHDOG_TIMEOUT_S * 1000);
-
-      // No additional event: device is already offline and watchdog backed off
-      expect(listener).not.toHaveBeenCalled();
-    });
-
-    it("recovers a device when device/online arrives after watchdog offline", () => {
-      const device = createMockDevice();
-      repository.syncClientDevices(userId, uniqueId, [device]);
-      repository.setDeviceAvailable(userId, uniqueId, deviceId, true);
-
-      // Let the watchdog fire
-      vi.advanceTimersByTime(WATCHDOG_TIMEOUT_S * 1000 + WATCHDOG_INTERVAL_MS);
-      expect(
-        repository.getDeviceState(userId, deviceId, uniqueId)?.available
-      ).toBe(false);
-
-      // homed sends device/online
-      repository.setDeviceAvailable(userId, uniqueId, deviceId, true);
-
-      expect(
-        repository.getDeviceState(userId, deviceId, uniqueId)?.available
-      ).toBe(true);
-    });
-
-    it("treats fd/ state messages as liveness", () => {
-      repository.syncClientDevices(userId, uniqueId, [createMockDevice()]);
-      repository.setDeviceAvailable(userId, uniqueId, deviceId, true);
-
-      // Only fd/ state arrives (no device/ messages) for 2 timeouts
-      for (let i = 0; i < 4; i++) {
-        vi.advanceTimersByTime(WATCHDOG_TIMEOUT_S * 500);
-        repository.updateDeviceState(userId, uniqueId, deviceId, {
-          status: "on",
-          level: i,
-        } as never);
-      }
-
-      expect(
-        repository.getDeviceState(userId, deviceId, uniqueId)?.available
-      ).toBe(true);
-    });
-
-    it("recovers a watchdog-offline device on fd/ state, but not a disconnected one", () => {
-      repository.syncClientDevices(userId, uniqueId, [createMockDevice()]);
-      repository.setDeviceAvailable(userId, uniqueId, deviceId, true);
-      vi.advanceTimersByTime(WATCHDOG_TIMEOUT_S * 1000 + WATCHDOG_INTERVAL_MS);
-      repository.updateDeviceState(userId, uniqueId, deviceId, {
-        status: "on",
-      } as never);
-      expect(
-        repository.getDeviceState(userId, deviceId, uniqueId)?.available
-      ).toBe(true);
-
-      repository.setDevicesOffline(userId, uniqueId);
-      repository.updateDeviceState(userId, uniqueId, deviceId, {
-        status: "off",
-      } as never);
-      expect(
-        repository.getDeviceState(userId, deviceId, uniqueId)?.available
-      ).toBe(false);
-    });
-
-    it("does not watch battery remotes that only expose action", () => {
-      const remote = createMockDevice();
-      remote.endpoints = [{ id: 0, exposes: ["battery", "action"] }];
-      repository.syncClientDevices(userId, uniqueId, [remote]);
-      repository.setDeviceAvailable(userId, uniqueId, deviceId, true);
-
-      vi.advanceTimersByTime(WATCHDOG_TIMEOUT_S * 1000 * 3);
-
-      expect(
-        repository.getDeviceState(userId, deviceId, uniqueId)?.available
-      ).toBe(true);
-    });
-
-    it("does not mark a device offline more than once per stale entry", () => {
-      const device = createMockDevice();
-      repository.syncClientDevices(userId, uniqueId, [device]);
-      repository.setDeviceAvailable(userId, uniqueId, deviceId, true);
-
-      const listener = vi.fn();
-      repository.on("deviceStateChanged", listener);
-
-      // Advance far enough for multiple watchdog ticks
-      vi.advanceTimersByTime(
-        WATCHDOG_TIMEOUT_S * 1000 + WATCHDOG_INTERVAL_MS * 3
-      );
-
-      // Should have fired exactly once (watchdog deletes the key after first hit)
-      const offlineCalls = listener.mock.calls.filter(
-        ([e]) => e.newState?.available === false
-      );
-      expect(offlineCalls).toHaveLength(1);
-    });
-
-    it("does not affect devices belonging to other users", () => {
-      const user2 = createUserId("user2");
-      const device1 = createMockDevice();
-      const device2 = createMockDevice();
-
-      repository.syncClientDevices(userId, uniqueId, [device1]);
-      repository.syncClientDevices(user2, uniqueId, [device2]);
-
-      repository.setDeviceAvailable(userId, uniqueId, deviceId, true);
-      // user2's device never gets a device/ message — no lastSeen entry
-
-      vi.advanceTimersByTime(WATCHDOG_TIMEOUT_S * 1000 + WATCHDOG_INTERVAL_MS);
-
-      // user1's device should be marked offline (its lastSeen expired)
-      expect(
-        repository.getDeviceState(userId, deviceId, uniqueId)?.available
-      ).toBe(false);
-      // user2's device has no lastSeen entry so watchdog never touches it
-      expect(
-        repository.getDeviceState(user2, deviceId, uniqueId)?.available
-      ).toBeUndefined();
-    });
-
-    it("cleans up watchdog state when client devices are removed", () => {
-      const device = createMockDevice();
-      repository.syncClientDevices(userId, uniqueId, [device]);
-      repository.setDeviceAvailable(userId, uniqueId, deviceId, true);
-
-      repository.removeClientDevices(userId, uniqueId);
-
-      const listener = vi.fn();
-      repository.on("deviceStateChanged", listener);
-
-      // Watchdog should not fire for removed devices
-      vi.advanceTimersByTime(WATCHDOG_TIMEOUT_S * 1000 + WATCHDOG_INTERVAL_MS);
-
-      expect(listener).not.toHaveBeenCalled();
-    });
-  });
-
   describe("syncClientDevices — endpointsNeeded (third return value)", () => {
     it("is empty when added devices have no prior cache entry", () => {
       const device = createMockDevice();
@@ -1132,7 +916,6 @@ describe("DeviceRepository", () => {
       vi.useFakeTimers();
       repository = new DeviceRepository(
         createMockUserRepository(),
-        0,
         STALE_TIMEOUT_S
       );
     });
@@ -1237,7 +1020,6 @@ describe("DeviceRepository", () => {
       vi.useRealTimers();
       const repoWithoutCleanup = new DeviceRepository(
         createMockUserRepository(),
-        0,
         0
       );
       const device = createMockDevice();
@@ -1271,7 +1053,6 @@ describe("DeviceRepository", () => {
       vi.useFakeTimers();
       repository = new DeviceRepository(
         createMockUserRepository(),
-        0,
         STALE_TIMEOUT_S
       );
 
@@ -1296,7 +1077,6 @@ describe("DeviceRepository", () => {
       vi.useFakeTimers();
       repository = new DeviceRepository(
         createMockUserRepository(),
-        0,
         STALE_TIMEOUT_S
       );
 
@@ -1323,7 +1103,6 @@ describe("DeviceRepository", () => {
       vi.useFakeTimers();
       repository = new DeviceRepository(
         createMockUserRepository(),
-        0,
         STALE_TIMEOUT_S
       );
 
@@ -1347,7 +1126,6 @@ describe("DeviceRepository", () => {
       vi.useFakeTimers();
       repository = new DeviceRepository(
         createMockUserRepository(),
-        0,
         STALE_TIMEOUT_S
       );
 

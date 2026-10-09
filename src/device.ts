@@ -16,7 +16,7 @@ export type DeviceId = string & { readonly __deviceId: unique symbol };
 /**
  * Exposes that indicate a device can be actively controlled (actuators)
  * vs passive sensors that only report data.
- * Used for device type detection and watchdog monitoring.
+ * Used for device type detection.
  */
 export const CONTROLLABLE_EXPOSES = new Set([
   // Switches and relays
@@ -137,7 +137,6 @@ export class DeviceRepository extends EventEmitter<{
   executeCommand: [ExecuteCommandEvent];
 }> {
   private devices: Record<UserId, Record<ClientId, HomedDevice[]>> = {};
-  private deviceLastSeen = new Map<string, number>();
   // Diagnostics only (shown on the dashboard); timestamps in epoch ms
   private deviceDiag = new Map<
     string,
@@ -145,7 +144,6 @@ export class DeviceRepository extends EventEmitter<{
       statusAt?: number; // last device/ status message (or disconnect/sync)
       statusValue?: boolean;
       stateAt?: number; // last fd/ state message
-      watchdogAt?: number; // last time the inactivity watchdog fired
     }
   >();
   private diag = (userId: UserId, clientId: ClientId, deviceId: DeviceId) => {
@@ -165,27 +163,12 @@ export class DeviceRepository extends EventEmitter<{
 
   constructor(
     userRepository: UserRepository,
-    availabilityTimeout: number = 0,
     staleClientTimeout: number = 2 * 24 * 60 * 60
   ) {
     // Default: 2 days
     super();
     this.userRepository = userRepository;
     this.staleClientTimeout = staleClientTimeout;
-
-    if (availabilityTimeout > 0) {
-      const intervalMs = Math.min(availabilityTimeout / 3, 10) * 1000;
-      setInterval(
-        () => this.markDevicesUnavailable(availabilityTimeout),
-        intervalMs
-      ).unref(); // Don't let the interval keep the process alive artificially
-
-      log.info(
-        `Device inactivity watchdog started (timeout: ${
-          availabilityTimeout
-        }s, interval: ${intervalMs / 1000}s)`
-      );
-    }
 
     if (staleClientTimeout > 0) {
       // Run cleanup every hour or 1/24th of timeout, whichever is smaller
@@ -256,44 +239,6 @@ export class DeviceRepository extends EventEmitter<{
       }
     }
   }
-
-  /**
-   * Checks if a device is controllable (has action-capable exposes).
-   * Non-controllable devices (sensors only) should not be monitored by the watchdog
-   * as they may be battery-powered and wake only to push data.
-   */
-  private isDeviceControllable = (device: HomedDevice): boolean =>
-    device.endpoints.some(endpoint =>
-      // action/scene alone = battery remote: silent until a button is pressed
-      hasControlCapabilities(
-        endpoint.exposes.filter(e => e !== "action" && e !== "scene")
-      )
-    );
-
-  /**
-   * Marks any device offline whose last device/ message arrived longer ago
-   * than `timeout` seconds.
-   */
-  private markDevicesUnavailable = (timeout: number) => {
-    const now = Date.now();
-    this.deviceLastSeen
-      .entries()
-      .filter(([, lastSeen]) => now - lastSeen >= timeout * 1000)
-      .forEach(([key]) => {
-        const [userId, clientId, deviceId] = key.split("::") as [
-          UserId,
-          ClientId,
-          DeviceId,
-        ];
-
-        this.deviceLastSeen.delete(key);
-        this.diag(userId, clientId, deviceId).watchdogAt = now;
-        this.updateDeviceState(userId, clientId, deviceId, {
-          available: false,
-        });
-        log.debug("watchdog.offline", { deviceId });
-      });
-  };
 
   /**
    * Removes devices from clients that haven't been seen in `timeout` seconds.
@@ -431,13 +376,6 @@ export class DeviceRepository extends EventEmitter<{
         });
       }
     }
-
-    // Clean up watchdog state
-    const prefix = clientId ? `${userId}::${clientId}::` : `${userId}::`;
-    this.deviceLastSeen
-      .keys()
-      .filter(key => key.startsWith(prefix))
-      .forEach(key => this.deviceLastSeen.delete(key));
   };
 
   syncClientDevices = (
@@ -474,8 +412,8 @@ export class DeviceRepository extends EventEmitter<{
 
     // Initialise availability only for newly added devices.
     // Existing devices have their availability managed by device/ status
-    // messages and the inactivity watchdog; overwriting it here on every
-    // periodic status broadcast would fight both those signals.
+    // messages; overwriting it here on every periodic status broadcast would
+    // fight that signal.
     addedDevices.forEach(device => {
       if (device.available !== undefined) {
         this.setDeviceAvailable(userId, clientId, device.key, device.available);
@@ -550,18 +488,6 @@ export class DeviceRepository extends EventEmitter<{
       statusValue: available,
     });
 
-    // Only track controllable devices in the watchdog.
-    // Non-controllable devices (sensors) may be battery-powered and sleep,
-    // sending data only when they wake up. Tracking them would cause false offline alerts.
-    if (this.isDeviceControllable(device)) {
-      // Any device/ message — online or offline — counts as a liveness signal.
-      // Refreshing the watchdog timer here means the watchdog only fires if homed
-      // stops sending device/ messages entirely, regardless of reported status.
-      this.deviceLastSeen.set(
-        `${userId}::${clientId}::${deviceId}`,
-        Date.now()
-      );
-    }
     // Update availability as state - this flows through normal state change detection
     this.updateDeviceState(userId, clientId, deviceId, { available });
 
@@ -587,23 +513,8 @@ export class DeviceRepository extends EventEmitter<{
       return;
     }
 
-    // An fd/ state message is a liveness signal: refresh the watchdog and
-    // bring back a device the watchdog (and only the watchdog) marked offline.
     if (!("available" in state)) {
-      const diag = this.diag(userId, clientId, deviceId);
-      diag.stateAt = Date.now();
-      if (this.isDeviceControllable(device)) {
-        this.deviceLastSeen.set(
-          `${userId}::${clientId}::${deviceId}`,
-          diag.stateAt
-        );
-      }
-      if (
-        diag.watchdogAt !== undefined &&
-        diag.watchdogAt >= (diag.statusAt ?? 0)
-      ) {
-        state = { ...state, available: true };
-      }
+      this.diag(userId, clientId, deviceId).stateAt = Date.now();
     }
 
     // Get current state
@@ -677,7 +588,7 @@ export class DeviceRepository extends EventEmitter<{
 
   /**
    * Per-device availability diagnostics for the dashboard: when we last got a
-   * device/ status vs. fd/ state message, and when the watchdog last fired.
+   * device/ status vs. fd/ state message.
    */
   getDiagnostics = (userId: UserId) =>
     this.getDevices(userId).map(({ device, clientId }) => {
@@ -688,7 +599,6 @@ export class DeviceRepository extends EventEmitter<{
         deviceId: device.key,
         name: device.name,
         model: [device.manufacturer, device.model].filter(Boolean).join(" "),
-        controllable: this.isDeviceControllable(device),
         available:
           this.deviceState[userId]?.[clientId]?.[device.key]?.available,
         ...diag,

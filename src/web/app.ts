@@ -191,18 +191,6 @@ export class WebApp {
         passport.authenticate("google-oauth20", { keepSessionInfo: true }),
         this.handleAuthCallback
       )
-      .get(
-        "/diagnostics/devices",
-        passport.authenticate("session"),
-        ensureLoggedIn("/login"),
-        (req, res) =>
-          res.json({
-            now: Date.now(),
-            devices: this.deviceRepository.getDiagnostics(
-              (req as Express.AuthenticatedRequest).user.id
-            ),
-          })
-      )
       .get("/logout", (req, res, next) =>
         req.logOut(err => (err ? next(err) : res.redirect("/login")))
       )

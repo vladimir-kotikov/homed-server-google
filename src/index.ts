@@ -20,7 +20,6 @@ const usersRepository = UserRepository.open(databaseUrl, appConfig.jwtSecret, {
 
 const deviceRepository = new DeviceRepository(
   usersRepository,
-  appConfig.deviceUnavailableTimeout,
   appConfig.clientStaleTimeout
 );
 

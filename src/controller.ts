@@ -302,10 +302,6 @@ export class HomedServerController {
     };
 
     clearTimeout(this.offlineTimers.get(key));
-    if (this.disconnectGraceMs <= 0) {
-      markOffline();
-      return;
-    }
     this.offlineTimers.set(
       key,
       setTimeout(markOffline, this.disconnectGraceMs).unref()
@@ -489,7 +485,6 @@ export class HomedServerController {
     });
 
     // Update device state in cache with endpoint-specific data
-    // (this implicitly records device as seen for the inactivity watchdog)
     this.deviceCache.updateDeviceState(
       client.user.id,
       client.uniqueId,

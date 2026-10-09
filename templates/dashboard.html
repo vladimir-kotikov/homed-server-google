@@ -85,13 +85,13 @@
                 Device Diagnostics (<%= diagnostics.length %>)
             </summary>
             <section class="collapsible-content" style="overflow-x: auto;">
-                <p>Ages are relative to page load. JSON: <a href="/diagnostics/devices">/diagnostics/devices</a></p>
+                <p>Ages are relative to page load.</p>
                 <% const age = t => t === undefined ? '–' : Math.round((now - t) / 1000) + 's'; %>
                 <table style="width: 100%; font-size: 0.8rem; border-collapse: collapse;">
                     <thead>
                         <tr style="text-align: left;">
-                            <th>Device</th><th>Client</th><th>Avail.</th><th>Ctrl</th>
-                            <th>device/ msg</th><th>fd/ state</th><th>Watchdog fired</th><th>Client synced</th>
+                            <th>Device</th><th>Client</th><th>Avail.</th>
+                            <th>device/ msg</th><th>fd/ state</th><th>Client synced</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -100,10 +100,8 @@
                             <td title="<%= d.deviceId %>"><%= d.name %><br><small><%= d.model %></small></td>
                             <td><%= d.clientId %></td>
                             <td><%= d.available === undefined ? '?' : d.available ? 'online' : 'OFFLINE' %></td>
-                            <td><%= d.controllable ? 'yes' : 'no' %></td>
                             <td><%= age(d.statusAt) %><%= d.statusValue === undefined ? '' : d.statusValue ? ' (online)' : ' (offline)' %></td>
                             <td><%= age(d.stateAt) %></td>
-                            <td><%= age(d.watchdogAt) %></td>
                             <td><%= age(d.clientSyncedAt) %></td>
                         </tr>
                         <% }); %>
