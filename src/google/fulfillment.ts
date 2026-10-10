@@ -3,7 +3,6 @@ import { match, P } from "ts-pattern";
 import type { User, UserId, UserRepository } from "../db/repository.ts";
 import type { DeviceRepository, DeviceStateChangeEvent } from "../device.ts";
 import { createLogger } from "../logger.ts";
-import { safeParse } from "../utility.ts";
 import {
   getStateUpdates,
   mapExecutionRequest,
@@ -154,13 +153,17 @@ export class FulfillmentController {
         });
     });
 
-  handleFulfillment = async (
+  handleFulfillment = (
     user: User,
     requestData: unknown
   ): Promise<SmartHomeResponse> =>
-    safeParse(requestData, SmartHomeRequestSchema)
-      .toPromise()
-      .then(
+    match(SmartHomeRequestSchema.safeParse(requestData))
+      .with({ success: false }, ({ error }) => {
+        log.error("fulfillment.error", error, { reason: "invalid_request" });
+        throw new RequestError("Invalid Smart Home request");
+      })
+      .with(
+        { success: true, data: P.select() },
         ({ requestId, inputs: [input] }) =>
           match(input)
             .with({ intent: "action.devices.SYNC" }, () =>
@@ -177,12 +180,9 @@ export class FulfillmentController {
               this.handleDisconnect(user)
             )
             .exhaustive()
-            .then(payload => ({ requestId, payload })),
-        error => {
-          log.error("fulfillment.error", error, { reason: "invalid_request" });
-          throw new RequestError("Invalid Smart Home request");
-        }
-      );
+            .then(payload => ({ requestId, payload }))
+      )
+      .exhaustive();
 
   private handleSync = async (user: User): Promise<SyncResponsePayload> => {
     // Google drops devices missing from SYNC (and their room assignments), so

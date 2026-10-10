@@ -1,9 +1,14 @@
 import { EventEmitter } from "node:events";
 import { Socket } from "node:net";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { User } from "../../../src/db/repository.ts";
 import { ClientConnection } from "../../../src/homed/client.ts";
-import { readPacket, unescapePacket } from "../../../src/homed/protocol.ts";
+import { AES128CBC } from "../../../src/homed/crypto.ts";
+import {
+  escapePacket,
+  readPacket,
+  unescapePacket,
+} from "../../../src/homed/protocol.ts";
 import type { ServerMessage } from "../../../src/homed/schema.ts";
 
 // Mock Socket
@@ -301,6 +306,129 @@ describe("ClientConnection", () => {
 
       // Now should have handshake response
       expect(mockSocket.writtenData.length).toBe(1);
+    });
+  });
+  describe("incoming messages", () => {
+    const PRIME = 0xff_ff_ff_fbn;
+    const GENERATOR = 2n;
+    const CLIENT_SECRET = 123_456n;
+
+    const modPow = (base: bigint, exponent: bigint, modulus: bigint) => {
+      let result = 1n;
+      for (let b = base % modulus, e = exponent; e > 0n; e >>= 1n) {
+        if (e & 1n) result = (result * b) % modulus;
+        b = (b * b) % modulus;
+      }
+      return result;
+    };
+
+    // Acts like a real homed client: sends g^secret, derives the AES key from
+    // the server's public key, then encrypts and frames messages
+    let cipher: AES128CBC;
+    const send = (payload: string | object) => {
+      const text =
+        typeof payload === "string" ? payload : JSON.stringify(payload);
+      const packet = escapePacket(cipher.encrypt(Buffer.from(text, "utf8")));
+      mockSocket.emit(
+        "data",
+        Buffer.concat([Buffer.from([0x42]), packet, Buffer.from([0x43])])
+      );
+    };
+
+    beforeEach(() => {
+      const handshake = Buffer.allocUnsafe(12);
+      handshake.writeUInt32BE(Number(PRIME), 0);
+      handshake.writeUInt32BE(Number(GENERATOR), 4);
+      handshake.writeUInt32BE(
+        Number(modPow(GENERATOR, CLIENT_SECRET, PRIME)),
+        8
+      );
+      mockSocket.emit("data", handshake);
+
+      const serverPublic = BigInt(mockSocket.writtenData[0].readUInt32BE(0));
+      const sharedSecret = Buffer.alloc(4);
+      sharedSecret.writeUInt32BE(
+        Number(modPow(serverPublic, CLIENT_SECRET, PRIME)),
+        0
+      );
+      cipher = new AES128CBC(sharedSecret);
+    });
+
+    it("sets the unique ID and emits the token for an auth message", () => {
+      const onToken = vi.fn();
+      client.on("token", onToken);
+
+      send({ uniqueId: "client-1", token: "secret" });
+
+      expect(client.uniqueId).toBe("client-1");
+      expect(onToken).toHaveBeenCalledExactlyOnceWith("secret");
+    });
+
+    it("emits a topic message by its first topic segment, once authorized", () => {
+      const onStatus = vi.fn();
+      client.on("status", onStatus);
+      client.on("token", () => {});
+      send({ uniqueId: "client-1", token: "secret" });
+      client.authorize({ id: "user-1" } as User);
+
+      send({ topic: "status/zigbee", message: { devices: [] } });
+
+      expect(onStatus).toHaveBeenCalledExactlyOnceWith("status/zigbee", {
+        devices: [],
+      });
+    });
+
+    it("accepts a topic message without a body (retained tombstone)", () => {
+      const onExpose = vi.fn();
+      client.on("expose", onExpose);
+      client.on("token", () => {});
+      send({ uniqueId: "client-1", token: "secret" });
+      client.authorize({ id: "user-1" } as User);
+
+      send({ topic: "expose/zigbee/abc" });
+
+      expect(onExpose).toHaveBeenCalledExactlyOnceWith(
+        "expose/zigbee/abc",
+        undefined
+      );
+    });
+
+    it("closes the connection on a message that is not valid JSON", () => {
+      const onClose = vi.fn();
+      client.on("close", onClose);
+
+      send("not json");
+
+      expect(onClose).toHaveBeenCalled();
+    });
+
+    it("buffers a message that arrives while the token lookup is still pending, instead of dropping it", () => {
+      const onStatus = vi.fn();
+      client.on("status", onStatus);
+      client.on("token", () => {});
+      send({ uniqueId: "client-1", token: "secret" });
+
+      // Simulates the real race: the controller's async getByToken() hasn't
+      // resolved yet (this.user is still unset), so this must not be
+      // processed or dropped — it has to wait in the buffer.
+      send({ topic: "status/zigbee", message: { devices: [] } });
+      expect(onStatus).not.toHaveBeenCalled();
+
+      // authorize() (called once the DB lookup resolves) replays the buffer
+      client.authorize({ id: "user-1" } as User);
+
+      expect(onStatus).toHaveBeenCalledExactlyOnceWith("status/zigbee", {
+        devices: [],
+      });
+    });
+
+    it("closes the connection on a message that matches no schema", () => {
+      const onClose = vi.fn();
+      client.on("close", onClose);
+
+      send({ unexpected: true });
+
+      expect(onClose).toHaveBeenCalled();
     });
   });
 });

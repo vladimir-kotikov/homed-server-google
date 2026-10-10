@@ -3,6 +3,7 @@
  * Converts between Homed device capabilities and Google Smart Home format
  */
 
+import { isDeepStrictEqual } from "node:util";
 import type { UserId } from "../db/repository.ts";
 import type {
   DeviceId,
@@ -14,7 +15,7 @@ import { hasControlCapabilities } from "../device.ts";
 import type { ClientId } from "../homed/client.ts";
 import type { EndpointOptions } from "../homed/schema.ts";
 import type { CommandMessage, DeviceState } from "../homed/types.ts";
-import { fastDeepEqual, filterDict, mergeDicts } from "../utility.ts";
+import { filterDict } from "../utility.ts";
 import type { GoogleCommand } from "./schema.ts";
 import { TRAIT_MAPPERS } from "./traits.ts";
 import type {
@@ -453,7 +454,7 @@ const mapToGoogleDevice = (
   // Collect trait attributes
   const attributes = traits
     .map(trait => TRAIT_MAPPERS[trait]?.getAttributes(exposes, options))
-    .reduce(mergeDicts, {});
+    .reduce((merged, item) => Object.assign(merged, item), {});
 
   return {
     id: googleDeviceId,
@@ -518,8 +519,11 @@ export const mapToGoogleDevices = (
       // virtual device it's just the single endpoint's exposes
       new Set(device.endpoints.flatMap(ep => ep.exposes)).values().toArray(),
       device.endpoints
-        .map(ep => ep.options)
-        .reduce(mergeDicts, {} as EndpointOptions),
+        .map(ep => ep.options ?? {})
+        .reduce(
+          (merged, item) => Object.assign(merged, item),
+          {} as EndpointOptions
+        ),
       device.endpointId
     )
   );
@@ -541,15 +545,18 @@ export const mapToGoogleState = (
     .toArray();
 
   const allOptions = homedDevice.endpoints
-    .map(ep => ep.options)
-    .reduce(mergeDicts, {} as EndpointOptions);
+    .map(ep => ep.options ?? {})
+    .reduce(
+      (merged, item) => Object.assign(merged, item),
+      {} as EndpointOptions
+    );
 
   return {
     online: (deviceState.available as boolean | undefined) ?? true,
     // Get state for each supported trait - use properly typed TraitState union
     ...mapExposesToTraits(allExposes, allOptions)
-      .map(trait => TRAIT_MAPPERS[trait]?.getState(deviceState))
-      .reduce(mergeDicts, {}),
+      .map(trait => TRAIT_MAPPERS[trait]?.getState(deviceState) ?? {})
+      .reduce((merged, item) => Object.assign(merged, item), {}),
   };
 };
 
@@ -585,7 +592,7 @@ export const mapToGoogleStates = (
       const googleDeviceId = toGoogleDeviceId(clientId, key, endpointId);
       return { [googleDeviceId]: googleState };
     })
-    .reduce(mergeDicts, {});
+    .reduce((merged, item) => Object.assign(merged, item), {});
 
 /**
  * Prepare state report for Google Home Graph
@@ -626,7 +633,7 @@ export const getStateUpdates = (
     newStates,
     (googleDeviceId, newGoogleState) =>
       synced.has(googleDeviceId as GoogleDeviceId) &&
-      !fastDeepEqual(
+      !isDeepStrictEqual(
         newGoogleState,
         prevStates[googleDeviceId as GoogleDeviceId]
       )
@@ -652,8 +659,8 @@ export const mapToHomedCommand = (
     .toArray();
 
   const allOptions = homedDevice.endpoints
-    .map(ep => ep.options)
-    .reduce(mergeDicts, {});
+    .map(ep => ep.options ?? {})
+    .reduce((merged, item) => Object.assign(merged, item), {});
 
   // Extract endpoint ID if device has been filtered to single endpoint
   // Only use endpoint ID in topic if its a truly multi-endpoint scenario

@@ -6,7 +6,7 @@ import { Socket } from "node:net";
 import type { ClientToken } from "../db/repository.ts";
 import { type DeviceId } from "../device.ts";
 import { createLogger } from "../logger.ts";
-import { Result, safeParse, truncate } from "../utility.ts";
+import { truncate } from "../utility.ts";
 import { connectionContextFromSocket } from "./context.ts";
 import { AES128CBC } from "./crypto.ts";
 import { escapePacket, readPacket, unescapePacket } from "./protocol.ts";
@@ -18,8 +18,21 @@ import {
   type DeviceStatusMessage,
   type ServerMessage,
 } from "./schema.ts";
+import z from "zod";
+import { match, P } from "ts-pattern";
 
 const log = createLogger("client");
+
+const tryCatch = <T, U>(
+  fn: () => T,
+  onError?: (error: unknown) => U
+): T | U | undefined => {
+  try {
+    return fn();
+  } catch (error) {
+    return onError?.(error);
+  }
+};
 
 export type ClientId = string & { readonly __uniqueId: unique symbol };
 
@@ -137,35 +150,69 @@ export class ClientConnection<
         span => {
           assert(packet, "Packet is undefined despite loop condition.");
 
-          const parsed = Result.try(packet => {
-            log.debug("message.incoming", { size: packet.length });
-            span.setAttribute("messaging.message.body.size", packet.length);
-            const decrypted = this.cipher!.decrypt(unescapePacket(packet));
-            return JSON.parse(decrypted.toString("utf8"));
-          }, packet);
+          log.debug("message.incoming", { size: packet.length });
+          span.setAttribute("messaging.message.body.size", packet.length);
 
-          const handled = !this.uniqueId
-            ? this.handleAuthMessage(parsed)
-            : this.user
-              ? this.handleClientMessage(parsed, span)
-              : // Stop processing if not yet fully authorized (both uniqueId
-                // and user must be set). Messages will remain in buffer and be
-                // processed after authorization completes
-                Result.of(false);
+          const decrypted = this.cipher!.decrypt(
+            unescapePacket(packet)
+          ).toString("utf8");
 
-          return handled.catch(err => {
-            span.setStatus({
-              code: SPAN_STATUS_ERROR,
-              message: "message_error",
-            });
-            log.error("message.process", err);
-            this.close();
+          // Still waiting for the async token lookup (clientTokenReceived) to
+          // resolve: leave the packet in the buffer rather than process or
+          // drop it — authorize() replays the buffer once it completes.
+          if (this.uniqueId && !this.user) {
             return false;
-          });
+          }
+
+          const p = z.safeParse(
+            z.union([ClientAuthMessageSchema, ClientMessageSchema]),
+            // Invalid JSON becomes `undefined`, which the schema then rejects
+            tryCatch(() => JSON.parse(decrypted))
+          );
+
+          return match(p)
+            .returnType<boolean>()
+            .with(
+              { success: true, data: P.select({ uniqueId: P.string }) },
+              ({ token, uniqueId }) => {
+                Sentry.setContext("client", { clientId: uniqueId });
+                this.uniqueId = uniqueId as ClientId;
+                this.emit("token", token as ClientToken);
+                return true;
+              }
+            )
+            .with(
+              {
+                success: true,
+                data: P.select({ topic: P.string, message: P.optional(P.any) }),
+              },
+              ({ topic, message }) => {
+                // topic is is prefix/zigbee[/deviceAddress[/endpointId]], but to
+                // avoid hign cardinality strip device identifiers
+                const segments = topic.split("/", 2);
+                span.setAttribute(
+                  "messaging.destination.name",
+                  segments.join("/") + "/*"
+                );
+
+                this.emit(segments[0], topic, message);
+                return true;
+              }
+            )
+            .with({ success: false, error: P.select(P.any) }, error => {
+              span.setStatus({
+                code: SPAN_STATUS_ERROR,
+                message: "message_error",
+              });
+              log.error("message.process", error);
+              this.close();
+              return false;
+            })
+            .exhaustive();
         }
       );
 
-      if (result.flat() === false) {
+      if (!result) {
         break;
       }
 
@@ -173,33 +220,6 @@ export class ClientConnection<
       [packet, remainder] = readPacket(this.buf);
     }
   }
-
-  private handleAuthMessage = (message: Result<unknown>): Result<void> =>
-    message
-      .flatMap(raw => safeParse(raw, ClientAuthMessageSchema))
-      .map(({ uniqueId, token }) => {
-        Sentry.setContext("client", { clientId: uniqueId });
-        this.uniqueId = uniqueId as ClientId;
-        this.emit("token", token as ClientToken);
-      });
-
-  private handleClientMessage = (
-    parsed: Result<unknown>,
-    span: Sentry.Span
-  ): Result<void> =>
-    parsed
-      .flatMap(raw => safeParse(raw, ClientMessageSchema))
-      .map(({ topic, message }) => {
-        // topic is is prefix/zigbee[/deviceAddress[/endpointId]], but to
-        // avoid hign cardinality strip device identifiers
-        const segments = topic.split("/", 2);
-        span.setAttribute(
-          "messaging.destination.name",
-          segments.join("/") + "/*"
-        );
-
-        this.emit(segments[0], topic, message);
-      });
 
   // Public solely for testing purposes
   sendMessage(message: ServerMessage): void {

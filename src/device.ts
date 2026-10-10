@@ -1,11 +1,11 @@
 import * as Sentry from "@sentry/node";
 import { EventEmitter } from "node:events";
+import { isDeepStrictEqual } from "node:util";
 import type { UserId, UserRepository } from "./db/repository.ts";
 import type { ClientId } from "./homed/client.ts";
 import type { EndpointOptions } from "./homed/schema.ts";
 import type { CommandMessage, DeviceState } from "./homed/types.ts";
 import { createLogger } from "./logger.ts";
-import { fastDeepEqual } from "./utility.ts";
 
 const log = createLogger("device-repo");
 const DEVICE_TOPIC_RE =
@@ -478,7 +478,7 @@ export class DeviceRepository extends EventEmitter<{
       this.pendingExposes.get(`${userId}::${clientId}::${deviceId}`)?.resolve();
       // A client reconnect re-sends unchanged capabilities; only tell Google
       // (REQUEST_SYNC) when something changed
-      const changed = !fastDeepEqual(device.endpoints, endpoints);
+      const changed = !isDeepStrictEqual(device.endpoints, endpoints);
       device.endpoints = endpoints;
       if (changed) {
         this.emit("devicesUpdated", userId);
@@ -617,7 +617,7 @@ export class DeviceRepository extends EventEmitter<{
     }
 
     // Check if state actually changed
-    if (fastDeepEqual(prevState, newState)) {
+    if (isDeepStrictEqual(prevState, newState)) {
       return;
     }
 
