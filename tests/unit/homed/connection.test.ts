@@ -101,13 +101,31 @@ describe("ClientConnection", () => {
         message: { data: "hello" },
       };
 
-      client.sendMessage(message);
+      const result = client.sendMessage(message);
 
       // Verify something was written
+      expect(result).toBe(true);
       expect(mockSocket.writtenData.length).toBeGreaterThan(1);
       const lastWrite = mockSocket.writtenData.at(-1);
       expect(lastWrite?.at(0)).toBe(0x42);
       expect(lastWrite?.at(-1)).toBe(0x43);
+    });
+
+    it("returns false without throwing when the socket is closed", () => {
+      const handshake = Buffer.allocUnsafe(12);
+      handshake.writeUInt32BE(0xff_ff_ff_fb, 0);
+      handshake.writeUInt32BE(2, 4);
+      handshake.writeUInt32BE(12_345, 8);
+      mockSocket.emit("data", handshake);
+      mockSocket.closed = true;
+
+      const result = client.sendMessage({
+        action: "publish",
+        topic: "test/topic",
+        message: { test: true },
+      });
+
+      expect(result).toBe(false);
     });
 
     it("should properly frame and escape message", () => {
@@ -238,7 +256,8 @@ describe("ClientConnection", () => {
         },
       };
 
-      client.sendMessage(message);
+      const result = client.sendMessage(message);
+      expect(result).toBe(false);
 
       // Restore
       (client as any).cipher = originalCipher;

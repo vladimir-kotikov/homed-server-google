@@ -143,13 +143,16 @@ export class HomedServerController {
         this.stop();
       });
 
-    // Subscribe to command execution events from device repository
-    this.deviceCache.on("executeCommand", this.handleExecuteCommand);
+    // Device repository calls back into this to actually attempt delivery,
+    // so executeCommand() can report whether the command really went out
+    // rather than just whether the device exists in the cache.
+    this.deviceCache.setCommandSender(this.handleExecuteCommand);
   }
 
   /**
-   * Handle command execution events from device repository
-   * Constructs topic from deviceId and endpointId, then sends to TCP client
+   * Attempt delivery of a command to the TCP client.
+   * Constructs topic from deviceId and endpointId, then sends to TCP client.
+   * Returns whether the command was actually written to the client socket.
    */
   private handleExecuteCommand = ({
     userId,
@@ -163,7 +166,7 @@ export class HomedServerController {
     deviceId: DeviceId;
     endpointId?: number;
     message: CommandMessage;
-  }): void => {
+  }): boolean => {
     const client = this.clients[userId]?.[clientId];
     Sentry.setContext("client", { clientId });
     Sentry.setContext("homed.device", { deviceId, endpointId });
@@ -172,7 +175,7 @@ export class HomedServerController {
       log.error("command.error", undefined, {
         reason: "unknown_client",
       });
-      return;
+      return false;
     }
 
     // Construct topic: td/{deviceId} or td/{deviceId}/{endpointId}
@@ -187,13 +190,14 @@ export class HomedServerController {
     });
 
     try {
-      client.sendMessage({
+      return client.sendMessage({
         action: "publish",
         topic,
         message,
       });
     } catch (error) {
       log.error("command.error", error);
+      return false;
     }
   };
 

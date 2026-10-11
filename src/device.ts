@@ -134,9 +134,12 @@ export interface ExecuteCommandEvent {
 export class DeviceRepository extends EventEmitter<{
   devicesUpdated: [UserId];
   deviceStateChanged: [DeviceStateChangeEvent];
-  executeCommand: [ExecuteCommandEvent];
 }> {
   private devices: Record<UserId, Record<ClientId, HomedDevice[]>> = {};
+  // Attempts actual delivery to the TCP client; set once by
+  // HomedServerController. executeCommand()'s result reflects whether this
+  // returns true, not just whether the device is cached.
+  private commandSender?: (event: ExecuteCommandEvent) => boolean;
   // Diagnostics only (shown on the dashboard); timestamps in epoch ms
   private deviceDiag = new Map<
     string,
@@ -682,16 +685,22 @@ export class DeviceRepository extends EventEmitter<{
   getDevicesStates = (userId: UserId) =>
     Object.values(this.deviceState[userId] ?? {});
 
+  /** Registers the function that attempts delivery of commands to clients. */
+  setCommandSender = (
+    sender: (event: ExecuteCommandEvent) => boolean
+  ): void => {
+    this.commandSender = sender;
+  };
+
   /**
    * Execute a command on a device
-   * Validates device exists and emits executeCommand event
    *
    * @param userId - User ID
    * @param clientId - Client ID
    * @param deviceId - Device ID
    * @param endpointId - Optional endpoint ID for multi-endpoint devices
    * @param message - Command message
-   * @returns true if device exists and event emitted, false otherwise
+   * @returns true if the device exists and the command was delivered to the client
    */
   executeCommand = (
     userId: UserId,
@@ -701,11 +710,12 @@ export class DeviceRepository extends EventEmitter<{
     message: CommandMessage
   ): boolean =>
     !!this.getDevice(userId, clientId, deviceId) &&
-    this.emit("executeCommand", {
+    (this.commandSender?.({
       userId,
       clientId,
       deviceId,
       endpointId,
       message,
-    });
+    }) ??
+      false);
 }

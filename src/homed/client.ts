@@ -221,8 +221,11 @@ export class ClientConnection<
     }
   }
 
-  // Public solely for testing purposes
-  sendMessage(message: ServerMessage): void {
+  /**
+   * Public solely for testing purposes.
+   * Returns whether the message was actually written to the socket.
+   */
+  sendMessage = (message: ServerMessage): boolean => {
     if (!this.cipher) {
       // This should never happen in normal operation since sendMessage
       // is only called after authorization, but we check just in case
@@ -236,7 +239,7 @@ export class ClientConnection<
         reason: "socket_closed",
         message: truncate(message, 100),
       });
-      return;
+      return false;
     }
 
     try {
@@ -250,15 +253,17 @@ export class ClientConnection<
         ...message,
         ...(message.message ? { message: truncate(message.message, 50) } : {}),
       });
+      return true;
     } catch (error) {
       this.emit("error", new Error(`Failed to send message: ${error}`));
+      return false;
     }
-  }
+  };
 
-  subscribe = (topic: string): void =>
+  subscribe = (topic: string): boolean =>
     this.sendMessage({ action: "subscribe", topic });
 
-  command = (action: string, deviceId: DeviceId): void =>
+  command = (action: string, deviceId: DeviceId): boolean =>
     // device.topic is zigbee/<device_address>, so the command goes to
     // command/zigbee topic with {device: <device_address>}
     this.sendMessage({

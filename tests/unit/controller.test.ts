@@ -516,3 +516,122 @@ describe("HomedServerController — disconnect grace", () => {
     expect(setDevicesOffline).toHaveBeenCalledExactlyOnceWith(userId, clientId);
   });
 });
+
+describe("HomedServerController — command delivery", () => {
+  const userId = createUserId("user1");
+  const clientId = createClientId("client1");
+  const deviceId = createDeviceId("zigbee/device1");
+
+  let deviceCache: DeviceRepository;
+  let userDb: UserRepository;
+  let controller: HomedServerController;
+
+  beforeEach(() => {
+    deviceCache = new DeviceRepository(createMockUserRepository());
+    userDb = UserRepository.open(":memory:", "test-secret", { create: true });
+    controller = new HomedServerController(userDb, deviceCache, {
+      handleRequest: vi.fn(),
+    } as unknown as WebApp);
+    deviceCache.syncClientDevices(userId, clientId, [
+      createMockDevice(deviceId),
+    ]);
+  });
+
+  const connect = (sendMessage: ReturnType<typeof vi.fn>) => {
+    const client = { sendMessage };
+    (controller as any).clients[userId] ??= {};
+    (controller as any).clients[userId][clientId] = client;
+    return client;
+  };
+
+  it("reports success and publishes to td/<deviceId> when the client is connected and writable", () => {
+    const sendMessage = vi.fn(() => true);
+    connect(sendMessage);
+
+    const result = deviceCache.executeCommand(
+      userId,
+      clientId,
+      deviceId,
+      undefined,
+      { on: true }
+    );
+
+    expect(result).toBe(true);
+    expect(sendMessage).toHaveBeenCalledExactlyOnceWith({
+      action: "publish",
+      topic: `td/${deviceId}`,
+      message: { on: true },
+    });
+  });
+
+  it("includes the endpoint segment in the topic for multi-endpoint devices", () => {
+    const sendMessage = vi.fn(() => true);
+    connect(sendMessage);
+
+    deviceCache.executeCommand(userId, clientId, deviceId, 2, { on: true });
+
+    expect(sendMessage).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ topic: `td/${deviceId}/2` })
+    );
+  });
+
+  it("reports failure without throwing when no client is connected", () => {
+    const result = deviceCache.executeCommand(
+      userId,
+      clientId,
+      deviceId,
+      undefined,
+      { on: true }
+    );
+
+    expect(result).toBe(false);
+  });
+
+  it("reports failure when the socket is connected but not writable", () => {
+    connect(vi.fn(() => false));
+
+    const result = deviceCache.executeCommand(
+      userId,
+      clientId,
+      deviceId,
+      undefined,
+      { on: true }
+    );
+
+    expect(result).toBe(false);
+  });
+
+  it("reports failure without throwing when sendMessage throws", () => {
+    connect(
+      vi.fn(() => {
+        throw new Error("boom");
+      })
+    );
+
+    const result = deviceCache.executeCommand(
+      userId,
+      clientId,
+      deviceId,
+      undefined,
+      { on: true }
+    );
+
+    expect(result).toBe(false);
+  });
+
+  it("reports failure for a device that does not exist, without touching any client", () => {
+    const sendMessage = vi.fn(() => true);
+    connect(sendMessage);
+
+    const result = deviceCache.executeCommand(
+      userId,
+      clientId,
+      createDeviceId("zigbee/does-not-exist"),
+      undefined,
+      { on: true }
+    );
+
+    expect(result).toBe(false);
+    expect(sendMessage).not.toHaveBeenCalled();
+  });
+});
